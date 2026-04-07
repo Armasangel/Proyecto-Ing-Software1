@@ -1,0 +1,56 @@
+version: "3.8"
+
+services:
+  # ── Aplicacion Next.js (frontend + backend) ───────────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - JWT_SECRET=deposito_san_miguel_secret_key_dev
+      - DATABASE_URL=postgresql://dsm_user:dsm_password@db:5432/deposito_san_miguel
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      db:
+        condition: service_healthy
+    command: npm run dev
+
+  # ── PostgreSQL ─────────────────────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: dsm_user
+      POSTGRES_PASSWORD: dsm_password
+      POSTGRES_DB: deposito_san_miguel
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dsm_user -d deposito_san_miguel"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── pgAdmin ────────────────────────────────────────────────────────────────
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@dsm.com
+      PGADMIN_DEFAULT_PASSWORD: admin123
+    ports:
+      - "5050:80"
+    depends_on:
+      - db
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+
+volumes:
+  postgres_data:
+  pgadmin_data:
