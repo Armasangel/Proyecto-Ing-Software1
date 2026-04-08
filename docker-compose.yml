@@ -29,7 +29,7 @@ services:
       POSTGRES_PASSWORD: dsm_password
       POSTGRES_DB: deposito_san_miguel
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
