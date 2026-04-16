@@ -1,9 +1,7 @@
 // app/api/login/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { Pool } from "pg";
+import { pool } from "@/lib/db";
 import { AUTH_COOKIE, signAuthToken, verifyPassword } from "@/lib/auth";
-
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 export async function POST(req: NextRequest) {
   try {
@@ -19,11 +17,11 @@ export async function POST(req: NextRequest) {
     }
 
     const result = await pool.query<{
-      id_usuario: number
-      nombre: string
-      correo: string
-      tipo_usuario: string
-      contrasena_hash: string
+      id_usuario: number;
+      nombre: string;
+      correo: string;
+      tipo_usuario: string;
+      contrasena_hash: string;
     }>(
       `SELECT id_usuario, nombre, correo, tipo_usuario, contrasena_hash
        FROM usuario
@@ -36,6 +34,7 @@ export async function POST(req: NextRequest) {
     }
 
     const row = result.rows[0];
+
     if (!verifyPassword(password, row.contrasena_hash)) {
       return NextResponse.json({ error: "Credenciales incorrectas" }, { status: 401 });
     }
@@ -58,10 +57,12 @@ export async function POST(req: NextRequest) {
       secure: process.env.NODE_ENV === "production",
     });
 
+    // Limpiar cookie legacy si existe
     response.cookies.set("session", "", { path: "/", maxAge: 0 });
 
     return response;
   } catch (error) {
+    console.error("[LOGIN ERROR]", error);
     return NextResponse.json(
       { error: "Error del servidor", detalle: String(error) },
       { status: 500 }

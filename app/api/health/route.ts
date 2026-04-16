@@ -1,15 +1,6 @@
 // app/api/health/route.ts
-// Endpoint de prueba: GET /api/health
-// Verifica que Next.js puede conectarse a PostgreSQL
-
 import { NextResponse } from "next/server";
-import { Pool } from "pg";
-
-// El pool reutiliza conexiones — no crear uno por request en producción,
-// pero para desarrollo / health-check está bien así.
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
+import { pool } from "@/lib/db";
 
 export async function GET() {
   try {
