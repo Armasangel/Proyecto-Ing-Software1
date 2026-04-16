@@ -44,15 +44,10 @@ export default function LoginPage() {
             <span style={s.logoText}>Tienda San Miguel</span>
           </div>
           <p style={s.tagline}>
-            Sistema de gestión de inventario y ventas para distribuidoras mayoristas de Guatemala.
+            Sistema de gestión de inventario y ventas para Mayoristas de Guatemala.
           </p>
           <div style={s.features}>
-            {[
-              "Control de inventario en tiempo real",
-              "Ventas mayoristas y minoristas",
-              "Kardex y trazabilidad",
-              "Reportes y facturación",
-            ].map((f) => (
+            {["Control de inventario en tiempo real", "Ventas mayoristas y minoristas", "Kardex y trazabilidad", "Reportes y facturación"].map(f => (
               <div key={f} style={s.feature}>
                 <span style={s.featureDot} />
                 <span>{f}</span>
@@ -79,16 +74,11 @@ export default function LoginPage() {
                 autoComplete="email"
                 placeholder="usuario@tienda.com"
                 value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                onChange={e => setUsername(e.target.value)}
                 required
                 style={s.input}
-                onFocus={(e) => Object.assign(e.target.style, s.inputFocus)}
-                onBlur={(e) =>
-                  Object.assign(e.target.style, {
-                    borderColor: "var(--border)",
-                    boxShadow: "none",
-                  })
-                }
+                onFocus={e => Object.assign(e.target.style, s.inputFocus)}
+                onBlur={e => Object.assign(e.target.style, { borderColor: "var(--border)", boxShadow: "none" })}
               />
             </div>
 
@@ -99,16 +89,11 @@ export default function LoginPage() {
                 autoComplete="current-password"
                 placeholder="••••••••"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={e => setPassword(e.target.value)}
                 required
                 style={s.input}
-                onFocus={(e) => Object.assign(e.target.style, s.inputFocus)}
-                onBlur={(e) =>
-                  Object.assign(e.target.style, {
-                    borderColor: "var(--border)",
-                    boxShadow: "none",
-                  })
-                }
+                onFocus={e => Object.assign(e.target.style, s.inputFocus)}
+                onBlur={e => Object.assign(e.target.style, { borderColor: "var(--border)", boxShadow: "none" })}
               />
             </div>
 
@@ -122,37 +107,32 @@ export default function LoginPage() {
               type="submit"
               disabled={loading}
               style={{ ...s.btn, opacity: loading ? 0.7 : 1 }}
-              onMouseEnter={(e) =>
-                !loading &&
-                Object.assign((e.target as HTMLElement).style, s.btnHover)
-              }
-              onMouseLeave={(e) =>
-                Object.assign((e.target as HTMLElement).style, {
-                  background: "var(--accent)",
-                  transform: "none",
-                })
-              }
+              onMouseEnter={e => !loading && Object.assign((e.target as HTMLElement).style, s.btnHover)}
+              onMouseLeave={e => Object.assign((e.target as HTMLElement).style, { background: "var(--accent)", transform: "none" })}
             >
               {loading ? "Ingresando…" : "Ingresar al sistema"}
             </button>
           </form>
 
-          {/* Demo users — emails now match the DB seed data */}
+          <p style={s.switchLink}>
+            ¿No tienes cuenta?{" "}
+            <Link href="/register" style={{ color: "var(--accent)", fontWeight: 500 }}>
+              Regístrate aquí
+            </Link>
+          </p>
+
           <div style={s.demo}>
-            <p style={{ color: "var(--muted)", fontSize: "0.78rem", marginBottom: "0.4rem" }}>
-              Usuarios de prueba (contraseña: <strong style={{ color: "var(--text)" }}>password123</strong>):
-            </p>
+            <p style={{ color: "var(--muted)", fontSize: "0.78rem", marginBottom: "0.4rem" }}>Usuarios de prueba (password123):</p>
             <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
               {[
                 { label: "Dueño", correo: "dueno@tienda.com" },
                 { label: "Empleado", correo: "empleado@tienda.com" },
                 { label: "Comprador", correo: "maria@gmail.com" },
-              ].map((u) => (
+              ].map(u => (
                 <button
                   key={u.correo}
                   onClick={() => setUsername(u.correo)}
                   style={s.demoBtn}
-                  title={u.correo}
                 >
                   {u.label}
                 </button>
@@ -200,7 +180,7 @@ const s: Record<string, React.CSSProperties> = {
   logoIcon: { fontSize: "2.2rem" },
   logoText: {
     fontFamily: "var(--font-head)",
-    fontSize: "1.7rem",
+    fontSize: "2rem",
     fontWeight: 800,
     color: "var(--accent)",
     letterSpacing: "-0.5px",
@@ -213,16 +193,9 @@ const s: Record<string, React.CSSProperties> = {
     marginBottom: "2.5rem",
   },
   features: { display: "flex", flexDirection: "column", gap: "0.9rem" },
-  feature: {
-    display: "flex",
-    alignItems: "center",
-    gap: "0.75rem",
-    color: "var(--text)",
-    fontSize: "0.9rem",
-  },
+  feature: { display: "flex", alignItems: "center", gap: "0.75rem", color: "var(--text)", fontSize: "0.9rem" },
   featureDot: {
-    width: 8,
-    height: 8,
+    width: 8, height: 8,
     borderRadius: "50%",
     background: "var(--accent)",
     flexShrink: 0,
@@ -250,12 +223,7 @@ const s: Record<string, React.CSSProperties> = {
   formSub: { color: "var(--muted)", fontSize: "0.9rem" },
   form: { display: "flex", flexDirection: "column", gap: "1.2rem", marginBottom: "1.5rem" },
   field: { display: "flex", flexDirection: "column", gap: "0.4rem" },
-  label: {
-    fontSize: "0.85rem",
-    fontWeight: 500,
-    color: "var(--muted)",
-    letterSpacing: "0.02em",
-  },
+  label: { fontSize: "0.85rem", fontWeight: 500, color: "var(--muted)", letterSpacing: "0.02em" },
   input: {
     background: "var(--surface)",
     border: "1px solid var(--border)",
@@ -296,6 +264,7 @@ const s: Record<string, React.CSSProperties> = {
     letterSpacing: "0.02em",
   },
   btnHover: { background: "var(--accent2)", transform: "translateY(-1px)" },
+  switchLink: { textAlign: "center", color: "var(--muted)", fontSize: "0.88rem", marginBottom: "1.5rem" },
   demo: {
     marginTop: "1rem",
     padding: "1rem",

@@ -9,7 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "bcryptjs": "^3.0.3",
+    "bcryptjs": "^2.4.2",
     "jsonwebtoken": "^9.0.3",
     "next": "14.2.3",
     "pg": "^8.11.5",

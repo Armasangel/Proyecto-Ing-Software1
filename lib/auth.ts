@@ -55,5 +55,9 @@ export function verifyAuthToken(token: string): AuthUsuario | null {
 }
 
 export function verifyPassword(plain: string, hash: string): boolean {
-  return bcrypt.compareSync(plain, hash);
+  try {
+    return bcrypt.compareSync(plain, hash);
+  } catch {
+    return false;
+  }
 }
