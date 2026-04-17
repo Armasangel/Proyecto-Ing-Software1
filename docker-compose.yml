@@ -1,7 +1,6 @@
 version: "3.8"
 
 services:
-  # ── Aplicacion Next.js (frontend + backend) ───────────────────────────────
   app:
     build:
       context: .
@@ -21,7 +20,6 @@ services:
         condition: service_healthy
     command: npm run dev
 
-  # ── PostgreSQL ─────────────────────────────────────────────────────────────
   db:
     image: postgres:16-alpine
     environment:
@@ -31,6 +29,7 @@ services:
     ports:
       - "5433:5432"
     volumes:
+      - ./init:/docker-entrypoint-initdb.d   
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U dsm_user -d deposito_san_miguel"]
@@ -38,7 +37,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # ── pgAdmin ────────────────────────────────────────────────────────────────
   pgadmin:
     image: dpage/pgadmin4:latest
     environment:
