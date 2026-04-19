@@ -1,67 +1,123 @@
 "use client";
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 
-const COLORES: Record<string, string> = {
-  DUENO:     "#1a6b3a",
-  EMPLEADO:  "#1a4a8a",
-  COMPRADOR: "#8a1a1a",
+import { useEffect, useState } from "react";
+import { StaffShell } from "@/components/StaffShell";
+import { useStaffSession } from "@/hooks/useStaffSession";
+import { staffVariantFromTipo } from "@/lib/roles";
+
+type ProductoInv = {
+  id_producto: number;
+  codigo_producto: string;
+  nombre_producto: string;
+  nombre_categoria: string;
+  nombre_marca: string;
+  precio_unitario: string;
+  precio_mayoreo: string;
+  unidad_medida: string;
+  stock_total: string;
+  estado_producto: boolean;
 };
 
+const THEMES = {
+  dueno: { rowHead: "#2d6a4f" },
+  colaborador: { rowHead: "#4c6ef5" },
+} as const;
+
 export default function InventarioPage() {
-  const router = useRouter();
-  const [productos, setProductos] = useState<any[]>([]);
-  const [usuario, setUsuario] = useState<any>(null);
+  const usuario = useStaffSession();
+  const [productos, setProductos] = useState<ProductoInv[]>([]);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    fetch("/api/sesion")
-      .then(r => r.json())
-      .then(d => {
-        if (!d.usuario) { router.push("/login"); return; }
-        setUsuario(d.usuario);
-      });
-    fetch("/api/productos")
-      .then(r => r.json())
-      .then(d => setProductos(d.productos || []))
-      .catch(() => setError("Error al cargar productos"));
-  }, []);
+    if (!usuario) return;
+    fetch("/api/inventario")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d?.productos) setProductos(d.productos);
+        if (d?.error) setError(d.error);
+      })
+      .catch(() => setError("Error al cargar inventario"));
+  }, [usuario]);
 
-  if (!usuario) return <p style={{ padding: "2rem" }}>Cargando...</p>;
+  if (!usuario) {
+    return <p style={{ padding: "2rem", color: "var(--muted)" }}>Cargando…</p>;
+  }
 
-  const color = COLORES[usuario.tipo_usuario] || "#333";
+  const th = THEMES[staffVariantFromTipo(usuario.tipo_usuario)];
 
   return (
-    <main style={{ fontFamily: "sans-serif", padding: "2rem", maxWidth: 900, margin: "0 auto" }}>
-      <h1 style={{ color }}>🏪 Tienda San Miguel — Inventario</h1>
-      <p style={{ background: color, color: "white", display: "inline-block", padding: "0.25rem 0.75rem", borderRadius: 4, marginBottom: "1.5rem" }}>
-        {usuario.nombre} ({usuario.tipo_usuario})
-      </p>
-      {error && <p style={{ color: "red" }}>{error}</p>}
-      <table style={{ width: "100%", borderCollapse: "collapse" }}>
-        <thead>
-          <tr style={{ background: color, color: "white" }}>
-            <th style={{ padding: "0.5rem", textAlign: "left" }}>Codigo</th>
-            <th style={{ padding: "0.5rem", textAlign: "left" }}>Producto</th>
-            <th style={{ padding: "0.5rem", textAlign: "left" }}>Categoria</th>
-            <th style={{ padding: "0.5rem", textAlign: "left" }}>Marca</th>
-            <th style={{ padding: "0.5rem", textAlign: "right" }}>Precio Unit.</th>
-            <th style={{ padding: "0.5rem", textAlign: "right" }}>Precio Mayor.</th>
-          </tr>
-        </thead>
-        <tbody>
-          {productos.map((p, i) => (
-            <tr key={p.id_producto} style={{ background: i % 2 === 0 ? "#f9f9f9" : "white" }}>
-              <td style={{ padding: "0.5rem" }}>{p.codigo_producto}</td>
-              <td style={{ padding: "0.5rem" }}>{p.nombre_producto}</td>
-              <td style={{ padding: "0.5rem" }}>{p.nombre_categoria}</td>
-              <td style={{ padding: "0.5rem" }}>{p.nombre_marca}</td>
-              <td style={{ padding: "0.5rem", textAlign: "right" }}>Q{p.precio_unitario}</td>
-              <td style={{ padding: "0.5rem", textAlign: "right" }}>Q{p.precio_mayoreo}</td>
+    <StaffShell
+      usuario={usuario}
+      title="Inventario"
+      subtitle="Productos con precios y existencias en bodega"
+    >
+      {error && (
+        <p style={{ color: "var(--red)", marginBottom: "1rem" }}>{error}</p>
+      )}
+      <div
+        style={{
+          overflowX: "auto",
+          border: "1px solid var(--border)",
+          borderRadius: 12,
+          background: "var(--surface)",
+        }}
+      >
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
+          <thead>
+            <tr style={{ background: th.rowHead, color: "#fff" }}>
+              <th style={cellH}>Código</th>
+              <th style={cellH}>Producto</th>
+              <th style={cellH}>Categoría</th>
+              <th style={cellH}>Marca</th>
+              <th style={{ ...cellH, textAlign: "right" }}>Stock</th>
+              <th style={{ ...cellH, textAlign: "right" }}>P. unit.</th>
+              <th style={{ ...cellH, textAlign: "right" }}>P. mayoreo</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </main>
+          </thead>
+          <tbody>
+            {productos.map((p, i) => (
+              <tr
+                key={p.id_producto}
+                style={{
+                  background: i % 2 === 0 ? "var(--surface2)" : "var(--surface)",
+                }}
+              >
+                <td style={cell}>{p.codigo_producto}</td>
+                <td style={cell}>{p.nombre_producto}</td>
+                <td style={cell}>{p.nombre_categoria}</td>
+                <td style={cell}>{p.nombre_marca}</td>
+                <td style={{ ...cell, textAlign: "right", fontWeight: 600 }}>
+                  {Number(p.stock_total).toLocaleString("es-GT", {
+                    maximumFractionDigits: 2,
+                  })}{" "}
+                  <span style={{ color: "var(--muted)", fontWeight: 400 }}>
+                    {p.unidad_medida}
+                  </span>
+                </td>
+                <td style={{ ...cell, textAlign: "right" }}>
+                  Q{Number(p.precio_unitario).toFixed(2)}
+                </td>
+                <td style={{ ...cell, textAlign: "right" }}>
+                  Q{Number(p.precio_mayoreo).toFixed(2)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </StaffShell>
   );
 }
+
+const cell: React.CSSProperties = {
+  padding: "0.65rem 0.85rem",
+  fontSize: "0.88rem",
+  borderBottom: "1px solid var(--border)",
+};
+
+const cellH: React.CSSProperties = {
+  ...cell,
+  textAlign: "left",
+  fontWeight: 600,
+  fontSize: "0.82rem",
+};

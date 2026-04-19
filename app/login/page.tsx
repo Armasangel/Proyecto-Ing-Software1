@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { postLoginPath } from "@/lib/roles";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -26,7 +27,11 @@ export default function LoginPage() {
         setError(data.error || "Error al iniciar sesión");
         return;
       }
-      router.push("/dashboard");
+      const dest =
+        data.usuario?.tipo_usuario != null
+          ? postLoginPath(data.usuario.tipo_usuario)
+          : "/dashboard";
+      router.push(dest);
     } catch {
       setError("No se pudo conectar con el servidor");
     } finally {
@@ -126,8 +131,9 @@ export default function LoginPage() {
             <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
               {[
                 { label: "Dueño", correo: "dueno@tienda.com" },
-                { label: "Empleado", correo: "empleado@tienda.com" },
+                { label: "Colaborador", correo: "empleado@tienda.com" },
                 { label: "Comprador", correo: "maria@gmail.com" },
+                { label: "Comprador mayor", correo: "mayorista@tienda.com" },
               ].map(u => (
                 <button
                   key={u.correo}

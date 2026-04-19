@@ -2,10 +2,17 @@
 // POST /api/inventario/entrada
 // Registra el ingreso de productos a una bodega y actualiza el stock automáticamente
 
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
+import { getUsuarioFromRequest } from "@/lib/server-auth";
+import { isStaffTipo } from "@/lib/roles";
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  const usuario = getUsuarioFromRequest(request);
+  if (!usuario || !isStaffTipo(usuario.tipo_usuario)) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+  }
+
   try {
     const body = await request.json();
     const { id_bodega, id_producto, cantidad, tipo_ingreso, descripcion } = body;

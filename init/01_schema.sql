@@ -62,7 +62,7 @@ CREATE TABLE usuario (
     correo            VARCHAR(200)    NOT NULL,
     telefono          VARCHAR(20),
     contrasena_hash   VARCHAR(255)    NOT NULL,
-    tipo_usuario      VARCHAR(20)     NOT NULL CHECK (tipo_usuario IN ('DUENO', 'EMPLEADO', 'COMPRADOR')),
+    tipo_usuario      VARCHAR(20)     NOT NULL CHECK (tipo_usuario IN ('DUENO', 'EMPLEADO', 'COMPRADOR', 'COMPRADOR_MAYOR')),
     estado_usuario    BOOLEAN         NOT NULL DEFAULT TRUE,
     CONSTRAINT uq_usuario_correo    UNIQUE (correo),
     CONSTRAINT uq_usuario_telefono  UNIQUE (telefono)
@@ -181,7 +181,8 @@ INSERT INTO bodega (nombre_bodega, ubicacion) VALUES ('Bodega Principal', 'Zona 
 INSERT INTO usuario (nombre, correo, telefono, contrasena_hash, tipo_usuario) VALUES
   ('Admin Dueño',    'dueno@tienda.com',    '50201234567', '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm', 'DUENO'),
   ('Carlos Empleado','empleado@tienda.com', '50207654321', '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm', 'EMPLEADO'),
-  ('Maria Comprador','maria@gmail.com',     '50209876543', '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm', 'COMPRADOR');
+  ('Maria Comprador','maria@gmail.com',     '50209876543', '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm', 'COMPRADOR'),
+  ('Pedro Mayorista','mayorista@tienda.com','50203334455', '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm', 'COMPRADOR_MAYOR');
 
 INSERT INTO producto (codigo_producto, nombre_producto, precio_unitario, precio_mayoreo, unidad_medida, id_categoria, id_marca)
 VALUES
