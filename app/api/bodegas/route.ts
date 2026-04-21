@@ -1,8 +1,15 @@
 // app/api/bodegas/route.ts
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
+import { getUsuarioFromRequest } from "@/lib/server-auth";
+import { isStaffTipo } from "@/lib/roles";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const usuario = getUsuarioFromRequest(req);
+  if (!usuario || !isStaffTipo(usuario.tipo_usuario)) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+  }
+
   try {
     const result = await pool.query(
       `SELECT id_bodega, nombre_bodega, ubicacion FROM bodega ORDER BY nombre_bodega`

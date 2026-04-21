@@ -41,7 +41,7 @@ export default function RegisterPage() {
         setError(data.error || "Error al crear la cuenta");
         return;
       }
-      router.push("/dashboard");
+      router.push("/tienda");
     } catch {
       setError("No se pudo conectar con el servidor");
     } finally {

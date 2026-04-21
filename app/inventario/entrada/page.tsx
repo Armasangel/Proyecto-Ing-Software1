@@ -1,9 +1,9 @@
 "use client";
-// app/inventario/entrada/page.tsx
-// HU-04: Registro de entrada de inventario
-// El bodeguero registra el ingreso de productos por unidades o cajas
 
 import { useEffect, useState } from "react";
+import { StaffShell } from "@/components/StaffShell";
+import { useStaffSession } from "@/hooks/useStaffSession";
+import { staffVariantFromTipo } from "@/lib/roles";
 
 interface Producto {
   id_producto: number;
@@ -25,7 +25,13 @@ interface StockActualizado {
   ultima_actualizacion: string;
 }
 
+const ACCENT = {
+  dueno: "#2d6a4f",
+  colaborador: "#4c6ef5",
+} as const;
+
 export default function EntradaInventarioPage() {
+  const usuario = useStaffSession();
   const [productos, setProductos] = useState<Producto[]>([]);
   const [bodegas, setBodegas] = useState<Bodega[]>([]);
   const [loading, setLoading] = useState(false);
@@ -40,8 +46,8 @@ export default function EntradaInventarioPage() {
     descripcion: "",
   });
 
-  // Cargar productos y bodegas al montar
   useEffect(() => {
+    if (!usuario) return;
     fetch("/api/productos")
       .then((r) => r.json())
       .then((data) => setProductos(data.productos || []));
@@ -49,10 +55,12 @@ export default function EntradaInventarioPage() {
     fetch("/api/bodegas")
       .then((r) => r.json())
       .then((data) => setBodegas(data.bodegas || []));
-  }, []);
+  }, [usuario]);
 
   const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
+    e: React.ChangeEvent<
+      HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+    >
   ) => {
     setForm({ ...form, [e.target.name]: e.target.value });
     setError(null);
@@ -83,7 +91,6 @@ export default function EntradaInventarioPage() {
         setError(data.error || "Error desconocido");
       } else {
         setResultado(data.stock);
-        // Limpiar formulario
         setForm({
           id_bodega: form.id_bodega,
           id_producto: "",
@@ -103,25 +110,54 @@ export default function EntradaInventarioPage() {
     (p) => p.id_producto === Number(form.id_producto)
   );
 
+  if (!usuario) {
+    return <p style={{ padding: "2rem", color: "var(--muted)" }}>Cargando…</p>;
+  }
+
+  const accent = ACCENT[staffVariantFromTipo(usuario.tipo_usuario)];
+
   return (
-    <main style={styles.page}>
-      <div style={styles.card}>
-        {/* Header */}
-        <div style={styles.header}>
-          <span style={styles.headerIcon}>📦</span>
+    <StaffShell
+      usuario={usuario}
+      title="Entrada de inventario"
+      subtitle="Registrar ingreso de productos a bodega"
+    >
+      <div
+        style={{
+          maxWidth: 640,
+          background: "var(--surface)",
+          border: "1px solid var(--border)",
+          borderRadius: 12,
+          padding: "1.75rem",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "1rem",
+            marginBottom: "1.5rem",
+            borderBottom: `2px solid ${accent}`,
+            paddingBottom: "1rem",
+          }}
+        >
+          <span style={{ fontSize: "2.2rem" }}>📦</span>
           <div>
-            <h1 style={styles.titulo}>Entrada de Inventario</h1>
-            <p style={styles.subtitulo}>Registrar ingreso de productos a bodega</p>
+            <p style={{ margin: 0, color: "var(--muted)", fontSize: "0.88rem" }}>
+              Los movimientos quedan registrados en el kardex.
+            </p>
           </div>
         </div>
 
-        {/* Formulario */}
-        <div style={styles.form}>
-
-          {/* Bodega */}
-          <div style={styles.campo}>
-            <label style={styles.label}>Bodega *</label>
-            <select name="id_bodega" value={form.id_bodega} onChange={handleChange} style={styles.input}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+          <div style={field}>
+            <label style={label}>Bodega *</label>
+            <select
+              name="id_bodega"
+              value={form.id_bodega}
+              onChange={handleChange}
+              style={input}
+            >
               <option value="">— Selecciona una bodega —</option>
               {bodegas.map((b) => (
                 <option key={b.id_bodega} value={b.id_bodega}>
@@ -131,10 +167,14 @@ export default function EntradaInventarioPage() {
             </select>
           </div>
 
-          {/* Producto */}
-          <div style={styles.campo}>
-            <label style={styles.label}>Producto *</label>
-            <select name="id_producto" value={form.id_producto} onChange={handleChange} style={styles.input}>
+          <div style={field}>
+            <label style={label}>Producto *</label>
+            <select
+              name="id_producto"
+              value={form.id_producto}
+              onChange={handleChange}
+              style={input}
+            >
               <option value="">— Selecciona un producto —</option>
               {productos.map((p) => (
                 <option key={p.id_producto} value={p.id_producto}>
@@ -143,24 +183,31 @@ export default function EntradaInventarioPage() {
               ))}
             </select>
             {productoSeleccionado && (
-              <span style={styles.hint}>
-                Unidad de medida: <strong>{productoSeleccionado.unidad_medida}</strong>
+              <span style={{ fontSize: "0.8rem", color: "var(--muted)" }}>
+                Unidad de medida:{" "}
+                <strong style={{ color: "var(--text)" }}>
+                  {productoSeleccionado.unidad_medida}
+                </strong>
               </span>
             )}
           </div>
 
-          {/* Tipo de ingreso y cantidad en fila */}
-          <div style={styles.fila}>
-            <div style={{ ...styles.campo, flex: 1 }}>
-              <label style={styles.label}>Tipo de ingreso *</label>
-              <select name="tipo_ingreso" value={form.tipo_ingreso} onChange={handleChange} style={styles.input}>
+          <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+            <div style={{ ...field, flex: "1 1 200px" }}>
+              <label style={label}>Tipo de ingreso *</label>
+              <select
+                name="tipo_ingreso"
+                value={form.tipo_ingreso}
+                onChange={handleChange}
+                style={input}
+              >
                 <option value="UNIDADES">Unidades</option>
                 <option value="CAJAS">Cajas</option>
               </select>
             </div>
 
-            <div style={{ ...styles.campo, flex: 1 }}>
-              <label style={styles.label}>Cantidad *</label>
+            <div style={{ ...field, flex: "1 1 200px" }}>
+              <label style={label}>Cantidad *</label>
               <input
                 type="number"
                 name="cantidad"
@@ -169,136 +216,133 @@ export default function EntradaInventarioPage() {
                 placeholder="0"
                 min="0.001"
                 step="0.001"
-                style={styles.input}
+                style={input}
               />
             </div>
           </div>
 
-          {/* Descripción */}
-          <div style={styles.campo}>
-            <label style={styles.label}>Descripción / Observaciones</label>
+          <div style={field}>
+            <label style={label}>Descripción / observaciones</label>
             <textarea
               name="descripcion"
               value={form.descripcion}
               onChange={handleChange}
               placeholder="Ej: Compra a proveedor XYZ, factura #001..."
               rows={3}
-              style={{ ...styles.input, resize: "vertical" }}
+              style={{ ...input, resize: "vertical" }}
             />
           </div>
 
-          {/* Botón */}
           <button
+            type="button"
             onClick={handleSubmit}
-            disabled={loading || !form.id_bodega || !form.id_producto || !form.cantidad}
+            disabled={
+              loading ||
+              !form.id_bodega ||
+              !form.id_producto ||
+              !form.cantidad
+            }
             style={{
-              ...styles.boton,
-              opacity: loading || !form.id_bodega || !form.id_producto || !form.cantidad ? 0.6 : 1,
+              background: accent,
+              color: "#fff",
+              border: "none",
+              borderRadius: 8,
+              padding: "0.85rem",
+              fontSize: "1rem",
+              fontWeight: 600,
+              cursor:
+                loading ||
+                !form.id_bodega ||
+                !form.id_producto ||
+                !form.cantidad
+                  ? "not-allowed"
+                  : "pointer",
+              opacity:
+                loading ||
+                !form.id_bodega ||
+                !form.id_producto ||
+                !form.cantidad
+                  ? 0.55
+                  : 1,
+              marginTop: "0.25rem",
             }}
           >
-            {loading ? "Registrando..." : "✅ Registrar Entrada"}
+            {loading ? "Registrando…" : "Registrar entrada"}
           </button>
         </div>
 
-        {/* Error */}
         {error && (
-          <div style={styles.alerta}>
-            ❌ {error}
+          <div
+            style={{
+              marginTop: "1rem",
+              background: "rgba(248,81,73,.12)",
+              border: "1px solid rgba(248,81,73,.3)",
+              borderRadius: 8,
+              padding: "0.75rem 1rem",
+              color: "var(--red)",
+            }}
+          >
+            {error}
           </div>
         )}
 
-        {/* Éxito */}
         {resultado && (
-          <div style={styles.exito}>
-            <h3 style={{ margin: "0 0 0.5rem" }}>✅ Entrada registrada</h3>
-            <p style={{ margin: "0.2rem 0" }}>
-              <strong>Producto:</strong> {resultado.nombre_producto}
+          <div
+            style={{
+              marginTop: "1rem",
+              background: "rgba(63,185,80,.12)",
+              border: "1px solid rgba(63,185,80,.35)",
+              borderRadius: 8,
+              padding: "1rem",
+              color: "var(--green)",
+            }}
+          >
+            <h3 style={{ margin: "0 0 0.5rem", color: "var(--text)" }}>
+              Entrada registrada
+            </h3>
+            <p style={{ margin: "0.2rem 0", color: "var(--muted)" }}>
+              <strong style={{ color: "var(--text)" }}>Producto:</strong>{" "}
+              {resultado.nombre_producto}
             </p>
-            <p style={{ margin: "0.2rem 0" }}>
-              <strong>Bodega:</strong> {resultado.nombre_bodega}
+            <p style={{ margin: "0.2rem 0", color: "var(--muted)" }}>
+              <strong style={{ color: "var(--text)" }}>Bodega:</strong>{" "}
+              {resultado.nombre_bodega}
             </p>
-            <p style={{ margin: "0.2rem 0" }}>
-              <strong>Stock actual:</strong>{" "}
-              {Number(resultado.cantidad_disponible).toFixed(2)} {resultado.unidad_medida}
+            <p style={{ margin: "0.2rem 0", color: "var(--muted)" }}>
+              <strong style={{ color: "var(--text)" }}>Stock actual:</strong>{" "}
+              {Number(resultado.cantidad_disponible).toFixed(2)}{" "}
+              {resultado.unidad_medida}
             </p>
-            <p style={{ margin: "0.2rem 0", fontSize: "0.85rem", color: "#555" }}>
-              Última actualización: {new Date(resultado.ultima_actualizacion).toLocaleString("es-GT")}
+            <p style={{ margin: "0.5rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>
+              {new Date(resultado.ultima_actualizacion).toLocaleString("es-GT")}
             </p>
           </div>
         )}
       </div>
-    </main>
+    </StaffShell>
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
-  page: {
-    minHeight: "100vh",
-    backgroundColor: "#f0f4f0",
-    display: "flex",
-    alignItems: "flex-start",
-    justifyContent: "center",
-    padding: "2rem 1rem",
-    fontFamily: "sans-serif",
-  },
-  card: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    boxShadow: "0 2px 16px rgba(0,0,0,0.1)",
-    padding: "2rem",
-    width: "100%",
-    maxWidth: 600,
-  },
-  header: {
-    display: "flex",
-    alignItems: "center",
-    gap: "1rem",
-    marginBottom: "1.5rem",
-    borderBottom: "2px solid #1a6b3a",
-    paddingBottom: "1rem",
-  },
-  headerIcon: { fontSize: "2.5rem" },
-  titulo: { margin: 0, color: "#1a6b3a", fontSize: "1.5rem" },
-  subtitulo: { margin: 0, color: "#666", fontSize: "0.9rem" },
-  form: { display: "flex", flexDirection: "column", gap: "1rem" },
-  campo: { display: "flex", flexDirection: "column", gap: "0.3rem" },
-  fila: { display: "flex", gap: "1rem" },
-  label: { fontWeight: 600, fontSize: "0.9rem", color: "#333" },
-  input: {
-    padding: "0.6rem 0.8rem",
-    borderRadius: 8,
-    border: "1px solid #ccc",
-    fontSize: "0.95rem",
-    outline: "none",
-    width: "100%",
-    boxSizing: "border-box",
-  },
-  hint: { fontSize: "0.8rem", color: "#888" },
-  boton: {
-    backgroundColor: "#1a6b3a",
-    color: "#fff",
-    border: "none",
-    borderRadius: 8,
-    padding: "0.8rem",
-    fontSize: "1rem",
-    fontWeight: 600,
-    cursor: "pointer",
-    marginTop: "0.5rem",
-  },
-  alerta: {
-    marginTop: "1rem",
-    backgroundColor: "#fdecea",
-    border: "1px solid #f5c2c7",
-    borderRadius: 8,
-    padding: "0.8rem 1rem",
-    color: "#842029",
-  },
-  exito: {
-    marginTop: "1rem",
-    backgroundColor: "#d1e7dd",
-    border: "1px solid #a3cfbb",
-    borderRadius: 8,
-    padding: "0.8rem 1rem",
-    color: "#0f5132",
-  },
+const field: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "0.35rem",
+};
+
+const label: React.CSSProperties = {
+  fontWeight: 600,
+  fontSize: "0.88rem",
+  color: "var(--muted)",
+};
+
+const input: React.CSSProperties = {
+  padding: "0.6rem 0.75rem",
+  borderRadius: 8,
+  border: "1px solid var(--border)",
+  background: "var(--surface2)",
+  color: "var(--text)",
+  fontSize: "0.95rem",
+  outline: "none",
+  width: "100%",
+  boxSizing: "border-box",
 };
