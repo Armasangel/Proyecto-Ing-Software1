@@ -31,6 +31,9 @@ export default function TiendaPage() {
   const [cart, setCart] = useState<Record<number, CartLine>>({});
   const [busqueda, setBusqueda] = useState("");
   const [error, setError] = useState("");
+  const [reservando, setReservando] = useState(false);
+  const [reservaExito, setReservaExito] = useState<number | null>(null);
+  const [reservaError, setReservaError] = useState("");
 
   useEffect(() => {
     fetch("/api/sesion")
@@ -116,7 +119,38 @@ export default function TiendaPage() {
     return <div style={{ padding: "2rem", textAlign: "center" }}>Cargando…</div>;
   }
 
-  return (
+  async function confirmarReserva() {
+  if (lines.length === 0) return;
+  setReservando(true);
+  setReservaError("");
+
+  const items = lines.map((l) => ({
+    id_producto: l.id,
+    cantidad: l.qty,
+    precio_unitario: l.precio,
+  }));
+
+  try {
+    const res = await fetch("/api/tienda/pedidos", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setReservaError(data.error || "Error al crear reserva");
+    } else {
+      setReservaExito(data.id_venta);
+      setCart({});
+    }
+  } catch {
+    setReservaError("No se pudo conectar con el servidor");
+  } finally {
+    setReservando(false);
+  }
+}
+
+return (
     <div style={shell}>
       <header style={header}>
         <div>
@@ -127,6 +161,9 @@ export default function TiendaPage() {
           <span style={{ color: "#4a3728", fontSize: "0.9rem" }}>
             Hola, <strong>{usuario.nombre.split(" ")[0]}</strong>
           </span>
+          <button type="button" onClick={() => router.push("/tienda/pedidos")} style={btnGhost}>
+            Mis pedidos
+          </button>
           <button type="button" onClick={logout} style={btnGhost}>
             Salir
           </button>
@@ -216,8 +253,69 @@ export default function TiendaPage() {
                 <span>Subtotal estimado</span>
                 <strong>Q{subtotal.toFixed(2)}</strong>
               </div>
-            </>
-          )}
+              {reservaExito ? (
+                <div style={{
+                 marginTop: "1rem",
+                 padding: "1rem",
+                 background: "#d1e7dd",
+                 borderRadius: 10,
+                 border: "1px solid #a3cfbb",
+                 color: "#0f5132",
+                 fontSize: "0.88rem",
+               }}>
+                <strong>✅ Reserva #{reservaExito} creada</strong>
+                <p style={{ margin: "0.4rem 0 0.75rem" }}>
+                  Visita la tienda física para pagar. Tienes 3 días.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => router.push("/tienda/pedidos")}
+                  style={{
+                    background: "#1a6b3a",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: 8,
+                    padding: "0.5rem 1rem",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    width: "100%",
+                  }}
+                >
+                  Ver mis pedidos →
+                </button>
+              </div>
+            ) : (
+              <>
+                {reservaError && (
+                  <p style={{ color: "#842029", fontSize: "0.85rem", marginTop: "0.5rem" }}>
+                    ❌ {reservaError}
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={confirmarReserva}
+                  disabled={reservando || lines.length === 0}
+                  style={{
+                    marginTop: "1rem",
+                    width: "100%",
+                    background: lines.length === 0
+                      ? "#ccc"
+                      : "linear-gradient(135deg, #c45c26, #e8742e)",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: 10,
+                    padding: "0.75rem",
+                    fontWeight: 700,
+                    fontSize: "0.95rem",
+                    cursor: lines.length === 0 ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {reservando ? "Reservando…" : "Reservar pedido"}
+                </button>
+              </>
+            )}
+          </>
+        )}
         </aside>
       </div>
     </div>
