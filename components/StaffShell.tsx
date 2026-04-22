@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { labelRol, staffVariantFromTipo } from "@/lib/roles";
+import { isColaboradorTipo, labelRol, staffVariantFromTipo } from "@/lib/roles";
 
 export type StaffUsuario = {
   id_usuario: number;
@@ -19,8 +19,6 @@ const NAV = [
   { href: "/ventas", icon: "🧾", label: "Ventas" },
   { href: "/reportes", icon: "📊", label: "Reportes" },
 ];
-
-const NAV_HREFS = NAV.map((n) => n.href);
 
 /** Activa un ítem solo si coincide la ruta; si hay un enlace más específico en el nav (ej. /inventario/entrada), no resalta el padre. */
 function isStaffNavActive(
@@ -66,6 +64,11 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
   const pathname = usePathname();
   const variant = staffVariantFromTipo(usuario.tipo_usuario);
   const t = THEMES[variant];
+  const navVisible = NAV.filter(
+    (item) =>
+      item.href !== "/ventas" || isColaboradorTipo(usuario.tipo_usuario)
+  );
+  const navHrefs = navVisible.map((n) => n.href);
 
   async function handleLogout() {
     await fetch("/api/logout", { method: "POST" });
@@ -99,8 +102,8 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
             {variant === "dueno" ? "Panel del dueño" : "Panel del colaborador"}
           </div>
           <nav style={s.nav}>
-            {NAV.map((item) => {
-              const active = isStaffNavActive(pathname, item.href, NAV_HREFS);
+            {navVisible.map((item) => {
+              const active = isStaffNavActive(pathname, item.href, navHrefs);
               return (
                 <Link
                   key={item.href}
