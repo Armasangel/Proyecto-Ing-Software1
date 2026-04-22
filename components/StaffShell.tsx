@@ -17,6 +17,8 @@ const NAV = [
   { href: "/inventario/entrada", icon: "⬇", label: "Entrada stock" },
   { href: "/productos", icon: "🌿", label: "Productos" },
   { href: "/ventas", icon: "🧾", label: "Ventas" },
+  { href: "/precios", icon: "💲", label: "Precios" },
+  { href: "/facturacion", icon: "🧮", label: "Facturación" },
   { href: "/reportes", icon: "📊", label: "Reportes" },
 ];
 

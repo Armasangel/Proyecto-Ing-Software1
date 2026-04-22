@@ -175,7 +175,7 @@ export default function TiendaPage() {
                     cursor: p.stock_total <= 0 ? "not-allowed" : "pointer",
                   }}
                 >
-                  Añadir al carrito
+Añadir al carrito
                 </button>
               </article>
             ))}
@@ -216,6 +216,41 @@ export default function TiendaPage() {
                 <span>Subtotal estimado</span>
                 <strong>Q{subtotal.toFixed(2)}</strong>
               </div>
+              <button
+                type="button"
+                onClick={async () => {
+                  const items = lines.map((l) => ({
+                    id_producto: l.id,
+                    precio: l.precio,
+                    cantidad: l.qty,
+                  }));
+                  const res = await fetch("/api/ventas", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ items }),
+                  });
+                  if (res.ok) {
+                    alert("¡Pedido registrado! La tienda lo confirmará.");
+                    setCart({});
+                  } else {
+                    alert("Error al registrar el pedido.");
+                  }
+                }}
+                style={{
+                  marginTop: "1rem",
+                  width: "100%",
+                  background: "linear-gradient(135deg, #c45c26, #e8742e)",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 10,
+                  padding: "0.75rem",
+                  fontWeight: 700,
+                  fontSize: "0.95rem",
+                  cursor: "pointer",
+                }}
+              >
+                Confirmar pedido
+              </button>
             </>
           )}
         </aside>
