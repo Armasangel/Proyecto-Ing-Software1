@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
-import { isStaffTipo } from "@/lib/roles";
+import { isColaboradorTipo } from "@/lib/roles";
 
 const ESTADOS_VENTA = ["PENDIENTE", "CONFIRMADO", "ENTREGADO", "PAGADO"] as const;
 const TIPOS_VENTA = ["MINORISTA", "MAYORISTA"] as const;
@@ -23,7 +23,7 @@ function isTipoEntrega(s: string): s is TipoEntrega {
 
 export async function GET(req: NextRequest) {
   const usuario = getUsuarioFromRequest(req);
-  if (!usuario || !isStaffTipo(usuario.tipo_usuario)) {
+  if (!usuario || !isColaboradorTipo(usuario.tipo_usuario)) {
     return NextResponse.json({ error: "No autorizado" }, { status: 403 });
   }
 
@@ -98,7 +98,7 @@ type LineaInput = {
 
 export async function POST(request: NextRequest) {
   const usuario = getUsuarioFromRequest(request);
-  if (!usuario || !isStaffTipo(usuario.tipo_usuario)) {
+  if (!usuario || !isColaboradorTipo(usuario.tipo_usuario)) {
     return NextResponse.json({ error: "No autorizado" }, { status: 403 });
   }
 

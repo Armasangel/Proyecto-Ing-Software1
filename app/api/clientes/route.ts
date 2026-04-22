@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
-import { isStaffTipo, TIPOS_USUARIO } from "@/lib/roles";
+import { isColaboradorTipo, TIPOS_USUARIO } from "@/lib/roles";
 
 /** Clientes de tienda (compradores) para registrar ventas desde el panel de staff. */
 export async function GET(req: NextRequest) {
   const usuario = getUsuarioFromRequest(req);
-  if (!usuario || !isStaffTipo(usuario.tipo_usuario)) {
+  if (!usuario || !isColaboradorTipo(usuario.tipo_usuario)) {
     return NextResponse.json({ error: "No autorizado" }, { status: 403 });
   }
 
