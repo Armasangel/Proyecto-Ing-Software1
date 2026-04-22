@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { StaffShell } from "@/components/StaffShell";
 import { useStaffSession } from "@/hooks/useStaffSession";
 import { staffVariantFromTipo, TIPOS_USUARIO } from "@/lib/roles";
@@ -80,6 +81,7 @@ function nuevaLinea(): LineaVenta {
 }
 
 export default function VentasPage() {
+  const router = useRouter();
   const usuario = useStaffSession();
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
@@ -115,6 +117,11 @@ export default function VentasPage() {
 
   useEffect(() => {
     if (!usuario) return;
+    if (usuario.tipo_usuario === TIPOS_USUARIO.DUENO) {
+      router.replace("/dashboard");
+      return;
+    }
+    if (usuario.tipo_usuario !== TIPOS_USUARIO.EMPLEADO) return;
     fetch("/api/clientes")
       .then((r) => r.json())
       .then((d) => setClientes(d.clientes || []));
@@ -125,7 +132,7 @@ export default function VentasPage() {
       .then((r) => r.json())
       .then((d) => setBodegas(d.bodegas || []));
     cargarVentas();
-  }, [usuario, cargarVentas]);
+  }, [usuario, cargarVentas, router]);
 
   const productoPorId = useMemo(() => {
     const m = new Map<number, Producto>();
@@ -149,8 +156,13 @@ export default function VentasPage() {
     return <p style={{ padding: "2rem", color: "var(--muted)" }}>Cargando…</p>;
   }
 
+  if (usuario.tipo_usuario !== TIPOS_USUARIO.EMPLEADO) {
+    return (
+      <p style={{ padding: "2rem", color: "var(--muted)" }}>Redirigiendo…</p>
+    );
+  }
+
   const accent = ACCENT[staffVariantFromTipo(usuario.tipo_usuario)];
-  const esDueno = usuario.tipo_usuario === TIPOS_USUARIO.DUENO;
 
   function precioSugerido(p: Producto | undefined): string {
     if (!p) return "";
@@ -278,11 +290,7 @@ export default function VentasPage() {
     <StaffShell
       usuario={usuario}
       title="Ventas"
-      subtitle={
-        esDueno
-          ? "Registro de transacciones y detalle por producto (dueño)"
-          : "Registro de ventas y control de transacciones (colaborador)"
-      }
+      subtitle="Registro de ventas y control de transacciones (colaborador)"
     >
       <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
         <div
