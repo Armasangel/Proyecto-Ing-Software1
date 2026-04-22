@@ -133,7 +133,7 @@ export default function LoginPage() {
                 { label: "Dueño", correo: "dueno@tienda.com" },
                 { label: "Colaborador", correo: "empleado@tienda.com" },
                 { label: "Comprador", correo: "maria@gmail.com" },
-                { label: "Comprador mayor", correo: "mayorista@tienda.com" },
+                { label: "Comprador mayor", correo: "pedro@gmail.com" },
               ].map(u => (
                 <button
                   key={u.correo}
