@@ -6,7 +6,7 @@ Sistema web para apoyar la gestión de inventario, ventas y pedidos de un negoci
 
 ---
 
-## 👥 Equipo
+## 👥 Eqlskdjldjflskfkldsjfuipo
 
 | Nombre | Carné |
 |---|---|
