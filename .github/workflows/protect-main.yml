@@ -1,0 +1,27 @@
+# .github/workflows/protect-main.yml
+# Bloquea pull requests que apunten directamente a main.
+# El flujo correcto es:  feature/* o fix/* → develop → main
+
+name: Proteger rama main
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  bloquear-pr-directo-a-main:
+    name: PRs directos a main no permitidos
+    runs-on: ubuntu-latest
+    steps:
+      - name: Rechazar PR hacia main
+        run: |
+          echo "❌ Este Pull Request apunta directamente a 'main'."
+          echo ""
+          echo "El flujo de trabajo de este repositorio es:"
+          echo "  1. Crea tu rama desde 'develop':  git checkout -b feature/mi-cambio develop"
+          echo "  2. Haz tu PR → develop  (para revisión y pruebas)"
+          echo "  3. Solo el equipo puede hacer merge de develop → main cuando se libera a producción"
+          echo ""
+          echo "Por favor cierra este PR y ábrelo apuntando a 'develop'."
+          exit 1
