@@ -6,7 +6,7 @@ Sistema web para apoyar la gestión de inventario, ventas y pedidos de un negoci
 
 ---
 
-## 👥 Eqlskdjldjflskfkldsjfuipo
+## 👥 Equipo
 
 | Nombre | Carné |
 |---|---|
@@ -28,7 +28,7 @@ Sistema web para apoyar la gestión de inventario, ventas y pedidos de un negoci
 ```bash
 # 1. Clona el repositorio
 git clone <url-del-repo>
-cd <nombre-del-repo>
+cd <nombre-del-repo> lkdkladlfkjsalkfsdajfl
 
 # 2. Levanta todo con Docker (primera vez tarda ~2 min)
 docker compose up --build
