@@ -9,7 +9,7 @@ services:
       - "3001:3000"
     environment:
       - NODE_ENV=development
-      - JWT_SECRET=deposito_san_miguel_secret_key_dev
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET no está definido — copia .env.example a .env}
       - DATABASE_URL=postgresql://dsm_user:dsm_password@db:5432/deposito_san_miguel
     volumes:
       - .:/app
@@ -29,7 +29,7 @@ services:
     ports:
       - "5433:5432"
     volumes:
-      - ./init:/docker-entrypoint-initdb.d   
+      - ./init:/docker-entrypoint-initdb.d
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U dsm_user -d deposito_san_miguel"]
