@@ -1,8 +1,8 @@
-// app/api/register/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { AUTH_COOKIE, signAuthToken } from "@/lib/auth";
 import bcrypt from "bcryptjs";
+import { apiError, validationError } from "@/lib/api-error";
 
 export async function POST(req: NextRequest) {
   try {
@@ -10,20 +10,13 @@ export async function POST(req: NextRequest) {
     const { nombre, correo, telefono, contrasena } = body;
 
     if (!nombre || !correo || !contrasena) {
-      return NextResponse.json(
-        { error: "Nombre, correo y contraseña son obligatorios" },
-        { status: 400 }
-      );
+      return validationError("Nombre, correo y contraseña son obligatorios");
     }
 
     if (contrasena.length < 6) {
-      return NextResponse.json(
-        { error: "La contraseña debe tener al menos 6 caracteres" },
-        { status: 400 }
-      );
+      return validationError("La contraseña debe tener al menos 6 caracteres");
     }
 
-    // Verificar que el correo no exista ya
     const existe = await pool.query(
       `SELECT id_usuario FROM usuario WHERE LOWER(correo) = LOWER($1)`,
       [correo]
@@ -65,10 +58,6 @@ export async function POST(req: NextRequest) {
 
     return response;
   } catch (error) {
-    console.error("[REGISTER ERROR]", error);
-    return NextResponse.json(
-      { error: "Error del servidor", detalle: String(error) },
-      { status: 500 }
-    );
+    return apiError("REGISTER POST", error);
   }
 }
