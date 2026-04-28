@@ -103,7 +103,8 @@ La base de datos se inicializa con estos usuarios. Contraseña para todos: **`pa
 |---|---|
 | http://localhost:3000 | Aplicación principal |
 | http://localhost:3000/login | Inicio de sesión |
-| http://localhost:3000/inventario | Inventario (requiere login) |
+| http://localhost:3000/gestion-inventario | Gestión de inventario / bodegas (solo dueño) |
+| http://localhost:3000/inventario | Alta/edición de productos (solo dueño) |
 | http://localhost:3000/api/health | Verificar conexión a PostgreSQL |
 | http://localhost:5050 | pgAdmin (admin@dsm.com / admin123) |
 

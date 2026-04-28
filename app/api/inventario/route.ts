@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
-import { isStaffTipo } from "@/lib/roles";
+import { isDuenoTipo } from "@/lib/roles";
 
-/** Listado de inventario con stock agregado — solo personal (dueño / colaborador). */
+/** Listado de inventario con stock agregado — solo dueño (gestión de bodegas). */
 export async function GET(req: NextRequest) {
   const usuario = getUsuarioFromRequest(req);
-  if (!usuario || !isStaffTipo(usuario.tipo_usuario)) {
+  if (!usuario || !isDuenoTipo(usuario.tipo_usuario)) {
     return NextResponse.json({ error: "No autorizado" }, { status: 403 });
   }
 

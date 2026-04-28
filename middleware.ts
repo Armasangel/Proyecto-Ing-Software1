@@ -5,6 +5,7 @@ import { AUTH_COOKIE } from "./lib/auth";
 const PROTECTED_PREFIXES = [
   "/dashboard",
   "/inventario",
+  "/gestion-inventario",
   "/productos",
   "/ventas",
   "/reportes",
@@ -31,6 +32,7 @@ export const config = {
   matcher: [
     "/dashboard/:path*",
     "/inventario/:path*",
+    "/gestion-inventario/:path*",
     "/productos/:path*",
     "/ventas/:path*",
     "/reportes/:path*",

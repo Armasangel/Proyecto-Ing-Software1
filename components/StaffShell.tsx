@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { isColaboradorTipo, labelRol, staffVariantFromTipo } from "@/lib/roles";
+import { isColaboradorTipo, isDuenoTipo, labelRol, staffVariantFromTipo } from "@/lib/roles";
 
 export type StaffUsuario = {
   id_usuario: number;
@@ -13,6 +13,7 @@ export type StaffUsuario = {
 
 const NAV = [
   { href: "/dashboard", icon: "◈", label: "Dashboard" },
+  { href: "/gestion-inventario", icon: "🏭", label: "Gestión inventario" },
   { href: "/inventario", icon: "📦", label: "Inventario" },
   { href: "/inventario/entrada", icon: "⬇", label: "Entrada stock" },
   { href: "/productos", icon: "🌿", label: "Productos" },
@@ -66,10 +67,13 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
   const pathname = usePathname();
   const variant = staffVariantFromTipo(usuario.tipo_usuario);
   const t = THEMES[variant];
-  const navVisible = NAV.filter(
-    (item) =>
-      item.href !== "/ventas" || isColaboradorTipo(usuario.tipo_usuario)
-  );
+  const navVisible = NAV.filter((item) => {
+    if (item.href === "/ventas") return isColaboradorTipo(usuario.tipo_usuario);
+    if (item.href === "/gestion-inventario" || item.href === "/inventario" || item.href === "/inventario/entrada") {
+      return isDuenoTipo(usuario.tipo_usuario);
+    }
+    return true;
+  });
   const navHrefs = navVisible.map((n) => n.href);
 
   async function handleLogout() {
