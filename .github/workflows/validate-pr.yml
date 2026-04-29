@@ -1,0 +1,64 @@
+name: Validar PR Template
+
+on:
+  pull_request:
+    branches:
+      - develop
+    types: [opened, edited, synchronize, reopened]
+
+jobs:
+  validar-template:
+    name: Sugerencias sobre el PR
+    runs-on: ubuntu-latest
+    steps:
+      - name: Revisar cuerpo del PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.pull_request.body || '';
+            const errores = [];
+
+            // 1. Descripción
+            if (!body.includes('## 📋 Descripción del cambio')) {
+              errores.push('Falta la sección "Descripción del cambio".');
+            } else {
+              const desc = body.split('## 🔧')[0]
+                               .replace('## 📋 Descripción del cambio', '')
+                               .replace(/<!--.*?-->/gs, '')
+                               .trim();
+              if (desc.length < 20) {
+                errores.push('La descripción es muy corta (mínimo 20 caracteres).');
+              }
+            }
+
+            // 2. Tipo de cambio
+            const tiposMarcados = (body.match(/- \[x\]/gi) || []).length;
+            if (tiposMarcados === 0) {
+              errores.push('Marca al menos un tipo de cambio.');
+            }
+
+            // 3. Pruebas
+            if (!body.includes('## 🧪 ¿Cómo probaste los cambios?')) {
+              errores.push('Falta la sección de pruebas.');
+            }
+
+            // 4. Checklist
+            const checklistSection = body.split('## ✅ Checklist')[1] || '';
+            const checksDone = (checklistSection.match(/- \[x\]/gi) || []).length;
+            if (checksDone < 1) {
+              errores.push('Marca al menos 1 item del checklist.');
+            }
+
+            if (errores.length > 0) {
+              const mensaje = [
+                '## ⚠️ Sugerencias para mejorar el PR\n',
+                'Considera lo siguiente:\n',
+                ...errores.map(e => `- ${e}`),
+                '\n---',
+                '_Esto no bloquea el PR, pero ayuda a mantener calidad._'
+              ].join('\n');
+
+              console.log(mensaje);
+            } else {
+              console.log('✅ PR bien estructurado.');
+            }
