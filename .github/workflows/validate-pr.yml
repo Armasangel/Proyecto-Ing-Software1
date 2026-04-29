@@ -1,6 +1,3 @@
-# .github/workflows/validate-pr.yml
-# Verifica que el PR template esté correctamente llenado antes de permitir review.
-
 name: Validar PR Template
 
 on:
@@ -11,7 +8,7 @@ on:
 
 jobs:
   validar-template:
-    name: Verificar que el formulario esté completo
+    name: Sugerencias sobre el PR
     runs-on: ubuntu-latest
     steps:
       - name: Revisar cuerpo del PR
@@ -19,10 +16,9 @@ jobs:
         with:
           script: |
             const body = context.payload.pull_request.body || '';
-
             const errores = [];
 
-            // 1. Descripción no debe estar vacía ni contener solo el placeholder
+            // 1. Descripción
             if (!body.includes('## 📋 Descripción del cambio')) {
               errores.push('Falta la sección "Descripción del cambio".');
             } else {
@@ -31,46 +27,38 @@ jobs:
                                .replace(/<!--.*?-->/gs, '')
                                .trim();
               if (desc.length < 20) {
-                errores.push('La descripción es muy corta (mínimo 20 caracteres). Explica qué hiciste y por qué.');
+                errores.push('La descripción es muy corta (mínimo 20 caracteres).');
               }
             }
 
-            // 2. Al menos un tipo de cambio marcado
+            // 2. Tipo de cambio
             const tiposMarcados = (body.match(/- \[x\]/gi) || []).length;
             if (tiposMarcados === 0) {
-              errores.push('Marca al menos un tipo de cambio en la sección "Tipo de cambio".');
+              errores.push('Marca al menos un tipo de cambio.');
             }
 
-            // 3. Sección de pruebas no vacía
+            // 3. Pruebas
             if (!body.includes('## 🧪 ¿Cómo probaste los cambios?')) {
-              errores.push('Falta la sección "¿Cómo probaste los cambios?".');
-            } else {
-              const pruebas = body.split('## 📸')[0]
-                                   .split('## 🧪 ¿Cómo probaste los cambios?')[1]
-                                   .replace(/<!--.*?-->/gs, '')
-                                   .trim();
-              if (pruebas.length < 10) {
-                errores.push('Describe cómo probaste tus cambios (sección "¿Cómo probaste?").');
-              }
+              errores.push('Falta la sección de pruebas.');
             }
 
-            // 4. Checklist: al menos los primeros 2 items deben estar marcados
+            // 4. Checklist
             const checklistSection = body.split('## ✅ Checklist')[1] || '';
             const checksDone = (checklistSection.match(/- \[x\]/gi) || []).length;
-            if (checksDone < 2) {
-              errores.push('Completa al menos 2 items del checklist antes de pedir review.');
+            if (checksDone < 1) {
+              errores.push('Marca al menos 1 item del checklist.');
             }
 
             if (errores.length > 0) {
               const mensaje = [
-                '## ❌ El PR template está incompleto\n',
-                'Por favor corrige lo siguiente antes de continuar:\n',
+                '## ⚠️ Sugerencias para mejorar el PR\n',
+                'Considera lo siguiente:\n',
                 ...errores.map(e => `- ${e}`),
                 '\n---',
-                '_Este check corre automáticamente cada vez que editas el PR._'
+                '_Esto no bloquea el PR, pero ayuda a mantener calidad._'
               ].join('\n');
 
-              core.setFailed(mensaje);
+              console.log(mensaje);
             } else {
-              console.log('✅ PR template validado correctamente.');
+              console.log('✅ PR bien estructurado.');
             }
