@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
 
     const row = result.rows[0];
 
-    if (!verifyPassword(password, row.contrasena_hash)) {
+    if (!(await verifyPassword(password, row.contrasena_hash))) {
       return NextResponse.json({ error: "Credenciales incorrectas" }, { status: 401 });
     }
 

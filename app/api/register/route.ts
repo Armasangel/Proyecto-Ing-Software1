@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const contrasena_hash = bcrypt.hashSync(contrasena, 10);
+    const contrasena_hash = await bcrypt.hashSync(contrasena, 10);
 
     const result = await pool.query<{
       id_usuario: number;
