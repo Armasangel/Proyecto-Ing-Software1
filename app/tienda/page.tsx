@@ -22,15 +22,36 @@ type Usuario = {
   tipo_usuario: string;
 };
 
-type CartLine = { id: number; nombre: string; precio: number; qty: number; unidad: string };
+type CartLine = {
+  id: number;
+  nombre: string;
+  precio: number;
+  qty: number;
+  unidad: string;
+};
+
+type Bodega = {
+  id_bodega: number;
+  nombre_bodega: string;
+};
 
 export default function TiendaPage() {
   const router = useRouter();
   const [usuario, setUsuario] = useState<Usuario | null>(null);
   const [productos, setProductos] = useState<CatalogoItem[]>([]);
+  const [bodegas, setBodegas] = useState<Bodega[]>([]);
   const [cart, setCart] = useState<Record<number, CartLine>>({});
   const [busqueda, setBusqueda] = useState("");
   const [error, setError] = useState("");
+
+  // Opciones de entrega que el comprador sí puede elegir
+  const [tipoEntrega, setTipoEntrega] = useState<"EN_TIENDA" | "DOMICILIO">("EN_TIENDA");
+  const [direccionEntrega, setDireccionEntrega] = useState("");
+
+  // Estado del pedido
+  const [enviando, setEnviando] = useState(false);
+  const [pedidoOk, setPedidoOk] = useState<{ id_venta: number; total: number } | null>(null);
+  const [pedidoError, setPedidoError] = useState("");
 
   useEffect(() => {
     fetch("/api/sesion")
@@ -56,6 +77,12 @@ export default function TiendaPage() {
         else setProductos(d.productos || []);
       })
       .catch(() => setError("No se pudo cargar el catálogo"));
+
+    // Traer bodegas para usar la primera disponible (el comprador no elige)
+    fetch("/api/bodegas")
+      .then((r) => r.json())
+      .then((d) => setBodegas(d.bodegas || []))
+      .catch(() => {}); // silencioso, hay fallback
   }, []);
 
   const filtrados = useMemo(() => {
@@ -86,6 +113,9 @@ export default function TiendaPage() {
         },
       };
     });
+    // Limpiar mensajes anteriores al modificar el carrito
+    setPedidoOk(null);
+    setPedidoError("");
   }
 
   function updateQty(id: number, delta: number) {
@@ -112,6 +142,64 @@ export default function TiendaPage() {
     router.replace("/login");
   }
 
+  async function confirmarPedido() {
+    if (!usuario) return;
+    if (lines.length === 0) return;
+    if (tipoEntrega === "DOMICILIO" && !direccionEntrega.trim()) {
+      setPedidoError("Ingresa una dirección de entrega.");
+      return;
+    }
+
+    // Usar la primera bodega disponible (el comprador no elige bodega)
+    // Si no hay bodegas cargadas, usar id=1 como fallback (Bodega Principal del schema)
+    const id_bodega = bodegas.length > 0 ? bodegas[0].id_bodega : 1;
+
+    setEnviando(true);
+    setPedidoOk(null);
+    setPedidoError("");
+
+    try {
+      // ✅ FIX: payload correcto que /api/ventas POST espera
+      const res = await fetch("/api/ventas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id_usuario: usuario.id_usuario,        // quién compra
+          estado_pago: "PENDIENTE",              // el empleado lo confirma después
+          tipo_venta: "MINORISTA",               // siempre minorista en tienda online
+          tipo_entrega: tipoEntrega,             // el comprador sí puede elegir esto
+          direccion_entrega:
+            tipoEntrega === "DOMICILIO"
+              ? direccionEntrega.trim()
+              : undefined,
+          id_bodega,                             // primera bodega disponible
+          lineas: lines.map((l) => ({            // formato correcto (antes era "items")
+            id_producto: l.id,
+            cantidad: l.qty,
+            precio_unitario_venta: l.precio,     // nombre correcto del campo
+          })),
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setPedidoError(data.error || "No se pudo registrar el pedido. Intenta de nuevo.");
+        return;
+      }
+
+      // Feedback real con número de pedido
+      setPedidoOk({ id_venta: data.id_venta, total: data.total });
+      setCart({});
+      setTipoEntrega("EN_TIENDA");
+      setDireccionEntrega("");
+    } catch {
+      setPedidoError("Error de conexión. Verifica tu internet e intenta de nuevo.");
+    } finally {
+      setEnviando(false);
+    }
+  }
+
   if (!usuario) {
     return <div style={{ padding: "2rem", textAlign: "center" }}>Cargando…</div>;
   }
@@ -134,6 +222,7 @@ export default function TiendaPage() {
       </header>
 
       <div style={layout}>
+        {/* ── Catálogo ── */}
         <section style={{ flex: 1, minWidth: 0 }}>
           <div style={toolbar}>
             <input
@@ -154,11 +243,13 @@ export default function TiendaPage() {
                   {p.nombre_marca} · {p.codigo_producto}
                 </p>
                 <p style={price}>Q{p.precio.toFixed(2)}</p>
-                <p style={stock}>
+                <p style={stockStyle}>
                   {p.stock_total > 0 ? (
                     <>
                       <span style={{ color: "#2d6a4f" }}>Disponible:</span>{" "}
-                      {p.stock_total.toLocaleString("es-GT", { maximumFractionDigits: 2 })}{" "}
+                      {p.stock_total.toLocaleString("es-GT", {
+                        maximumFractionDigits: 2,
+                      })}{" "}
                       {p.unidad_medida}
                     </>
                   ) : (
@@ -175,82 +266,170 @@ export default function TiendaPage() {
                     cursor: p.stock_total <= 0 ? "not-allowed" : "pointer",
                   }}
                 >
-Añadir al carrito
+                  Añadir al carrito
                 </button>
               </article>
             ))}
           </div>
         </section>
 
+        {/* ── Carrito ── */}
         <aside style={cartPanel}>
-          <h3 style={cartTitle}>Carrito</h3>
-          {lines.length === 0 ? (
+          <h3 style={cartTitleStyle}>Carrito</h3>
+
+          {lines.length === 0 && !pedidoOk ? (
             <p style={{ color: "#6b5b4b", fontSize: "0.9rem" }}>
-              Tu carrito está vacío. Los pedidos en línea son una vista demo: aquí solo
-              armamos el detalle; el cobro y la entrega los confirma la tienda.
+              Tu carrito está vacío.
             </p>
           ) : (
             <>
-              <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-                {lines.map((l) => (
-                  <li key={l.id} style={cartLine}>
-                    <div>
-                      <div style={{ fontWeight: 600, color: "#2c2418" }}>{l.nombre}</div>
-                      <div style={{ fontSize: "0.82rem", color: "#6b5b4b" }}>
-                        Q{l.precio.toFixed(2)} × {l.qty} {l.unidad}
-                      </div>
+              {/* Confirmación de pedido exitoso */}
+              {pedidoOk && (
+                <div style={successBox}>
+                  <p style={{ fontWeight: 700, marginBottom: "0.35rem" }}>
+                    ¡Pedido #{pedidoOk.id_venta} registrado!
+                  </p>
+                  <p style={{ fontSize: "0.88rem", margin: 0 }}>
+                    Total: <strong>Q{Number(pedidoOk.total).toFixed(2)}</strong>
+                    <br />
+                    La tienda lo confirmará pronto.
+                  </p>
+                </div>
+              )}
+
+              {lines.length > 0 && (
+                <>
+                  <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+                    {lines.map((l) => (
+                      <li key={l.id} style={cartLine}>
+                        <div>
+                          <div style={{ fontWeight: 600, color: "#2c2418" }}>
+                            {l.nombre}
+                          </div>
+                          <div style={{ fontSize: "0.82rem", color: "#6b5b4b" }}>
+                            Q{l.precio.toFixed(2)} × {l.qty} {l.unidad}
+                          </div>
+                        </div>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "0.35rem",
+                          }}
+                        >
+                          <button
+                            type="button"
+                            style={qtyBtn}
+                            onClick={() => updateQty(l.id, -1)}
+                          >
+                            −
+                          </button>
+                          <span style={{ minWidth: 22, textAlign: "center" }}>
+                            {l.qty}
+                          </span>
+                          <button
+                            type="button"
+                            style={qtyBtn}
+                            onClick={() => updateQty(l.id, 1)}
+                          >
+                            +
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+
+                  {/* ✅ Opción de entrega que el comprador sí puede elegir */}
+                  <div style={{ marginTop: "1rem" }}>
+                    <label
+                      style={{
+                        fontSize: "0.82rem",
+                        fontWeight: 600,
+                        color: "#4a3728",
+                        display: "block",
+                        marginBottom: "0.35rem",
+                      }}
+                    >
+                      Tipo de entrega
+                    </label>
+                    <select
+                      value={tipoEntrega}
+                      onChange={(e) =>
+                        setTipoEntrega(e.target.value as "EN_TIENDA" | "DOMICILIO")
+                      }
+                      style={selectStyle}
+                    >
+                      <option value="EN_TIENDA">Recoger en tienda</option>
+                      <option value="DOMICILIO">Entrega a domicilio</option>
+                    </select>
+                  </div>
+
+                  {tipoEntrega === "DOMICILIO" && (
+                    <div style={{ marginTop: "0.65rem" }}>
+                      <label
+                        style={{
+                          fontSize: "0.82rem",
+                          fontWeight: 600,
+                          color: "#4a3728",
+                          display: "block",
+                          marginBottom: "0.35rem",
+                        }}
+                      >
+                        Dirección de entrega *
+                      </label>
+                      <input
+                        type="text"
+                        value={direccionEntrega}
+                        onChange={(e) => setDireccionEntrega(e.target.value)}
+                        placeholder="Zona, calle, referencias…"
+                        style={inputStyle}
+                      />
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
-                      <button type="button" style={qtyBtn} onClick={() => updateQty(l.id, -1)}>
-                        −
-                      </button>
-                      <span style={{ minWidth: 22, textAlign: "center" }}>{l.qty}</span>
-                      <button type="button" style={qtyBtn} onClick={() => updateQty(l.id, 1)}>
-                        +
-                      </button>
+                  )}
+
+                  <div style={cartTotal}>
+                    <span>Subtotal estimado</span>
+                    <strong>Q{subtotal.toFixed(2)}</strong>
+                  </div>
+
+                  {/* ✅ Error con mensaje real, no alert() */}
+                  {pedidoError && (
+                    <div style={errorBox}>
+                      {pedidoError}
                     </div>
-                  </li>
-                ))}
-              </ul>
-              <div style={cartTotal}>
-                <span>Subtotal estimado</span>
-                <strong>Q{subtotal.toFixed(2)}</strong>
-              </div>
-              <button
-                type="button"
-                onClick={async () => {
-                  const items = lines.map((l) => ({
-                    id_producto: l.id,
-                    precio: l.precio,
-                    cantidad: l.qty,
-                  }));
-                  const res = await fetch("/api/ventas", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ items }),
-                  });
-                  if (res.ok) {
-                    alert("¡Pedido registrado! La tienda lo confirmará.");
-                    setCart({});
-                  } else {
-                    alert("Error al registrar el pedido.");
-                  }
-                }}
-                style={{
-                  marginTop: "1rem",
-                  width: "100%",
-                  background: "linear-gradient(135deg, #c45c26, #e8742e)",
-                  color: "#fff",
-                  border: "none",
-                  borderRadius: 10,
-                  padding: "0.75rem",
-                  fontWeight: 700,
-                  fontSize: "0.95rem",
-                  cursor: "pointer",
-                }}
-              >
-                Confirmar pedido
-              </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={confirmarPedido}
+                    disabled={
+                      enviando ||
+                      lines.length === 0 ||
+                      (tipoEntrega === "DOMICILIO" && !direccionEntrega.trim())
+                    }
+                    style={{
+                      marginTop: "1rem",
+                      width: "100%",
+                      background: "linear-gradient(135deg, #c45c26, #e8742e)",
+                      color: "#fff",
+                      border: "none",
+                      borderRadius: 10,
+                      padding: "0.75rem",
+                      fontWeight: 700,
+                      fontSize: "0.95rem",
+                      cursor: enviando ? "wait" : "pointer",
+                      opacity:
+                        enviando ||
+                        (tipoEntrega === "DOMICILIO" && !direccionEntrega.trim())
+                          ? 0.65
+                          : 1,
+                      transition: "opacity .15s",
+                    }}
+                  >
+                    {enviando ? "Enviando pedido…" : "Confirmar pedido"}
+                  </button>
+                </>
+              )}
             </>
           )}
         </aside>
@@ -258,6 +437,8 @@ Añadir al carrito
     </div>
   );
 }
+
+// ─── Estilos ─────────────────────────────────────────────────────────────────
 
 const shell: React.CSSProperties = {
   minHeight: "100vh",
@@ -360,7 +541,7 @@ const price: React.CSSProperties = {
   margin: "0.35rem 0 0",
 };
 
-const stock: React.CSSProperties = {
+const stockStyle: React.CSSProperties = {
   fontSize: "0.85rem",
   margin: "0 0 0.75rem",
 };
@@ -397,7 +578,7 @@ const cartPanel: React.CSSProperties = {
   top: "1rem",
 };
 
-const cartTitle: React.CSSProperties = {
+const cartTitleStyle: React.CSSProperties = {
   fontFamily: "var(--font-head)",
   margin: "0 0 1rem",
   fontSize: "1.1rem",
@@ -432,4 +613,45 @@ const cartTotal: React.CSSProperties = {
   borderTop: "2px solid rgba(196,92,38,0.35)",
   fontSize: "1rem",
   color: "#2c2418",
+};
+
+const selectStyle: React.CSSProperties = {
+  width: "100%",
+  padding: "0.55rem 0.75rem",
+  borderRadius: 8,
+  border: "1px solid rgba(74,55,40,0.25)",
+  background: "#faf6f0",
+  color: "#2c2418",
+  fontSize: "0.9rem",
+  outline: "none",
+};
+
+const inputStyle: React.CSSProperties = {
+  width: "100%",
+  padding: "0.55rem 0.75rem",
+  borderRadius: 8,
+  border: "1px solid rgba(74,55,40,0.25)",
+  background: "#faf6f0",
+  color: "#2c2418",
+  fontSize: "0.9rem",
+  outline: "none",
+};
+
+const successBox: React.CSSProperties = {
+  background: "rgba(45,106,79,0.1)",
+  border: "1px solid rgba(45,106,79,0.3)",
+  borderRadius: 10,
+  padding: "0.85rem 1rem",
+  color: "#2d6a4f",
+  marginBottom: "1rem",
+};
+
+const errorBox: React.CSSProperties = {
+  background: "rgba(180,35,24,0.08)",
+  border: "1px solid rgba(180,35,24,0.25)",
+  borderRadius: 10,
+  padding: "0.75rem 1rem",
+  color: "#b42318",
+  fontSize: "0.88rem",
+  marginTop: "0.75rem",
 };

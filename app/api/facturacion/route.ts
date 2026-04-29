@@ -36,7 +36,10 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const usuario = getUsuarioFromRequest(req);
-  if (!usuario) {
+  // FIX: antes solo verificaba que existiera sesión (!usuario).
+  // Cualquier comprador autenticado podía emitir facturas.
+  // Ahora se requiere ser DUENO o EMPLEADO.
+  if (!usuario || !isStaffTipo(usuario.tipo_usuario)) {
     return unauthorizedError();
   }
 
@@ -48,7 +51,7 @@ export async function POST(req: NextRequest) {
     }
 
     const venta = await pool.query(
-      `SELECT total FROM venta WHERE id_venta = $1`,
+      `SELECT total, estado_venta FROM venta WHERE id_venta = $1`,
       [id_venta]
     );
 
@@ -56,7 +59,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Venta no encontrada" }, { status: 404 });
     }
 
-    const total = venta.rows[0].total;
+    //FIX: no permitir facturar ventas que aún están PENDIENTE
+    const { total, estado_venta } = venta.rows[0];
+    if (estado_venta === "PENDIENTE") {
+      return validationError("No se puede facturar una venta en estado PENDIENTE. Debe estar CONFIRMADO, ENTREGADO o PAGADO.");
+    }
+
     const numero_factura = `FACT-${Date.now()}`;
 
     const facturaResult = await pool.query(
