@@ -1,13 +1,13 @@
-// app/api/precios/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { isStaffTipo } from "@/lib/roles";
+import { apiError, unauthorizedError, validationError } from "@/lib/api-error";
 
 export async function GET(req: NextRequest) {
   const usuario = getUsuarioFromRequest(req);
   if (!usuario || !isStaffTipo(usuario.tipo_usuario)) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+    return unauthorizedError();
   }
 
   try {
@@ -26,24 +26,21 @@ export async function GET(req: NextRequest) {
     `);
     return NextResponse.json({ productos: result.rows });
   } catch (error) {
-    return NextResponse.json(
-      { error: "Error al consultar precios", detalle: String(error) },
-      { status: 500 }
-    );
+    return apiError("PRECIOS GET", error);
   }
 }
 
 export async function PATCH(req: NextRequest) {
   const usuario = getUsuarioFromRequest(req);
   if (!usuario || !isStaffTipo(usuario.tipo_usuario)) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+    return unauthorizedError();
   }
 
   try {
     const { id_producto, precio_unitario, precio_mayoreo } = await req.json();
 
     if (!id_producto || precio_unitario == null || precio_mayoreo == null) {
-      return NextResponse.json({ error: "Datos incompletos" }, { status: 400 });
+      return validationError("Datos incompletos");
     }
 
     await pool.query(
@@ -55,9 +52,6 @@ export async function PATCH(req: NextRequest) {
 
     return NextResponse.json({ ok: true });
   } catch (error) {
-    return NextResponse.json(
-      { error: "Error al actualizar precio", detalle: String(error) },
-      { status: 500 }
-    );
+    return apiError("PRECIOS PATCH", error);
   }
 }

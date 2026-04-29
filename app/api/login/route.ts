@@ -1,7 +1,7 @@
-// app/api/login/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { AUTH_COOKIE, signAuthToken, verifyPassword } from "@/lib/auth";
+import { apiError } from "@/lib/api-error";
 
 export async function POST(req: NextRequest) {
   try {
@@ -57,15 +57,10 @@ export async function POST(req: NextRequest) {
       secure: process.env.NODE_ENV === "production",
     });
 
-    // Limpiar cookie legacy si existe
     response.cookies.set("session", "", { path: "/", maxAge: 0 });
 
     return response;
   } catch (error) {
-    console.error("[LOGIN ERROR]", error);
-    return NextResponse.json(
-      { error: "Error del servidor", detalle: String(error) },
-      { status: 500 }
-    );
+    return apiError("LOGIN POST", error);
   }
 }
