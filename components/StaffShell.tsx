@@ -14,6 +14,7 @@ export type StaffUsuario = {
 const NAV = [
   { href: "/dashboard", icon: "◈", label: "Dashboard" },
   { href: "/gestion-inventario", icon: "🏭", label: "Gestión inventario" },
+  { href: "/bodegas", icon: "🏗", label: "Bodegas" },
   { href: "/inventario", icon: "📦", label: "Inventario" },
   { href: "/inventario/entrada", icon: "⬇", label: "Entrada stock" },
   { href: "/productos", icon: "🌿", label: "Productos" },
@@ -69,7 +70,11 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
   const t = THEMES[variant];
   const navVisible = NAV.filter((item) => {
     if (item.href === "/ventas") return isColaboradorTipo(usuario.tipo_usuario);
-    if (item.href === "/gestion-inventario" || item.href === "/inventario" || item.href === "/inventario/entrada") {
+    if (item.href === "/gestion-inventario" ||
+        item.href === "/inventario" ||
+        item.href === "/inventario/entrada" ||
+        item.href === "/bodegas"
+      ) {
       return isDuenoTipo(usuario.tipo_usuario);
     }
     return true;
