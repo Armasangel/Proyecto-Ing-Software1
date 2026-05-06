@@ -1,42 +1,63 @@
-import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
-import { AUTH_COOKIE } from "./lib/auth";
+import jwt from "jsonwebtoken";
+import bcrypt from "bcryptjs";
 
-const PROTECTED_PREFIXES = [
-  "/dashboard",
-  "/inventario",
-  "/productos",
-  "/ventas",
-  "/reportes",
-  "/tienda",
-  "/mayoreo",
-  "/pedidos",        // gestión de pedidos mayoristas
-];
+export const AUTH_COOKIE = "auth_token";
 
-export function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
-  const needsAuth = PROTECTED_PREFIXES.some(
-    (p) => pathname === p || pathname.startsWith(`${p}/`)
-  );
-  if (!needsAuth) return NextResponse.next();
+export type AuthUsuario = {
+  id_usuario: number
+  nombre: string
+  correo: string
+  tipo_usuario: string
+};
 
-  const hasToken = !!request.cookies.get(AUTH_COOKIE)?.value;
-  if (!hasToken) {
-    return NextResponse.redirect(new URL("/login", request.url));
+export function getJwtSecret(): string {
+  const fromEnv = process.env.JWT_SECRET;
+  if (fromEnv) return fromEnv;
+  if (process.env.NODE_ENV === "development") {
+    return "deposito_san_miguel_secret_key_dev";
   }
-
-  return NextResponse.next();
+  throw new Error("JWT_SECRET is required");
 }
 
-export const config = {
-  matcher: [
-    "/dashboard/:path*",
-    "/inventario/:path*",
-    "/productos/:path*",
-    "/ventas/:path*",
-    "/reportes/:path*",
-    "/tienda/:path*",
-    "/mayoreo/:path*",
-    "/pedidos/:path*",   // nuevo
-  ],
-};
+export function signAuthToken(usuario: AuthUsuario): string {
+  return jwt.sign(
+    {
+      nombre: usuario.nombre,
+      correo: usuario.correo,
+      tipo_usuario: usuario.tipo_usuario,
+    },
+    getJwtSecret(),
+    {
+      subject: String(usuario.id_usuario),
+      expiresIn: "8h",
+    }
+  );
+}
+
+export function verifyAuthToken(token: string): AuthUsuario | null {
+  try {
+    const decoded = jwt.verify(token, getJwtSecret()) as jwt.JwtPayload & {
+      nombre: string
+      correo: string
+      tipo_usuario: string
+    };
+    const id = decoded.sub;
+    if (typeof id !== "string" || !id) return null;
+    return {
+      id_usuario: Number(id),
+      nombre: decoded.nombre,
+      correo: decoded.correo,
+      tipo_usuario: decoded.tipo_usuario,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function verifyPassword(plain: string, hash: string): boolean {
+  try {
+    return bcrypt.compareSync(plain, hash);
+  } catch {
+    return false;
+  }
+}

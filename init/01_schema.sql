@@ -107,7 +107,7 @@ CREATE TABLE venta (
     id_empleado         INT,
     fecha_venta         TIMESTAMP       NOT NULL DEFAULT NOW(),
     estado_venta        VARCHAR(20)     NOT NULL DEFAULT 'PENDIENTE'
-                            CHECK (estado_venta IN ('PENDIENTE', 'CONFIRMADO', 'ENTREGADO', 'PAGADO')),
+                            CHECK (estado_venta IN ('PENDIENTE', 'CONFIRMADO', 'ENTREGADO', 'PAGADO', 'CANCELADO')),
     tipo_venta          VARCHAR(20)     NOT NULL CHECK (tipo_venta IN ('MINORISTA', 'MAYORISTA')),
     tipo_entrega        VARCHAR(20)     NOT NULL CHECK (tipo_entrega IN ('EN_TIENDA', 'DOMICILIO')),
     direccion_entrega   VARCHAR(255),
