@@ -83,8 +83,9 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ ventas: result.rows });
   } catch (error) {
+    console.error("[VENTAS GET]", error);
     return NextResponse.json(
-      { error: "Error al consultar ventas", detalle: String(error) },
+      { error: "Error al consultar ventas" },
       { status: 500 }
     );
   }
@@ -119,10 +120,7 @@ export async function POST(request: NextRequest) {
     const estadoRaw = estado_pago ?? estadoVentaBody;
     if (typeof estadoRaw !== "string" || !isEstadoVenta(estadoRaw)) {
       return NextResponse.json(
-        {
-          error:
-            "estado_pago / estado_venta inválido. Use: PENDIENTE, CONFIRMADO, ENTREGADO o PAGADO",
-        },
+        { error: "estado_pago / estado_venta inválido. Use: PENDIENTE, CONFIRMADO, ENTREGADO o PAGADO" },
         { status: 400 }
       );
     }
@@ -301,9 +299,7 @@ export async function POST(request: NextRequest) {
         if (disponible < p.cantidad) {
           await client.query("ROLLBACK");
           return NextResponse.json(
-            {
-              error: `Stock insuficiente para el producto id ${p.id_producto} en la bodega seleccionada (disponible: ${disponible})`,
-            },
+            { error: `Stock insuficiente para el producto id ${p.id_producto} en la bodega seleccionada (disponible: ${disponible})` },
             { status: 400 }
           );
         }
@@ -347,15 +343,20 @@ export async function POST(request: NextRequest) {
         id_venta: idVenta,
         total,
       });
-    } catch (e) {
+    } catch (error) {
       await client.query("ROLLBACK");
-      throw e;
+      console.error("[VENTAS POST]", error);
+      return NextResponse.json(
+        { error: "Error al registrar la venta" },
+        { status: 500 }
+      );
     } finally {
       client.release();
     }
   } catch (error) {
+    console.error("[VENTAS POST - parse]", error);
     return NextResponse.json(
-      { error: "Error al registrar la venta", detalle: String(error) },
+      { error: "Error al procesar la solicitud" },
       { status: 500 }
     );
   }
