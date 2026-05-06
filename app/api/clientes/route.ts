@@ -2,12 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { isColaboradorTipo, TIPOS_USUARIO } from "@/lib/roles";
+import { apiError, unauthorizedError } from "@/lib/api-error";
 
-/** Clientes de tienda (compradores) para registrar ventas desde el panel de staff. */
 export async function GET(req: NextRequest) {
   const usuario = getUsuarioFromRequest(req);
   if (!usuario || !isColaboradorTipo(usuario.tipo_usuario)) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+    return unauthorizedError();
   }
 
   try {
@@ -23,9 +23,6 @@ export async function GET(req: NextRequest) {
     );
     return NextResponse.json({ clientes: result.rows });
   } catch (error) {
-    return NextResponse.json(
-      { error: "Error al consultar clientes", detalle: String(error) },
-      { status: 500 }
-    );
+    return apiError("CLIENTES GET", error);
   }
 }

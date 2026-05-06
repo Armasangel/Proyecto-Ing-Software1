@@ -1,14 +1,14 @@
 // app/api/facturacion/route.ts
-// app/api/facturacion/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { isStaffTipo } from "@/lib/roles";
+import { apiError, unauthorizedError, validationError } from "@/lib/api-error";
 
 export async function GET(req: NextRequest) {
   const usuario = getUsuarioFromRequest(req);
   if (!usuario || !isStaffTipo(usuario.tipo_usuario)) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+    return unauthorizedError();
   }
 
   try {
@@ -30,24 +30,21 @@ export async function GET(req: NextRequest) {
     `);
     return NextResponse.json({ ventas: result.rows });
   } catch (error) {
-    return NextResponse.json(
-      { error: "Error al consultar ventas", detalle: String(error) },
-      { status: 500 }
-    );
+    return apiError("FACTURACION GET", error);
   }
 }
 
 export async function POST(req: NextRequest) {
   const usuario = getUsuarioFromRequest(req);
   if (!usuario) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+    return unauthorizedError();
   }
 
   try {
     const { id_venta, nombre_cliente, nit_cliente } = await req.json();
 
     if (!id_venta) {
-      return NextResponse.json({ error: "id_venta es requerido" }, { status: 400 });
+      return validationError("id_venta es requerido");
     }
 
     const venta = await pool.query(
@@ -73,11 +70,12 @@ export async function POST(req: NextRequest) {
       [id_venta]
     );
 
-    return NextResponse.json({ ok: true, id_factura: facturaResult.rows[0].id_factura, numero_factura });
+    return NextResponse.json({
+      ok: true,
+      id_factura: facturaResult.rows[0].id_factura,
+      numero_factura,
+    });
   } catch (error) {
-    return NextResponse.json(
-      { error: "Error al emitir factura", detalle: String(error) },
-      { status: 500 }
-    );
+    return apiError("FACTURACION POST", error);
   }
 }

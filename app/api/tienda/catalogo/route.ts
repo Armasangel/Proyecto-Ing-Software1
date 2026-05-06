@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { TIPOS_USUARIO } from "@/lib/roles";
+import { apiError, unauthorizedError } from "@/lib/api-error";
 
 export async function GET(req: NextRequest) {
   const usuario = getUsuarioFromRequest(req);
   if (!usuario) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    return unauthorizedError();
   }
 
   const minorista = usuario.tipo_usuario === TIPOS_USUARIO.COMPRADOR;
@@ -59,9 +60,6 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ productos, modo });
   } catch (error) {
-    return NextResponse.json(
-      { error: "Error al cargar catálogo", detalle: String(error) },
-      { status: 500 }
-    );
+    return apiError("CATALOGO GET", error);
   }
 }

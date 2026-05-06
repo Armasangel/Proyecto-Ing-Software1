@@ -1,42 +1,29 @@
-// app/api/inventario/entrada/route.ts
-// POST /api/inventario/entrada
-// Registra el ingreso de productos a una bodega y actualiza el stock automáticamente
-
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
-import { isDuenoTipo } from "@/lib/roles";
+import { isStaffTipo } from "@/lib/roles";
+import { apiError, unauthorizedError, validationError } from "@/lib/api-error";
 
 export async function POST(request: NextRequest) {
   const usuario = getUsuarioFromRequest(request);
-  if (!usuario || !isDuenoTipo(usuario.tipo_usuario)) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+  if (!usuario || !isStaffTipo(usuario.tipo_usuario)) {
+    return unauthorizedError();
   }
 
   try {
     const body = await request.json();
     const { id_bodega, id_producto, cantidad, tipo_ingreso, descripcion } = body;
 
-    // Validaciones básicas
     if (!id_bodega || !id_producto || !cantidad || !tipo_ingreso) {
-      return NextResponse.json(
-        { error: "Faltan campos obligatorios: id_bodega, id_producto, cantidad, tipo_ingreso" },
-        { status: 400 }
-      );
+      return validationError("Faltan campos obligatorios: id_bodega, id_producto, cantidad, tipo_ingreso");
     }
 
     if (cantidad <= 0) {
-      return NextResponse.json(
-        { error: "La cantidad debe ser mayor a 0" },
-        { status: 400 }
-      );
+      return validationError("La cantidad debe ser mayor a 0");
     }
 
     if (!["UNIDADES", "CAJAS"].includes(tipo_ingreso)) {
-      return NextResponse.json(
-        { error: "tipo_ingreso debe ser UNIDADES o CAJAS" },
-        { status: 400 }
-      );
+      return validationError("tipo_ingreso debe ser UNIDADES o CAJAS");
     }
 
     const client = await pool.connect();
@@ -44,21 +31,18 @@ export async function POST(request: NextRequest) {
     try {
       await client.query("BEGIN");
 
-      // 1. Verificar que exista el registro en bodega_producto
       const existe = await client.query(
         `SELECT 1 FROM bodega_producto WHERE id_bodega = $1 AND id_producto = $2`,
         [id_bodega, id_producto]
       );
 
       if (existe.rowCount === 0) {
-        // Si no existe, lo insertamos con la cantidad inicial
         await client.query(
           `INSERT INTO bodega_producto (id_bodega, id_producto, cantidad_disponible, stock_minimo)
            VALUES ($1, $2, $3, 0)`,
           [id_bodega, id_producto, cantidad]
         );
       } else {
-        // 2. Actualizar el stock sumando la cantidad ingresada
         await client.query(
           `UPDATE bodega_producto
            SET cantidad_disponible = cantidad_disponible + $1,
@@ -68,7 +52,6 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // 3. Registrar el movimiento en el kardex
       await client.query(
         `INSERT INTO kardex (id_bodega, id_producto, tipo_movimiento, cantidad, descripcion)
          VALUES ($1, $2, 'ENTRADA', $3, $4)`,
@@ -82,7 +65,6 @@ export async function POST(request: NextRequest) {
 
       await client.query("COMMIT");
 
-      // 4. Traer el stock actualizado para devolver al frontend
       const stockActualizado = await client.query(
         `SELECT
            bp.cantidad_disponible,
@@ -103,14 +85,11 @@ export async function POST(request: NextRequest) {
       });
     } catch (error) {
       await client.query("ROLLBACK");
-      throw error;
+      return apiError("INVENTARIO ENTRADA POST", error);
     } finally {
       client.release();
     }
   } catch (error) {
-    return NextResponse.json(
-      { error: "Error al registrar entrada", detalle: String(error) },
-      { status: 500 }
-    );
+    return apiError("INVENTARIO ENTRADA POST - parse", error);
   }
 }
