@@ -12,6 +12,10 @@ export function isStaffTipo(tipo: string): boolean {
   return tipo === TIPOS_USUARIO.DUENO || tipo === TIPOS_USUARIO.EMPLEADO;
 }
 
+export function isDuenoTipo(tipo: string): boolean {
+  return tipo === TIPOS_USUARIO.DUENO;
+}
+
 /** Solo colaborador (empleado), no dueño — p. ej. módulo de ventas en tienda. */
 export function isColaboradorTipo(tipo: string): boolean {
   return tipo === TIPOS_USUARIO.EMPLEADO;

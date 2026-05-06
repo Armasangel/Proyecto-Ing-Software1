@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { StaffShell } from "@/components/StaffShell";
-import { useStaffSession } from "@/hooks/useStaffSession";
+import { useDuenoSession } from "@/hooks/useDuenoSession";
 
 // Tipos
 interface Producto {
@@ -46,7 +46,7 @@ const EMPTY_FORM = {
 
 // Componente principal
 export default function InventarioPage() {
-  const usuario = useStaffSession();
+  const usuario = useDuenoSession();
 
   const [productos, setProductos] = useState<Producto[]>([]);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
