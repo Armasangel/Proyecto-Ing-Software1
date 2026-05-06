@@ -56,7 +56,7 @@ export function verifyAuthToken(token: string): AuthUsuario | null {
 
 export function verifyPassword(plain: string, hash: string): boolean {
   try {
-    return await bcrypt.compare(plain, hash);  // async, no bloquea
+    return bcrypt.compare(plain, hash);  // async, no bloquea
   } catch {
     return false;
   }
