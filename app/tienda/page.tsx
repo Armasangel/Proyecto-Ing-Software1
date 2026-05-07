@@ -22,15 +22,23 @@ type Usuario = {
   tipo_usuario: string;
 };
 
+type Bodega = {
+  id_bodega: number;
+  nombre_bodega: string;
+};
+
 type CartLine = { id: number; nombre: string; precio: number; qty: number; unidad: string };
 
 export default function TiendaPage() {
   const router = useRouter();
   const [usuario, setUsuario] = useState<Usuario | null>(null);
   const [productos, setProductos] = useState<CatalogoItem[]>([]);
+  const [bodegas, setBodegas] = useState<Bodega[]>([]);
   const [cart, setCart] = useState<Record<number, CartLine>>({});
   const [busqueda, setBusqueda] = useState("");
   const [error, setError] = useState("");
+  // BUG FIX: necesitamos saber qué bodega usar al confirmar
+  const [idBodegaSeleccionada, setIdBodegaSeleccionada] = useState<number | null>(null);
 
   useEffect(() => {
     fetch("/api/sesion")
@@ -56,6 +64,17 @@ export default function TiendaPage() {
         else setProductos(d.productos || []);
       })
       .catch(() => setError("No se pudo cargar el catálogo"));
+
+    // BUG FIX: cargar bodegas para poder seleccionar una al confirmar pedido
+    fetch("/api/bodegas")
+      .then((r) => r.json())
+      .then((d) => {
+        const lista: Bodega[] = d.bodegas || [];
+        setBodegas(lista);
+        // Pre-seleccionar la primera bodega disponible
+        if (lista.length > 0) setIdBodegaSeleccionada(lista[0].id_bodega);
+      })
+      .catch(() => {});
   }, []);
 
   const filtrados = useMemo(() => {
@@ -110,6 +129,42 @@ export default function TiendaPage() {
   async function logout() {
     await fetch("/api/logout", { method: "POST" });
     router.replace("/login");
+  }
+
+  // BUG FIX: payload corregido para coincidir con lo que espera /api/ventas POST
+  async function confirmarPedido() {
+    if (!usuario) return;
+    if (!idBodegaSeleccionada) {
+      alert("No hay bodegas disponibles. Contacta a la tienda.");
+      return;
+    }
+
+    const lineas = lines.map((l) => ({
+      id_producto: l.id,
+      cantidad: l.qty,
+      precio_unitario_venta: l.precio,
+    }));
+
+    const res = await fetch("/api/ventas", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id_usuario: usuario.id_usuario,   // cliente autenticado
+        estado_pago: "PENDIENTE",          // pedido en línea arranca pendiente
+        tipo_venta: "MINORISTA",
+        tipo_entrega: "EN_TIENDA",
+        id_bodega: idBodegaSeleccionada,
+        lineas,
+      }),
+    });
+
+    if (res.ok) {
+      alert("¡Pedido registrado! La tienda lo confirmará.");
+      setCart({});
+    } else {
+      const data = await res.json();
+      alert(data.error || "Error al registrar el pedido.");
+    }
   }
 
   if (!usuario) {
@@ -175,7 +230,7 @@ export default function TiendaPage() {
                     cursor: p.stock_total <= 0 ? "not-allowed" : "pointer",
                   }}
                 >
-Añadir al carrito
+                  Añadir al carrito
                 </button>
               </article>
             ))}
@@ -184,6 +239,25 @@ Añadir al carrito
 
         <aside style={cartPanel}>
           <h3 style={cartTitle}>Carrito</h3>
+
+          {/* BUG FIX: selector de bodega visible si hay más de una */}
+          {bodegas.length > 1 && (
+            <div style={{ marginBottom: "0.75rem" }}>
+              <label style={{ fontSize: "0.8rem", color: "#6b5b4b", display: "block", marginBottom: "0.3rem" }}>
+                Retirar de bodega:
+              </label>
+              <select
+                value={idBodegaSeleccionada ?? ""}
+                onChange={(e) => setIdBodegaSeleccionada(Number(e.target.value))}
+                style={{ width: "100%", padding: "0.4rem 0.6rem", borderRadius: 8, border: "1px solid rgba(74,55,40,0.2)", fontSize: "0.88rem" }}
+              >
+                {bodegas.map((b) => (
+                  <option key={b.id_bodega} value={b.id_bodega}>{b.nombre_bodega}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {lines.length === 0 ? (
             <p style={{ color: "#6b5b4b", fontSize: "0.9rem" }}>
               Tu carrito está vacío. Los pedidos en línea son una vista demo: aquí solo
@@ -216,26 +290,10 @@ Añadir al carrito
                 <span>Subtotal estimado</span>
                 <strong>Q{subtotal.toFixed(2)}</strong>
               </div>
+              {/* BUG FIX: llamar confirmarPedido() en lugar del inline anterior */}
               <button
                 type="button"
-                onClick={async () => {
-                  const items = lines.map((l) => ({
-                    id_producto: l.id,
-                    precio: l.precio,
-                    cantidad: l.qty,
-                  }));
-                  const res = await fetch("/api/ventas", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ items }),
-                  });
-                  if (res.ok) {
-                    alert("¡Pedido registrado! La tienda lo confirmará.");
-                    setCart({});
-                  } else {
-                    alert("Error al registrar el pedido.");
-                  }
-                }}
+                onClick={confirmarPedido}
                 style={{
                   marginTop: "1rem",
                   width: "100%",

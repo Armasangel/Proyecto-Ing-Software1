@@ -1,11 +1,50 @@
-// app/api/pedidos/mayorista/route.ts
+// DIFF para app/api/pedidos/mayorista/route.ts — solo el INSERT de la venta cambia
+//
+// Buscar esta línea en el POST (dentro de la transacción):
+//
+//   const ventaQ = await client.query(
+//     `INSERT INTO venta (
+//       id_usuario, estado_venta, tipo_venta, tipo_entrega,
+//       direccion_entrega, enlinea, total, fecha_limite_pago
+//     )
+//     VALUES ($1, 'PENDIENTE', 'MAYORISTA', $2, $3, TRUE, $4, $5)
+//     RETURNING id_venta`,
+//     [
+//       usuario.id_usuario,
+//       tipo_entrega,
+//       tipo_entrega === "EN_TIENDA" ? null : direccion || null,
+//       totalRounded,
+//       fechaLimite,
+//     ]
+//   );
+//
+// Y REEMPLAZARLA con:
+//
+//   const ventaQ = await client.query(
+//     `INSERT INTO venta (
+//       id_usuario, estado_venta, tipo_venta, tipo_entrega,
+//       direccion_entrega, enlinea, total, fecha_limite_pago, id_bodega
+//     )
+//     VALUES ($1, 'PENDIENTE', 'MAYORISTA', $2, $3, TRUE, $4, $5, $6)
+//     RETURNING id_venta`,
+//     [
+//       usuario.id_usuario,
+//       tipo_entrega,
+//       tipo_entrega === "EN_TIENDA" ? null : direccion || null,
+//       totalRounded,
+//       fechaLimite,
+//       idBodega,          // ← columna nueva
+//     ]
+//   );
+//
+// El resto del archivo permanece igual.
+// Ver archivo completo abajo:
+
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { TIPOS_USUARIO } from "@/lib/roles";
 import { apiError, unauthorizedError, validationError } from "@/lib/api-error";
-
-// Tipos internos
 
 const ESTADOS_PEDIDO = ["PENDIENTE", "CONFIRMADO", "ENTREGADO", "CANCELADO"] as const;
 type EstadoPedido = (typeof ESTADOS_PEDIDO)[number];
@@ -13,17 +52,6 @@ type EstadoPedido = (typeof ESTADOS_PEDIDO)[number];
 function isEstadoPedido(s: string): s is EstadoPedido {
   return (ESTADOS_PEDIDO as readonly string[]).includes(s);
 }
-
-// ─── GET — listar pedidos del mayorista autenticado, con filtros opcionales ───
-//
-// Query params soportados:
-//   ?estado=PENDIENTE|CONFIRMADO|ENTREGADO|CANCELADO
-//   ?desde=YYYY-MM-DD   (fecha inicio, inclusive)
-//   ?hasta=YYYY-MM-DD   (fecha fin, inclusive)
-//   ?id_bodega=N
-//   ?q=texto            (busca en nombre de producto / código)
-//   ?page=1             (paginación, default 1)
-//   ?limit=20           (default 20, max 100)
 
 export async function GET(req: NextRequest) {
   const usuario = getUsuarioFromRequest(req);
@@ -42,11 +70,9 @@ export async function GET(req: NextRequest) {
   const limit = Math.min(100, Math.max(1, Number(searchParams.get("limit") ?? "20")));
   const offset = (page - 1) * limit;
 
-  // Validaciones suaves — estado desconocido simplemente se ignora
   const estadoFiltro = estado && isEstadoPedido(estado) ? estado : null;
 
   try {
-    // Construimos la cláusula WHERE dinámicamente con parámetros posicionales
     const conditions: string[] = ["v.id_usuario = $1", "v.tipo_venta = 'MAYORISTA'"];
     const params: unknown[] = [usuario.id_usuario];
     let idx = 2;
@@ -55,17 +81,14 @@ export async function GET(req: NextRequest) {
       conditions.push(`v.estado_venta = $${idx++}`);
       params.push(estadoFiltro);
     }
-
     if (desde) {
       conditions.push(`v.fecha_venta >= $${idx++}::date`);
       params.push(desde);
     }
-
     if (hasta) {
       conditions.push(`v.fecha_venta < ($${idx++}::date + INTERVAL '1 day')`);
       params.push(hasta);
     }
-
     if (q) {
       conditions.push(
         `EXISTS (
@@ -85,14 +108,12 @@ export async function GET(req: NextRequest) {
 
     const where = conditions.join(" AND ");
 
-    // Total para paginación
     const countResult = await pool.query(
       `SELECT COUNT(*)::int AS total FROM venta v WHERE ${where}`,
       params
     );
     const total: number = countResult.rows[0]?.total ?? 0;
 
-    // Datos principales
     const result = await pool.query(
       `
       SELECT
@@ -158,17 +179,6 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST — crear un nuevo pedido mayorista
-//
-// Body esperado:
-// {
-//   tipo_entrega: "EN_TIENDA" | "DOMICILIO",
-//   direccion_entrega?: string,          // requerido si tipo_entrega = DOMICILIO
-//   id_bodega: number,
-//   lineas: [{ id_producto, cantidad, precio_unitario_venta }],
-//   fecha_limite_pago?: string           // YYYY-MM-DD, opcional
-// }
-
 export async function POST(req: NextRequest) {
   const usuario = getUsuarioFromRequest(req);
 
@@ -179,8 +189,6 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const { tipo_entrega, direccion_entrega, id_bodega, lineas, fecha_limite_pago } = body;
-
-    // Validaciones básicas 
 
     if (!["EN_TIENDA", "DOMICILIO"].includes(tipo_entrega)) {
       return validationError("tipo_entrega debe ser EN_TIENDA o DOMICILIO");
@@ -201,7 +209,6 @@ export async function POST(req: NextRequest) {
       return validationError("El pedido debe contener al menos un producto");
     }
 
-    // Normalizar y validar líneas
     type LineaNorm = { id_producto: number; cantidad: number; precio: number; subtotal: number };
     const lineasNorm: LineaNorm[] = [];
 
@@ -229,13 +236,10 @@ export async function POST(req: NextRequest) {
       fechaLimite = String(fecha_limite_pago).trim();
     }
 
-    // Transacción 
-
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
 
-      // Verificar bodega
       const bodegaQ = await client.query(
         `SELECT 1 FROM bodega WHERE id_bodega = $1`,
         [idBodega]
@@ -245,12 +249,10 @@ export async function POST(req: NextRequest) {
         return validationError("Bodega no encontrada");
       }
 
-      // Calcular subtotales y verificar stock + estado del producto
       let total = 0;
       const prepared: LineaNorm[] = [];
 
       for (const ln of lineasNorm) {
-        // Verificar producto activo
         const prodQ = await client.query(
           `SELECT id_producto, nombre_producto, precio_mayoreo, estado_producto
            FROM producto WHERE id_producto = $1`,
@@ -261,7 +263,6 @@ export async function POST(req: NextRequest) {
           return validationError(`Producto id ${ln.id_producto} no disponible`);
         }
 
-        // Verificar stock en bodega
         const stockQ = await client.query(
           `SELECT cantidad_disponible
            FROM bodega_producto
@@ -290,13 +291,14 @@ export async function POST(req: NextRequest) {
 
       const totalRounded = Math.round(total * 100) / 100;
 
-      // Insertar venta
+      // BUG FIX: guardar id_bodega en la tabla venta para que la
+      // cancelación pueda encontrar la bodega de forma determinista
       const ventaQ = await client.query(
         `INSERT INTO venta (
           id_usuario, estado_venta, tipo_venta, tipo_entrega,
-          direccion_entrega, enlinea, total, fecha_limite_pago
+          direccion_entrega, enlinea, total, fecha_limite_pago, id_bodega
         )
-        VALUES ($1, 'PENDIENTE', 'MAYORISTA', $2, $3, TRUE, $4, $5)
+        VALUES ($1, 'PENDIENTE', 'MAYORISTA', $2, $3, TRUE, $4, $5, $6)
         RETURNING id_venta`,
         [
           usuario.id_usuario,
@@ -304,11 +306,11 @@ export async function POST(req: NextRequest) {
           tipo_entrega === "EN_TIENDA" ? null : direccion || null,
           totalRounded,
           fechaLimite,
+          idBodega,   // ← columna nueva
         ]
       );
       const idVenta = ventaQ.rows[0].id_venta as number;
 
-      // Insertar detalles, descontar stock y registrar kardex
       for (const p of prepared) {
         await client.query(
           `INSERT INTO detalle_venta (id_venta, id_producto, cantidad, precio_unitario, subtotal)

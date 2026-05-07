@@ -5,7 +5,7 @@ import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { TIPOS_USUARIO } from "@/lib/roles";
 import { apiError, unauthorizedError, validationError } from "@/lib/api-error";
 
-// GET — detalle de un pedido específico 
+// GET — detalle de un pedido específico (sin cambios)
 export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }
@@ -75,7 +75,16 @@ export async function GET(
 }
 
 // PATCH — cancelar pedido (solo si está en PENDIENTE)
-// Devuelve el stock a bodega y registra ajuste en kardex.
+//
+// BUG FIX: antes se buscaba la bodega con un JOIN al kardex usando
+// LIKE 'Pedido mayorista #N%', lo que era frágil: cualquier movimiento
+// manual con texto similar podía producir filas duplicadas y restaurar
+// stock incorrectamente o lanzar errores de constraint.
+//
+// Solución: leer id_bodega directamente de la tabla venta (columna
+// añadida en migration_add_id_bodega_to_venta.sql). Si por algún motivo
+// el campo es NULL (pedido creado antes de la migración), devolvemos
+// un error claro en lugar de operar sobre datos incorrectos.
 export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } }
@@ -92,9 +101,10 @@ export async function PATCH(
   try {
     await client.query("BEGIN");
 
-    // Verificar que el pedido pertenece al usuario y está en estado PENDIENTE
+    // Verificar que el pedido pertenece al usuario, está PENDIENTE
+    // y tiene id_bodega registrado (columna añadida en migración)
     const ventaQ = await client.query(
-      `SELECT id_venta, estado_venta
+      `SELECT id_venta, estado_venta, id_bodega
        FROM venta
        WHERE id_venta = $1
          AND id_usuario = $2
@@ -108,41 +118,50 @@ export async function PATCH(
       return NextResponse.json({ error: "Pedido no encontrado" }, { status: 404 });
     }
 
-    if (ventaQ.rows[0].estado_venta !== "PENDIENTE") {
+    const venta = ventaQ.rows[0];
+
+    if (venta.estado_venta !== "PENDIENTE") {
       await client.query("ROLLBACK");
       return validationError(
-        `Solo se pueden cancelar pedidos en estado PENDIENTE. Estado actual: ${ventaQ.rows[0].estado_venta}`
+        `Solo se pueden cancelar pedidos en estado PENDIENTE. Estado actual: ${venta.estado_venta}`
+      );
+    }
+
+    // BUG FIX: usar id_bodega guardado en la venta, no inferirlo del kardex
+    const idBodega: number | null = venta.id_bodega;
+    if (!idBodega) {
+      await client.query("ROLLBACK");
+      return NextResponse.json(
+        {
+          error:
+            "Este pedido no tiene bodega registrada (fue creado antes de la migración). " +
+            "Contacta al administrador para cancelarlo manualmente.",
+        },
+        { status: 422 }
       );
     }
 
     // Obtener líneas del pedido para revertir el stock
     const detallesQ = await client.query(
-      `SELECT dv.id_producto, dv.cantidad,
-              k.id_bodega
-       FROM detalle_venta dv
-       -- Tomamos la bodega del kardex asociado a esta venta (SALIDA)
-       JOIN kardex k ON k.id_producto = dv.id_producto
-                     AND k.tipo_movimiento = 'SALIDA'
-                     AND k.descripcion LIKE $1
-       WHERE dv.id_venta = $2`,
-      [`Pedido mayorista #${idVenta}%`, idVenta]
+      `SELECT id_producto, cantidad FROM detalle_venta WHERE id_venta = $1`,
+      [idVenta]
     );
 
-    // Revertir stock en bodega y registrar ajuste en kardex
+    // Revertir stock y registrar entrada en kardex por cada línea
     for (const row of detallesQ.rows) {
       await client.query(
         `UPDATE bodega_producto
          SET cantidad_disponible = cantidad_disponible + $1,
              ultima_actualizacion = NOW()
          WHERE id_bodega = $2 AND id_producto = $3`,
-        [row.cantidad, row.id_bodega, row.id_producto]
+        [row.cantidad, idBodega, row.id_producto]
       );
 
       await client.query(
         `INSERT INTO kardex (id_bodega, id_producto, tipo_movimiento, cantidad, descripcion)
          VALUES ($1, $2, 'AJUSTE', $3, $4)`,
         [
-          row.id_bodega,
+          idBodega,
           row.id_producto,
           row.cantidad,
           `Cancelación pedido mayorista #${idVenta}`,

@@ -1,7 +1,11 @@
+// CAMBIO (Bug 3): se reemplazó isColaboradorTipo por isStaffTipo para que
+// tanto EMPLEADO como DUENO puedan registrar y consultar ventas.
+// Esto es coherente con que el dueño tiene acceso total al sistema.
+
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
-import { isColaboradorTipo } from "@/lib/roles";
+import { isStaffTipo } from "@/lib/roles";   // ← era isColaboradorTipo
 
 const ESTADOS_VENTA = ["PENDIENTE", "CONFIRMADO", "ENTREGADO", "PAGADO"] as const;
 const TIPOS_VENTA = ["MINORISTA", "MAYORISTA"] as const;
@@ -23,7 +27,7 @@ function isTipoEntrega(s: string): s is TipoEntrega {
 
 export async function GET(req: NextRequest) {
   const usuario = getUsuarioFromRequest(req);
-  if (!usuario || !isColaboradorTipo(usuario.tipo_usuario)) {
+  if (!usuario || !isStaffTipo(usuario.tipo_usuario)) {   // ← era isColaboradorTipo
     return NextResponse.json({ error: "No autorizado" }, { status: 403 });
   }
 
@@ -99,7 +103,7 @@ type LineaInput = {
 
 export async function POST(request: NextRequest) {
   const usuario = getUsuarioFromRequest(request);
-  if (!usuario || !isColaboradorTipo(usuario.tipo_usuario)) {
+  if (!usuario || !isStaffTipo(usuario.tipo_usuario)) {   // ← era isColaboradorTipo
     return NextResponse.json({ error: "No autorizado" }, { status: 403 });
   }
 
