@@ -56,9 +56,10 @@ export default function RegisterPage() {
           <Link href="/login" style={{ color: "var(--muted)", fontSize: "0.85rem", display: "flex", alignItems: "center", gap: "0.3rem", marginBottom: "1.5rem" }}>
             ← Volver al inicio de sesión
           </Link>
+          {/* FIX #11: branding corregido "🏪 Tienda San Miguel" */}
           <div style={s.logo}>
-            <span>🌱</span>
-            <span style={s.logoText}>AgroStock</span>
+            <span>🏪</span>
+            <span style={s.logoText}>Tienda San Miguel</span>
           </div>
           <h1 style={s.title}>Crear cuenta</h1>
           <p style={s.sub}>Regístrate como comprador para realizar pedidos</p>
