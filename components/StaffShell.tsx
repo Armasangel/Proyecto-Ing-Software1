@@ -20,6 +20,7 @@ const NAV = [
   { href: "/precios", icon: "💲", label: "Precios" },
   { href: "/facturacion", icon: "🧮", label: "Facturación" },
   { href: "/reportes", icon: "📊", label: "Reportes" },
+  { href: "/proveedores", icon: "🏭", label: "Proveedores" },
 ];
 
 /** Activa un ítem solo si coincide la ruta; si hay un enlace más específico en el nav (ej. /inventario/entrada), no resalta el padre. */
