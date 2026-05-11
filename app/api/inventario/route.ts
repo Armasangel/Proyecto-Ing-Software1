@@ -1,9 +1,13 @@
+
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { isStaffTipo } from "@/lib/roles";
 import { apiError, unauthorizedError } from "@/lib/api-error";
 
+/** @deprecated Usar /api/productos para metadatos de producto.
+ *  Este endpoint no tiene consumidores activos en el front.
+ *  Candidato a eliminación en el siguiente sprint. */
 export async function GET(req: NextRequest) {
   const usuario = getUsuarioFromRequest(req);
   if (!usuario || !isStaffTipo(usuario.tipo_usuario)) {
