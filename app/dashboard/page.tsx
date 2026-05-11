@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { StaffShell } from "@/components/StaffShell";
 import { useStaffSession } from "@/hooks/useStaffSession";
+import { isDuenoTipo } from "@/lib/roles";
 
 export default function DashboardPage() {
   const usuario = useStaffSession();
@@ -27,6 +28,26 @@ export default function DashboardPage() {
       <div style={{ padding: "2rem", color: "var(--muted)" }}>Cargando…</div>
     );
   }
+
+  const quickActions = useMemo(() => {
+    const dueno = isDuenoTipo(usuario.tipo_usuario);
+    const base = [
+      { href: "/productos", icon: "🌿", label: "Productos" },
+      { href: "/ventas", icon: "🧾", label: "Ventas" },
+      { href: "/reportes", icon: "📊", label: "Reportes" },
+    ];
+
+    if (dueno) {
+      return [
+        { href: "/gestion-inventario", icon: "🏭", label: "Gestión inventario" },
+        { href: "/inventario", icon: "📦", label: "Inventario" },
+        { href: "/inventario/entrada", icon: "⬇", label: "Entrada stock" },
+        ...base,
+      ];
+    }
+
+    return base;
+  }, [usuario.tipo_usuario]);
 
   return (
     <StaffShell
@@ -97,13 +118,7 @@ export default function DashboardPage() {
       <div style={s.section}>
         <h2 style={s.sectionTitle}>Acciones rápidas</h2>
         <div style={s.actionsGrid}>
-          {[
-            { href: "/inventario", icon: "📦", label: "Inventario" },
-            { href: "/inventario/entrada", icon: "⬇", label: "Entrada stock" },
-            { href: "/productos", icon: "🌿", label: "Productos" },
-            { href: "/ventas", icon: "🧾", label: "Ventas" },
-            { href: "/reportes", icon: "📊", label: "Reportes" },
-          ].map((item) => (
+          {quickActions.map((item) => (
             <Link key={item.href} href={item.href} style={s.actionCard}>
               <span style={{ fontSize: "1.8rem" }}>{item.icon}</span>
               <span style={{ fontWeight: 500, color: "var(--text)" }}>

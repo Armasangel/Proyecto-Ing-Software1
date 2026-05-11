@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { StaffShell } from "@/components/StaffShell";
-import { useStaffSession } from "@/hooks/useStaffSession";
-import { staffVariantFromTipo } from "@/lib/roles";
+import { useDuenoSession } from "@/hooks/useDuenoSession";
 
 interface Producto {
   id_producto: number;
@@ -25,13 +24,10 @@ interface StockActualizado {
   ultima_actualizacion: string;
 }
 
-const ACCENT = {
-  dueno: "#2d6a4f",
-  colaborador: "#4c6ef5",
-} as const;
+const ACCENT_DUENO = "#2d6a4f";
 
 export default function EntradaInventarioPage() {
-  const usuario = useStaffSession();
+  const usuario = useDuenoSession();
   const [productos, setProductos] = useState<Producto[]>([]);
   const [bodegas, setBodegas] = useState<Bodega[]>([]);
   const [loading, setLoading] = useState(false);
@@ -114,7 +110,7 @@ export default function EntradaInventarioPage() {
     return <p style={{ padding: "2rem", color: "var(--muted)" }}>Cargando…</p>;
   }
 
-  const accent = ACCENT[staffVariantFromTipo(usuario.tipo_usuario)];
+  const accent = ACCENT_DUENO;
 
   return (
     <StaffShell
