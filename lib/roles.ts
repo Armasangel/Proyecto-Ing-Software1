@@ -17,6 +17,10 @@ export function isColaboradorTipo(tipo: string): boolean {
   return tipo === TIPOS_USUARIO.EMPLEADO;
 }
 
+export function isDuenoTipo(tipo: string): boolean {
+  return tipo === TIPOS_USUARIO.DUENO;
+}
+
 export function labelRol(tipo: string): string {
   switch (tipo) {
     case TIPOS_USUARIO.DUENO:
