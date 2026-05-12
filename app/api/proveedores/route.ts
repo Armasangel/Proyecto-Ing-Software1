@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
-import { isStaffTipo, TIPOS_USUARIO } from "@/lib/roles";
+import { isStaffTipo } from "@/lib/roles";
 import { apiError, unauthorizedError } from "@/lib/api-error";
 
 export async function GET(req: NextRequest) {
@@ -13,16 +13,17 @@ export async function GET(req: NextRequest) {
   try {
     const result = await pool.query(
       `
-      SELECT id_usuario, nombre, correo, tipo_usuario
-      FROM usuario
-      WHERE tipo_usuario IN ($1, $2)
-        AND estado_usuario = TRUE
-      ORDER BY nombre
-      `,
-      [TIPOS_USUARIO.COMPRADOR, TIPOS_USUARIO.COMPRADOR_MAYOR]
+      SELECT
+        id_proveedor,
+        nombre_proveedor,
+        nit_proveedor
+      FROM proveedor
+      WHERE estado_proveedor = TRUE
+      ORDER BY nombre_proveedor
+      `
     );
-    return NextResponse.json({ clientes: result.rows });
+    return NextResponse.json({ proveedores: result.rows });
   } catch (error) {
-    return apiError("CLIENTES GET", error);
+    return apiError("PROVEEDORES GET", error);
   }
 }
