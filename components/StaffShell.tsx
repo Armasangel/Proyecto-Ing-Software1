@@ -12,16 +12,17 @@ export type StaffUsuario = {
 };
 
 const NAV = [
-  { href: "/dashboard", icon: "◈", label: "Dashboard" },
-  { href: "/gestion-inventario", icon: "🏭", label: "Gestión inventario" },
-  { href: "/bodegas", icon: "🏗", label: "Bodegas" },
-  { href: "/inventario", icon: "📦", label: "Inventario" },
-  { href: "/inventario/entrada", icon: "⬇", label: "Entrada stock" },
-  { href: "/productos", icon: "🌿", label: "Productos" },
-  { href: "/ventas", icon: "🧾", label: "Ventas" },
-  { href: "/precios", icon: "💲", label: "Precios" },
-  { href: "/facturacion", icon: "🧮", label: "Facturación" },
-  { href: "/reportes", icon: "📊", label: "Reportes" },
+  { href: "/dashboard", label: "Dashboard" },
+  { href: "/gestion-inventario", label: "Gestión inventario" },
+  { href: "/bodegas", label: "Bodegas" },
+  { href: "/inventario", label: "Inventario" },
+  { href: "/inventario/entrada", label: "Entrada stock" },
+  { href: "/productos", label: "Productos" },
+  { href: "/ventas", label: "Ventas" },
+  { href: "/historial-ventas", label: "Historial ventas" },
+  { href: "/precios", label: "Precios" },
+  { href: "/facturacion", label: "Facturación" },
+  { href: "/reportes", label: "Reportes" },
 ];
 
 /** Activa un ítem solo si coincide la ruta; si hay un enlace más específico en el nav (ej. /inventario/entrada), no resalta el padre. */
@@ -73,7 +74,8 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
     if (item.href === "/gestion-inventario" ||
         item.href === "/inventario" ||
         item.href === "/inventario/entrada" ||
-        item.href === "/bodegas"
+        item.href === "/bodegas" ||
+        item.href === "/historial-ventas"
       ) {
       return isDuenoTipo(usuario.tipo_usuario);
     }
@@ -130,7 +132,6 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
                       : {}),
                   }}
                 >
-                  <span style={s.navIcon}>{item.icon}</span>
                   <span>{item.label}</span>
                 </Link>
               );
