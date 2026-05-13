@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { TIPOS_USUARIO, postLoginPath } from "@/lib/roles";
 
-// Tipos
+// Tipos 
 
 type Usuario = {
   id_usuario: number;
@@ -94,7 +94,7 @@ function EstadoBadge({ estado }: { estado: string }) {
   );
 }
 
-// Componente principal
+// Componente principal 
 
 export default function PedidosMayoristaPage() {
   const router = useRouter();
@@ -138,7 +138,7 @@ export default function PedidosMayoristaPage() {
   // Toast
   const [toast, setToast] = useState<{ msg: string; tipo: "ok" | "err" } | null>(null);
 
-  // Inicialización: verificar sesión
+  // Inicialización: verificar sesión 
   useEffect(() => {
     fetch("/api/sesion")
       .then((r) => r.json())
@@ -163,7 +163,7 @@ export default function PedidosMayoristaPage() {
       .then((d) => setBodegas(d.bodegas || []));
   }, [usuario]);
 
-  // Cargar pedidos con filtros
+  // Cargar pedidos con filtros 
   const cargarPedidos = useCallback(async (overridePage?: number) => {
     setLoadingLista(true);
     const page = overridePage ?? filtroPage;
@@ -190,7 +190,7 @@ export default function PedidosMayoristaPage() {
     if (usuario) cargarPedidos();
   }, [usuario, cargarPedidos]);
 
-  // Helpers
+  // Helpers 
   const showToast = (msg: string, tipo: "ok" | "err") => {
     setToast({ msg, tipo });
     setTimeout(() => setToast(null), 3500);
@@ -211,7 +211,7 @@ export default function PedidosMayoristaPage() {
     }, 0);
   }, [lineas]);
 
-  // Filtros submit
+  // Filtros submit 
   function aplicarFiltros(e: React.FormEvent) {
     e.preventDefault();
     setFiltroPage(1);
@@ -228,7 +228,7 @@ export default function PedidosMayoristaPage() {
     setTimeout(() => cargarPedidos(1), 0);
   }
 
-  // Crear pedido
+  // Crear pedido 
   async function handleCrearPedido() {
     setFormError("");
     const lineasValidas = lineas.filter(

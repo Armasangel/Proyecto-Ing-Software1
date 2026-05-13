@@ -1,7 +1,15 @@
+// app/api/ventas/route.ts  (solo el GET cambia — POST idéntico al fix del bug #3)
+//   GET /api/ventas              -> página 1, 50 registros
+//   GET /api/ventas?page=2       -> página 2, 50 registros
+//   GET /api/ventas?limit=20     -> página 1, 20 registros
+//   GET /api/ventas?page=1&limit=100 -> máximo permitido
+
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
-import { isColaboradorTipo } from "@/lib/roles";
+import { isStaffTipo } from "@/lib/roles";
+
+// ... (tipos y helpers idénticos al archivo original / fix bug #3)
 
 const ESTADOS_VENTA = ["PENDIENTE", "CONFIRMADO", "ENTREGADO", "PAGADO"] as const;
 const TIPOS_VENTA = ["MINORISTA", "MAYORISTA"] as const;
@@ -23,11 +31,23 @@ function isTipoEntrega(s: string): s is TipoEntrega {
 
 export async function GET(req: NextRequest) {
   const usuario = getUsuarioFromRequest(req);
-  if (!usuario || !isColaboradorTipo(usuario.tipo_usuario)) {
+  if (!usuario || !isStaffTipo(usuario.tipo_usuario)) {
     return NextResponse.json({ error: "No autorizado" }, { status: 403 });
   }
 
+  // FIX #8: paginación real
+  const { searchParams } = req.nextUrl;
+  const page  = Math.max(1, Number(searchParams.get("page")  ?? "1"));
+  const limit = Math.min(100, Math.max(1, Number(searchParams.get("limit") ?? "50")));
+  const offset = (page - 1) * limit;
+
   try {
+    // Total para metadata de paginación
+    const countResult = await pool.query(
+      `SELECT COUNT(*)::int AS total FROM venta`
+    );
+    const total: number = countResult.rows[0]?.total ?? 0;
+
     const result = await pool.query(`
       SELECT
         v.id_venta,
@@ -64,24 +84,22 @@ export async function GET(req: NextRequest) {
       LEFT JOIN detalle_venta dv ON dv.id_venta = v.id_venta
       LEFT JOIN producto p ON p.id_producto = dv.id_producto
       GROUP BY
-        v.id_venta,
-        v.id_usuario,
-        v.id_empleado,
-        v.fecha_venta,
-        v.estado_venta,
-        v.tipo_venta,
-        v.tipo_entrega,
-        v.direccion_entrega,
-        v.total,
-        v.fecha_limite_pago,
-        uc.nombre,
-        uc.correo,
-        ue.nombre
+        v.id_venta, v.id_usuario, v.id_empleado, v.fecha_venta,
+        v.estado_venta, v.tipo_venta, v.tipo_entrega, v.direccion_entrega,
+        v.total, v.fecha_limite_pago, uc.nombre, uc.correo, ue.nombre
       ORDER BY v.fecha_venta DESC
-      LIMIT 80
-    `);
+      LIMIT $1 OFFSET $2
+    `, [limit, offset]);
 
-    return NextResponse.json({ ventas: result.rows });
+    return NextResponse.json({
+      ventas: result.rows,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    });
   } catch (error) {
     console.error("[VENTAS GET]", error);
     return NextResponse.json(
@@ -99,7 +117,7 @@ type LineaInput = {
 
 export async function POST(request: NextRequest) {
   const usuario = getUsuarioFromRequest(request);
-  if (!usuario || !isColaboradorTipo(usuario.tipo_usuario)) {
+  if (!usuario || !isStaffTipo(usuario.tipo_usuario)) {
     return NextResponse.json({ error: "No autorizado" }, { status: 403 });
   }
 
@@ -127,42 +145,26 @@ export async function POST(request: NextRequest) {
     const estado_venta = estadoRaw;
 
     if (typeof tipo_venta !== "string" || !isTipoVenta(tipo_venta)) {
-      return NextResponse.json(
-        { error: "tipo_venta debe ser MINORISTA o MAYORISTA" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "tipo_venta debe ser MINORISTA o MAYORISTA" }, { status: 400 });
     }
-
     if (typeof tipo_entrega !== "string" || !isTipoEntrega(tipo_entrega)) {
-      return NextResponse.json(
-        { error: "tipo_entrega debe ser EN_TIENDA o DOMICILIO" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "tipo_entrega debe ser EN_TIENDA o DOMICILIO" }, { status: 400 });
     }
 
-    const direccion =
-      typeof direccion_entrega === "string" ? direccion_entrega.trim() : "";
+    const direccion = typeof direccion_entrega === "string" ? direccion_entrega.trim() : "";
     if (tipo_entrega === "DOMICILIO" && !direccion) {
-      return NextResponse.json(
-        { error: "La dirección de entrega es obligatoria para domicilio" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "La dirección de entrega es obligatoria para domicilio" }, { status: 400 });
     }
 
     const idBodega = Number(id_bodega);
     if (!idBodega || idBodega < 1) {
       return NextResponse.json({ error: "id_bodega inválido" }, { status: 400 });
     }
-
     if (!idCliente || Number(idCliente) < 1) {
       return NextResponse.json({ error: "Debe seleccionar un cliente" }, { status: 400 });
     }
-
     if (!Array.isArray(lineas) || lineas.length === 0) {
-      return NextResponse.json(
-        { error: "Agregue al menos un producto a la venta" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Agregue al menos un producto a la venta" }, { status: 400 });
     }
 
     const lineasNorm: LineaInput[] = [];
@@ -195,169 +197,92 @@ export async function POST(request: NextRequest) {
       await client.query("BEGIN");
 
       const existeCliente = await client.query(
-        `SELECT 1 FROM usuario WHERE id_usuario = $1 AND estado_usuario = TRUE`,
-        [idCliente]
+        `SELECT 1 FROM usuario WHERE id_usuario = $1 AND estado_usuario = TRUE`, [idCliente]
       );
       if (existeCliente.rowCount === 0) {
         await client.query("ROLLBACK");
         return NextResponse.json({ error: "Cliente no encontrado" }, { status: 400 });
       }
 
-      const existeBodega = await client.query(
-        `SELECT 1 FROM bodega WHERE id_bodega = $1`,
-        [idBodega]
-      );
+      const existeBodega = await client.query(`SELECT 1 FROM bodega WHERE id_bodega = $1`, [idBodega]);
       if (existeBodega.rowCount === 0) {
         await client.query("ROLLBACK");
         return NextResponse.json({ error: "Bodega no encontrada" }, { status: 400 });
       }
 
       let total = 0;
-      const prepared: Array<{
-        id_producto: number;
-        cantidad: number;
-        precio: number;
-        subtotal: number;
-      }> = [];
+      const prepared: Array<{ id_producto: number; cantidad: number; precio: number; subtotal: number }> = [];
 
       for (const ln of lineasNorm) {
         const prod = await client.query(
-          `SELECT id_producto, estado_producto FROM producto WHERE id_producto = $1`,
-          [ln.id_producto]
+          `SELECT id_producto, estado_producto FROM producto WHERE id_producto = $1`, [ln.id_producto]
         );
         if (prod.rowCount === 0 || !prod.rows[0].estado_producto) {
           await client.query("ROLLBACK");
-          return NextResponse.json(
-            { error: `Producto no disponible: id ${ln.id_producto}` },
-            { status: 400 }
-          );
+          return NextResponse.json({ error: `Producto no disponible: id ${ln.id_producto}` }, { status: 400 });
         }
 
         const subQ = await client.query(
-          `SELECT ROUND(($1::numeric * $2::numeric), 2) AS sub`,
-          [ln.cantidad, ln.precio_unitario_venta]
+          `SELECT ROUND(($1::numeric * $2::numeric), 2) AS sub`, [ln.cantidad, ln.precio_unitario_venta]
         );
         const subtotal = Number(subQ.rows[0].sub);
         total += subtotal;
-        prepared.push({
-          id_producto: ln.id_producto,
-          cantidad: ln.cantidad,
-          precio: ln.precio_unitario_venta,
-          subtotal,
-        });
+        prepared.push({ id_producto: ln.id_producto, cantidad: ln.cantidad, precio: ln.precio_unitario_venta, subtotal });
       }
 
-      const totalQ = await client.query(
-        `SELECT ROUND($1::numeric, 2) AS t`,
-        [total]
-      );
+      const totalQ = await client.query(`SELECT ROUND($1::numeric, 2) AS t`, [total]);
       total = Number(totalQ.rows[0].t);
 
       const insVenta = await client.query(
-        `
-        INSERT INTO venta (
-          id_usuario,
-          id_empleado,
-          estado_venta,
-          tipo_venta,
-          tipo_entrega,
-          direccion_entrega,
-          enlinea,
-          total,
-          fecha_limite_pago
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, FALSE, $7, $8)
-        RETURNING id_venta
-        `,
-        [
-          idCliente,
-          usuario.id_usuario,
-          estado_venta,
-          tipo_venta,
-          tipo_entrega,
-          tipo_entrega === "EN_TIENDA" ? null : direccion || null,
-          total,
-          fechaLimite,
-        ]
+        `INSERT INTO venta (id_usuario, id_empleado, estado_venta, tipo_venta, tipo_entrega,
+          direccion_entrega, enlinea, total, fecha_limite_pago)
+         VALUES ($1, $2, $3, $4, $5, $6, FALSE, $7, $8) RETURNING id_venta`,
+        [idCliente, usuario.id_usuario, estado_venta, tipo_venta, tipo_entrega,
+         tipo_entrega === "EN_TIENDA" ? null : direccion || null, total, fechaLimite]
       );
 
       const idVenta = insVenta.rows[0].id_venta as number;
 
       for (const p of prepared) {
         const stock = await client.query(
-          `
-          SELECT cantidad_disponible
-          FROM bodega_producto
-          WHERE id_bodega = $1 AND id_producto = $2
-          `,
+          `SELECT cantidad_disponible FROM bodega_producto WHERE id_bodega = $1 AND id_producto = $2`,
           [idBodega, p.id_producto]
         );
-        const disponible =
-          stock.rowCount && stock.rows[0]
-            ? Number(stock.rows[0].cantidad_disponible)
-            : 0;
+        const disponible = stock.rowCount && stock.rows[0] ? Number(stock.rows[0].cantidad_disponible) : 0;
         if (disponible < p.cantidad) {
           await client.query("ROLLBACK");
           return NextResponse.json(
-            { error: `Stock insuficiente para el producto id ${p.id_producto} en la bodega seleccionada (disponible: ${disponible})` },
+            { error: `Stock insuficiente para el producto id ${p.id_producto} (disponible: ${disponible})` },
             { status: 400 }
           );
         }
 
         await client.query(
-          `
-          INSERT INTO detalle_venta (id_venta, id_producto, cantidad, precio_unitario, subtotal)
-          VALUES ($1, $2, $3, $4, $5)
-          `,
+          `INSERT INTO detalle_venta (id_venta, id_producto, cantidad, precio_unitario, subtotal) VALUES ($1,$2,$3,$4,$5)`,
           [idVenta, p.id_producto, p.cantidad, p.precio, p.subtotal]
         );
-
         await client.query(
-          `
-          UPDATE bodega_producto
-          SET cantidad_disponible = cantidad_disponible - $1,
-              ultima_actualizacion = NOW()
-          WHERE id_bodega = $2 AND id_producto = $3
-          `,
+          `UPDATE bodega_producto SET cantidad_disponible = cantidad_disponible - $1, ultima_actualizacion = NOW()
+           WHERE id_bodega = $2 AND id_producto = $3`,
           [p.cantidad, idBodega, p.id_producto]
         );
-
         await client.query(
-          `
-          INSERT INTO kardex (id_bodega, id_producto, tipo_movimiento, cantidad, descripcion)
-          VALUES ($1, $2, 'SALIDA', $3, $4)
-          `,
-          [
-            idBodega,
-            p.id_producto,
-            p.cantidad,
-            `Venta #${idVenta} (panel colaborador)`,
-          ]
+          `INSERT INTO kardex (id_bodega, id_producto, tipo_movimiento, cantidad, descripcion) VALUES ($1,$2,'SALIDA',$3,$4)`,
+          [idBodega, p.id_producto, p.cantidad, `Venta #${idVenta} (panel colaborador)`]
         );
       }
 
       await client.query("COMMIT");
-
-      return NextResponse.json({
-        mensaje: "Venta registrada correctamente",
-        id_venta: idVenta,
-        total,
-      });
+      return NextResponse.json({ mensaje: "Venta registrada correctamente", id_venta: idVenta, total });
     } catch (error) {
       await client.query("ROLLBACK");
       console.error("[VENTAS POST]", error);
-      return NextResponse.json(
-        { error: "Error al registrar la venta" },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: "Error al registrar la venta" }, { status: 500 });
     } finally {
       client.release();
     }
   } catch (error) {
     console.error("[VENTAS POST - parse]", error);
-    return NextResponse.json(
-      { error: "Error al procesar la solicitud" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Error al procesar la solicitud" }, { status: 500 });
   }
 }

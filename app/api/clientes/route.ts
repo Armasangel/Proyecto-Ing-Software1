@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
-import { isColaboradorTipo, TIPOS_USUARIO } from "@/lib/roles";
+import { isStaffTipo, TIPOS_USUARIO } from "@/lib/roles";
 import { apiError, unauthorizedError } from "@/lib/api-error";
 
 export async function GET(req: NextRequest) {
   const usuario = getUsuarioFromRequest(req);
-  if (!usuario || !isColaboradorTipo(usuario.tipo_usuario)) {
+  if (!usuario || !isStaffTipo(usuario.tipo_usuario)) {
     return unauthorizedError();
   }
 
