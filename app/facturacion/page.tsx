@@ -1,4 +1,3 @@
-// app/api/facturacion/route.ts
 "use client";
 
 import { useEffect, useState } from "react";
