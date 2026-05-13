@@ -8,6 +8,7 @@ import { isDuenoTipo } from "@/lib/roles";
 
 export default function DashboardPage() {
   const usuario = useStaffSession();
+
   const [stats, setStats] = useState({
     productos: 0,
     ventas: 0,
@@ -17,20 +18,22 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!usuario) return;
+
     fetch("/api/stats")
       .then((r) => r.json())
-      .then((d) => d.stats && setStats(d.stats))
+      .then((d) => {
+        if (d.stats) {
+          setStats(d.stats);
+        }
+      })
       .catch(() => {});
   }, [usuario]);
 
-  if (!usuario) {
-    return (
-      <div style={{ padding: "2rem", color: "var(--muted)" }}>Cargando…</div>
-    );
-  }
-
   const quickActions = useMemo(() => {
+    if (!usuario) return [];
+
     const dueno = isDuenoTipo(usuario.tipo_usuario);
+
     const base = [
       { href: "/productos", icon: "🌿", label: "Productos" },
       { href: "/ventas", icon: "🧾", label: "Ventas" },
@@ -39,21 +42,43 @@ export default function DashboardPage() {
 
     if (dueno) {
       return [
-        { href: "/gestion-inventario", icon: "🏭", label: "Gestión inventario" },
-        { href: "/inventario", icon: "📦", label: "Inventario" },
-        { href: "/inventario/entrada", icon: "⬇", label: "Entrada stock" },
+        {
+          href: "/gestion-inventario",
+          icon: "🏭",
+          label: "Gestión inventario",
+        },
+        {
+          href: "/inventario",
+          icon: "📦",
+          label: "Inventario",
+        },
+        {
+          href: "/inventario/entrada",
+          icon: "⬇",
+          label: "Entrada stock",
+        },
         ...base,
       ];
     }
 
     return base;
-  }, [usuario.tipo_usuario]);
+  }, [usuario]);
+
+  if (!usuario) {
+    return (
+      <div style={{ padding: "2rem", color: "var(--muted)" }}>
+        Cargando…
+      </div>
+    );
+  }
 
   return (
     <StaffShell
       usuario={usuario}
       title="Dashboard"
-      subtitle={`Hola, ${usuario.nombre.split(" ")[0]} — ${new Date().toLocaleDateString("es-GT", {
+      subtitle={`Hola, ${
+        usuario.nombre.split(" ")[0]
+      } — ${new Date().toLocaleDateString("es-GT", {
         weekday: "long",
         day: "numeric",
         month: "long",
@@ -90,6 +115,7 @@ export default function DashboardPage() {
             <div style={{ ...s.statIcon, background: stat.color + "22" }}>
               <span style={{ fontSize: "1.3rem" }}>{stat.icon}</span>
             </div>
+
             <div>
               <div
                 style={{
@@ -101,6 +127,7 @@ export default function DashboardPage() {
               >
                 {stat.value}
               </div>
+
               <div
                 style={{
                   fontSize: "0.8rem",
@@ -117,10 +144,12 @@ export default function DashboardPage() {
 
       <div style={s.section}>
         <h2 style={s.sectionTitle}>Acciones rápidas</h2>
+
         <div style={s.actionsGrid}>
           {quickActions.map((item) => (
             <Link key={item.href} href={item.href} style={s.actionCard}>
               <span style={{ fontSize: "1.8rem" }}>{item.icon}</span>
+
               <span style={{ fontWeight: 500, color: "var(--text)" }}>
                 {item.label}
               </span>
@@ -139,6 +168,7 @@ const s: Record<string, React.CSSProperties> = {
     gap: "1rem",
     marginBottom: "2rem",
   },
+
   statCard: {
     background: "var(--surface)",
     border: "1px solid var(--border)",
@@ -148,6 +178,7 @@ const s: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: "1rem",
   },
+
   statIcon: {
     width: 44,
     height: 44,
@@ -156,7 +187,11 @@ const s: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "center",
   },
-  section: { marginBottom: "2rem" },
+
+  section: {
+    marginBottom: "2rem",
+  },
+
   sectionTitle: {
     fontFamily: "var(--font-head)",
     fontSize: "1rem",
@@ -166,11 +201,13 @@ const s: Record<string, React.CSSProperties> = {
     textTransform: "uppercase",
     letterSpacing: "0.05em",
   },
+
   actionsGrid: {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
     gap: "0.75rem",
   },
+
   actionCard: {
     background: "var(--surface)",
     border: "1px solid var(--border)",
