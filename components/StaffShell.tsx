@@ -74,7 +74,8 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
     if (item.href === "/gestion-inventario" ||
         item.href === "/inventario" ||
         item.href === "/inventario/entrada" ||
-        item.href === "/bodegas"
+        item.href === "/bodegas" ||
+        item.href === "/historial-ventas"
       ) {
       return isDuenoTipo(usuario.tipo_usuario);
     }
@@ -131,7 +132,6 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
                       : {}),
                   }}
                 >
-                  <span style={s.navIcon}>{item.icon}</span>
                   <span>{item.label}</span>
                 </Link>
               );

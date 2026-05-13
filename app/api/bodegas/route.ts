@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
-import { isStaffTipo } from "@/lib/roles";
+import { isDuenoTipo, isStaffTipo } from "@/lib/roles";
 import { apiError, unauthorizedError } from "@/lib/api-error";
 
 export async function GET(req: NextRequest) {
