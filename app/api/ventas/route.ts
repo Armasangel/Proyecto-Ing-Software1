@@ -40,6 +40,7 @@ export async function GET(req: NextRequest) {
         v.direccion_entrega,
         v.total,
         v.fecha_limite_pago,
+        v.enlinea,
         uc.nombre AS nombre_cliente,
         uc.correo AS correo_cliente,
         ue.nombre AS nombre_colaborador,
@@ -74,6 +75,7 @@ export async function GET(req: NextRequest) {
         v.direccion_entrega,
         v.total,
         v.fecha_limite_pago,
+        v.enlinea,
         uc.nombre,
         uc.correo,
         ue.nombre

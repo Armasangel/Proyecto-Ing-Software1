@@ -56,6 +56,7 @@ type VentaListada = {
   nombre_cliente: string;
   correo_cliente: string;
   nombre_colaborador: string | null;
+  enlinea: boolean;
   productos: ProductoVentaRow[];
 };
 
@@ -91,6 +92,10 @@ export default function VentasPage() {
   const [loadingSubmit, setLoadingSubmit] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
+
+  const [filtroEstado, setFiltroEstado] = useState<string>("TODOS");
+  const [actualizandoId, setActualizandoId] = useState<number | null>(null);
+  const [okEstado, setOkEstado] = useState<string | null>(null);
 
   const [idCliente, setIdCliente] = useState("");
   const [estadoPago, setEstadoPago] = useState<string>("PAGADO");
@@ -264,6 +269,31 @@ export default function VentasPage() {
       setLoadingSubmit(false);
     }
   }
+  
+
+  async function cambiarEstado(id_venta: number, nuevoEstado: string) {
+  setActualizandoId(id_venta);
+  setOkEstado(null);
+  try {
+    const res = await fetch(`/api/ventas/${id_venta}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ estado_venta: nuevoEstado }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setError(data.error || "Error al actualizar estado");
+    } else {
+      setOkEstado(`Pedido #${id_venta} actualizado a ${nuevoEstado}`);
+      await cargarVentas();
+    }
+  } catch {
+    setError("No se pudo conectar con el servidor");
+  } finally {
+    setActualizandoId(null);
+  }
+}
+
 
   const puedeEnviar =
     idCliente &&
@@ -632,6 +662,175 @@ export default function VentasPage() {
         </div>
 
         <div>
+
+          <div>
+  <h2
+    style={{
+      fontFamily: "var(--font-head)",
+      fontSize: "1.15rem",
+      marginBottom: "0.75rem",
+      color: accent,
+    }}
+  >
+    Pedidos en línea
+  </h2>
+  <p style={{ fontSize: "0.88rem", color: "var(--muted)", marginBottom: "1rem" }}>
+    Pedidos realizados por clientes desde la tienda en línea. Cambia su estado para
+    confirmar, marcar como entregado o pagado.
+  </p>
+
+  {/* DEV-44: Filtros por estado */}
+  <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem", flexWrap: "wrap" }}>
+    {["TODOS", "PENDIENTE", "CONFIRMADO", "ENTREGADO", "PAGADO"].map((e) => (
+      <button
+        key={e}
+        type="button"
+        onClick={() => setFiltroEstado(e)}
+        style={{
+          padding: "0.4rem 0.9rem",
+          borderRadius: 20,
+          border: `1px solid ${filtroEstado === e ? accent : "var(--border)"}`,
+          background: filtroEstado === e ? accent : "var(--surface2)",
+          color: filtroEstado === e ? "#fff" : "var(--muted)",
+          fontWeight: filtroEstado === e ? 600 : 400,
+          fontSize: "0.82rem",
+          cursor: "pointer",
+        }}
+      >
+        {e === "TODOS" ? "Todos" : e.charAt(0) + e.slice(1).toLowerCase()}
+      </button>
+    ))}
+  </div>
+
+  {okEstado && (
+    <div
+      style={{
+        marginBottom: "1rem",
+        background: "rgba(63,185,80,.12)",
+        border: "1px solid rgba(63,185,80,.35)",
+        borderRadius: 8,
+        padding: "0.65rem 1rem",
+        color: "var(--green)",
+        fontSize: "0.88rem",
+      }}
+    >
+      ✅ {okEstado}
+    </div>
+  )}
+
+  {/* DEV-45: Vista de pedidos online */}
+  <div
+    style={{
+      overflowX: "auto",
+      border: "1px solid var(--border)",
+      borderRadius: 12,
+      background: "var(--surface)",
+    }}
+  >
+    <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 780 }}>
+      <thead>
+        <tr style={{ background: accent, color: "#fff" }}>
+          <th style={{ padding: "0.65rem 0.85rem", textAlign: "left", fontSize: "0.82rem", fontWeight: 600 }}>#</th>
+          <th style={{ padding: "0.65rem 0.85rem", textAlign: "left", fontSize: "0.82rem", fontWeight: 600 }}>Fecha</th>
+          <th style={{ padding: "0.65rem 0.85rem", textAlign: "left", fontSize: "0.82rem", fontWeight: 600 }}>Cliente</th>
+          <th style={{ padding: "0.65rem 0.85rem", textAlign: "left", fontSize: "0.82rem", fontWeight: 600 }}>Estado</th>
+          <th style={{ padding: "0.65rem 0.85rem", textAlign: "right", fontSize: "0.82rem", fontWeight: 600 }}>Total</th>
+          <th style={{ padding: "0.65rem 0.85rem", textAlign: "left", fontSize: "0.82rem", fontWeight: 600 }}>Fecha límite</th>
+          <th style={{ padding: "0.65rem 0.85rem", textAlign: "left", fontSize: "0.82rem", fontWeight: 600 }}>Cambiar estado</th>
+        </tr>
+      </thead>
+      <tbody>
+        {ventas
+          .filter((v) => v.enlinea ?? false) // solo pedidos online (DEV-23)
+          .filter((v) => filtroEstado === "TODOS" || v.estado_venta === filtroEstado) // DEV-44
+          .map((v, i) => (
+            <tr
+              key={v.id_venta}
+              style={{
+                background: i % 2 === 0 ? "var(--surface2)" : "var(--surface)",
+                verticalAlign: "middle",
+              }}
+            >
+              <td style={{ padding: "0.6rem 0.85rem", fontSize: "0.88rem", borderBottom: "1px solid var(--border)" }}>
+                {v.id_venta}
+              </td>
+              <td style={{ padding: "0.6rem 0.85rem", fontSize: "0.88rem", borderBottom: "1px solid var(--border)" }}>
+                {new Date(v.fecha_venta).toLocaleString("es-GT", {
+                  dateStyle: "short",
+                  timeStyle: "short",
+                })}
+              </td>
+              <td style={{ padding: "0.6rem 0.85rem", fontSize: "0.88rem", borderBottom: "1px solid var(--border)" }}>
+                <div style={{ fontWeight: 500 }}>{v.nombre_cliente}</div>
+                <div style={{ fontSize: "0.78rem", color: "var(--muted)" }}>{v.correo_cliente}</div>
+              </td>
+              <td style={{ padding: "0.6rem 0.85rem", fontSize: "0.88rem", borderBottom: "1px solid var(--border)" }}>
+                <span
+                  style={{
+                    padding: "0.2rem 0.6rem",
+                    borderRadius: 20,
+                    fontSize: "0.78rem",
+                    fontWeight: 600,
+                    background:
+                      v.estado_venta === "PAGADO" ? "rgba(63,185,80,.15)" :
+                      v.estado_venta === "PENDIENTE" ? "rgba(255,165,0,.15)" :
+                      v.estado_venta === "CONFIRMADO" ? "rgba(76,110,245,.15)" :
+                      "rgba(100,100,100,.15)",
+                    color:
+                      v.estado_venta === "PAGADO" ? "var(--green)" :
+                      v.estado_venta === "PENDIENTE" ? "#e65100" :
+                      v.estado_venta === "CONFIRMADO" ? accent :
+                      "var(--muted)",
+                  }}
+                >
+                  {v.estado_venta}
+                </span>
+              </td>
+              <td style={{ padding: "0.6rem 0.85rem", fontSize: "0.88rem", borderBottom: "1px solid var(--border)", textAlign: "right", fontWeight: 600 }}>
+                Q{Number(v.total).toFixed(2)}
+              </td>
+              <td style={{ padding: "0.6rem 0.85rem", fontSize: "0.82rem", borderBottom: "1px solid var(--border)", color: "var(--muted)" }}>
+                {v.fecha_limite_pago
+                  ? new Date(v.fecha_limite_pago).toLocaleDateString("es-GT")
+                  : "—"}
+              </td>
+              <td style={{ padding: "0.6rem 0.85rem", borderBottom: "1px solid var(--border)" }}>
+                <select
+                  value={v.estado_venta}
+                  disabled={actualizandoId === v.id_venta}
+                  onChange={(e) => cambiarEstado(v.id_venta, e.target.value)}
+                  style={{
+                    padding: "0.4rem 0.6rem",
+                    borderRadius: 8,
+                    border: `1px solid ${accent}`,
+                    background: "var(--surface2)",
+                    color: "var(--text)",
+                    fontSize: "0.82rem",
+                    cursor: "pointer",
+                  }}
+                >
+                  <option value="PENDIENTE">Pendiente</option>
+                  <option value="CONFIRMADO">Confirmado</option>
+                  <option value="ENTREGADO">Entregado</option>
+                  <option value="PAGADO">Pagado</option>
+                </select>
+                {actualizandoId === v.id_venta && (
+                  <span style={{ fontSize: "0.78rem", color: "var(--muted)", marginLeft: "0.5rem" }}>
+                    Guardando…
+                  </span>
+                )}
+              </td>
+            </tr>
+          ))}
+      </tbody>
+    </table>
+    {ventas.filter((v) => v.enlinea ?? false).length === 0 && (
+      <p style={{ padding: "1.25rem", color: "var(--muted)", margin: 0 }}>
+        No hay pedidos en línea aún.
+      </p>
+    )}
+  </div>
+</div>
           <h2
             style={{
               fontFamily: "var(--font-head)",
