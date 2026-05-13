@@ -1,4 +1,4 @@
-/* app/globals.css */
+/* app/globals.css — Nueva paleta Tienda San Miguel */
 
 *, *::before, *::after {
   box-sizing: border-box;
@@ -7,21 +7,48 @@
 }
 
 :root {
-  --bg:        #0d1117;
-  --surface:   #161b22;
-  --surface2:  #21262d;
-  --border:    #30363d;
-  --accent:    #e8a045;
-  --accent2:   #c67c1a;
-  --green:     #3fb950;
-  --red:       #f85149;
-  --blue:      #58a6ff;
-  --text:      #e6edf3;
-  --muted:     #8b949e;
+  /* ── Paleta principal ── */
+  --color-navy:      #201658;   /* Azul marino profundo */
+  --color-blue:      #1D24CA;   /* Azul royal */
+  --color-sky:       #98ABEE;   /* Azul cielo / acento suave */
+  --color-cream:     #F9E8C9;   /* Crema / warm accent */
+
+  /* ── Superficies ── */
+  --bg:        #0F0E2E;          /* Fondo principal: navy oscuro */
+  --surface:   #1A1850;          /* Cards y sidebars */
+  --surface2:  #241E6A;          /* Input backgrounds, hover states */
+  --surface3:  #2E2880;          /* Hover elevado */
+
+  /* ── Bordes ── */
+  --border:    rgba(152, 171, 238, 0.18);
+  --border2:   rgba(152, 171, 238, 0.32);
+
+  /* ── Texto ── */
+  --text:      #F0EFFF;
+  --muted:     #98ABEE;
+  --muted2:    rgba(152, 171, 238, 0.55);
+
+  /* ── Accentos ── */
+  --accent:    #F9E8C9;          /* Crema — CTAs principales */
+  --accent2:   #e8c98a;          /* Crema oscuro — hover */
+  --accent-text: #201658;        /* Texto sobre crema */
+
+  --blue-bright: #4D5FE8;        /* Azul vibrante para charts */
+  --sky:         #98ABEE;
+
+  /* ── Semánticos ── */
+  --green:     #52c788;
+  --red:       #f87171;
+  --amber:     #fbbf24;
+
+  /* ── Tipografía ── */
   --font-head: 'Syne', sans-serif;
   --font-body: 'DM Sans', sans-serif;
+
+  /* ── Layout ── */
   --radius:    10px;
-  --shadow:    0 4px 24px rgba(0, 0, 0, .45);
+  --shadow:    0 4px 32px rgba(0, 0, 0, .5);
+  --shadow-sm: 0 2px 12px rgba(0, 0, 0, .3);
 }
 
 body {
@@ -34,14 +61,16 @@ body {
 }
 
 a {
-  color: var(--accent);
+  color: var(--sky);
   text-decoration: none;
 }
 
 a:hover {
-  text-decoration: underline;
+  color: var(--accent);
+  text-decoration: none;
 }
 
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb { background: var(--surface2); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--surface3); }

@@ -25,7 +25,6 @@ const NAV = [
   { href: "/proveedores", icon: "🏭", label: "Proveedores" },
 ];
 
-/** Activa un ítem solo si coincide la ruta; si hay un enlace más específico en el nav (ej. /inventario/entrada), no resalta el padre. */
 function isStaffNavActive(
   pathname: string,
   href: string,
@@ -42,18 +41,27 @@ function isStaffNavActive(
   );
 }
 
+/* ── Temas por rol ── */
 const THEMES = {
   dueno: {
-    accent: "#2d6a4f",
-    accentSoft: "rgba(45, 106, 79, 0.35)",
-    logoTint: "#52b788",
-    sidebarWash: "linear-gradient(180deg, rgba(45,106,79,0.12) 0%, transparent 55%)",
+    accent:     "#F9E8C9",        /* crema */
+    accentText: "#201658",
+    highlight:  "rgba(249,232,201,0.12)",
+    highlightBorder: "rgba(249,232,201,0.25)",
+    avatarBg:   "#F9E8C9",
+    avatarText: "#201658",
+    roleLabel:  "#F9E8C9",
+    badge:      "Dueño",
   },
   colaborador: {
-    accent: "#4c6ef5",
-    accentSoft: "rgba(76, 110, 245, 0.35)",
-    logoTint: "#91a7ff",
-    sidebarWash: "linear-gradient(180deg, rgba(76,110,245,0.12) 0%, transparent 55%)",
+    accent:     "#98ABEE",        /* sky blue */
+    accentText: "#0F0E2E",
+    highlight:  "rgba(152,171,238,0.12)",
+    highlightBorder: "rgba(152,171,238,0.25)",
+    avatarBg:   "#98ABEE",
+    avatarText: "#201658",
+    roleLabel:  "#98ABEE",
+    badge:      "Colaborador",
   },
 } as const;
 
@@ -69,13 +77,15 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
   const pathname = usePathname();
   const variant = staffVariantFromTipo(usuario.tipo_usuario);
   const t = THEMES[variant];
+
   const navVisible = NAV.filter((item) => {
     if (item.href === "/ventas") return isColaboradorTipo(usuario.tipo_usuario);
-    if (item.href === "/gestion-inventario" ||
-        item.href === "/inventario" ||
-        item.href === "/inventario/entrada" ||
-        item.href === "/bodegas"
-      ) {
+    if (
+      item.href === "/gestion-inventario" ||
+      item.href === "/inventario" ||
+      item.href === "/inventario/entrada" ||
+      item.href === "/bodegas"
+    ) {
       return isDuenoTipo(usuario.tipo_usuario);
     }
     return true;
@@ -89,30 +99,33 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
 
   return (
     <div style={s.shell}>
-      <aside
-        style={{
-          ...s.sidebar,
-          backgroundImage: t.sidebarWash,
-        }}
-      >
+      {/* ── Sidebar ── */}
+      <aside style={s.sidebar}>
+        {/* Logo */}
         <div style={s.sidebarTop}>
           <Link href="/dashboard" style={{ textDecoration: "none" }}>
-            <div style={s.sidebarLogo}>
-              <span>🏪</span>
-              <span style={{ ...s.sidebarLogoText, color: t.logoTint }}>Tienda San Miguel</span>
+            <div style={s.logoWrap}>
+              <div style={s.logoIcon}>🏪</div>
+              <div>
+                <div style={s.logoText}>Tienda</div>
+                <div style={s.logoSub}>San Miguel</div>
+              </div>
             </div>
           </Link>
+
+          {/* Role badge */}
           <div
             style={{
-              fontSize: "0.72rem",
-              color: "var(--muted)",
-              marginTop: "-1rem",
-              marginBottom: "1.25rem",
-              paddingLeft: "0.15rem",
+              ...s.roleBadge,
+              background: t.highlight,
+              border: `1px solid ${t.highlightBorder}`,
+              color: t.accent,
             }}
           >
-            {variant === "dueno" ? "Panel del dueño" : "Panel del colaborador"}
+            {t.badge}
           </div>
+
+          {/* Nav */}
           <nav style={s.nav}>
             {navVisible.map((item) => {
               const active = isStaffNavActive(pathname, item.href, navHrefs);
@@ -124,11 +137,16 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
                     ...s.navLink,
                     ...(active
                       ? {
-                          background: t.accentSoft,
-                          color: t.logoTint,
-                          fontWeight: 500,
+                          background: t.highlight,
+                          borderLeft: `3px solid ${t.accent}`,
+                          color: t.accent,
+                          paddingLeft: "calc(0.75rem - 3px)",
+                          fontWeight: 600,
                         }
-                      : {}),
+                      : {
+                          borderLeft: "3px solid transparent",
+                          paddingLeft: "calc(0.75rem - 3px)",
+                        }),
                   }}
                 >
                   <span style={s.navIcon}>{item.icon}</span>
@@ -138,63 +156,61 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
             })}
           </nav>
         </div>
+
+        {/* User footer */}
         <div style={s.sidebarBottom}>
-          <div style={s.userBadge}>
+          <div style={s.userRow}>
             <div
               style={{
                 ...s.userAvatar,
-                background: t.accent,
-                color: "#fff",
+                background: t.avatarBg,
+                color: t.avatarText,
               }}
             >
               {usuario.nombre[0]}
             </div>
-            <div>
-              <div
-                style={{
-                  fontSize: "0.82rem",
-                  fontWeight: 500,
-                  color: "var(--text)",
-                }}
-              >
-                {usuario.nombre}
-              </div>
-              <div style={{ fontSize: "0.72rem", color: t.logoTint }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={s.userName}>{usuario.nombre}</div>
+              <div style={{ ...s.userRole, color: t.roleLabel }}>
                 {labelRol(usuario.tipo_usuario)}
               </div>
             </div>
           </div>
           <button type="button" onClick={handleLogout} style={s.logoutBtn}>
-            ← Salir
+            Salir
           </button>
         </div>
       </aside>
 
+      {/* ── Main content ── */}
       <main style={s.main}>
+        {/* Topbar */}
         <div style={s.topbar}>
           <div>
-            <h1 style={{ ...s.pageTitle, color: t.logoTint }}>{title}</h1>
-            {subtitle && (
-              <p style={{ color: "var(--muted)", fontSize: "0.88rem" }}>{subtitle}</p>
-            )}
+            <h1 style={{ ...s.pageTitle, color: t.accent }}>{title}</h1>
+            {subtitle && <p style={s.pageSubtitle}>{subtitle}</p>}
           </div>
         </div>
-        {children}
+        <div style={s.content}>{children}</div>
       </main>
     </div>
   );
 }
 
+/* ── Estilos ── */
 const s: Record<string, React.CSSProperties> = {
   shell: {
     display: "flex",
     minHeight: "100vh",
     fontFamily: "var(--font-body)",
+    background: "var(--bg)",
   },
+
+  /* Sidebar */
   sidebar: {
-    width: 220,
+    width: 230,
     flexShrink: 0,
-    backgroundColor: "var(--surface)",
+    background: "var(--surface)",
     borderRight: "1px solid var(--border)",
     display: "flex",
     flexDirection: "column",
@@ -202,76 +218,158 @@ const s: Record<string, React.CSSProperties> = {
     position: "sticky",
     top: 0,
     height: "100vh",
+    overflow: "hidden",
   },
-  sidebarTop: { padding: "1.5rem 1rem" },
-  sidebarLogo: {
+  sidebarTop: {
+    padding: "1.5rem 1rem 1rem",
+    display: "flex",
+    flexDirection: "column",
+    gap: "1rem",
+    flex: 1,
+    overflowY: "auto",
+  },
+  logoWrap: {
     display: "flex",
     alignItems: "center",
-    gap: "0.5rem",
-    marginBottom: "2rem",
+    gap: "0.65rem",
+    marginBottom: "0.25rem",
   },
-  sidebarLogoText: {
+  logoIcon: {
+    fontSize: "1.5rem",
+    width: 38,
+    height: 38,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "rgba(249,232,201,0.12)",
+    borderRadius: 10,
+    border: "1px solid rgba(249,232,201,0.2)",
+  },
+  logoText: {
     fontFamily: "var(--font-head)",
-    fontSize: "1.05rem",
+    fontSize: "1rem",
     fontWeight: 800,
-    lineHeight: 1.2,
+    color: "var(--text)",
+    lineHeight: 1.1,
   },
-  nav: { display: "flex", flexDirection: "column", gap: "0.2rem" },
+  logoSub: {
+    fontFamily: "var(--font-head)",
+    fontSize: "0.72rem",
+    color: "var(--muted)",
+    fontWeight: 600,
+    letterSpacing: "0.04em",
+    textTransform: "uppercase",
+  },
+  roleBadge: {
+    padding: "0.3rem 0.7rem",
+    borderRadius: 999,
+    fontSize: "0.7rem",
+    fontWeight: 700,
+    letterSpacing: "0.06em",
+    textTransform: "uppercase",
+    alignSelf: "flex-start",
+  },
+  nav: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.15rem",
+  },
   navLink: {
     display: "flex",
     alignItems: "center",
     gap: "0.6rem",
     padding: "0.55rem 0.75rem",
-    borderRadius: 8,
+    borderRadius: "0 8px 8px 0",
     color: "var(--muted)",
-    fontSize: "0.88rem",
+    fontSize: "0.85rem",
     fontWeight: 400,
     textDecoration: "none",
     transition: "background .15s, color .15s",
+    marginRight: "0.5rem",
   },
-  navIcon: { fontSize: "1rem", width: 20, textAlign: "center" },
-  sidebarBottom: { padding: "1rem", borderTop: "1px solid var(--border)" },
-  userBadge: {
+  navIcon: {
+    fontSize: "1rem",
+    width: 20,
+    textAlign: "center",
+    flexShrink: 0,
+  },
+
+  /* Sidebar bottom */
+  sidebarBottom: {
+    padding: "0.85rem 1rem",
+    borderTop: "1px solid var(--border)",
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.75rem",
+    background: "rgba(0,0,0,0.15)",
+  },
+  userRow: {
     display: "flex",
     alignItems: "center",
-    gap: "0.6rem",
-    marginBottom: "0.8rem",
+    gap: "0.65rem",
   },
   userAvatar: {
-    width: 32,
-    height: 32,
+    width: 34,
+    height: 34,
     borderRadius: "50%",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     fontFamily: "var(--font-head)",
-    fontSize: "0.9rem",
+    fontSize: "0.88rem",
     fontWeight: 700,
     flexShrink: 0,
   },
+  userName: {
+    fontSize: "0.82rem",
+    fontWeight: 600,
+    color: "var(--text)",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  userRole: {
+    fontSize: "0.7rem",
+    fontWeight: 500,
+  },
   logoutBtn: {
-    width: "100%",
-    background: "transparent",
+    background: "rgba(152,171,238,0.08)",
     border: "1px solid var(--border)",
     borderRadius: 8,
     color: "var(--muted)",
-    padding: "0.45rem 0.75rem",
-    fontSize: "0.82rem",
+    padding: "0.4rem 0.75rem",
+    fontSize: "0.78rem",
     cursor: "pointer",
     textAlign: "left",
+    width: "100%",
+    transition: "background .15s",
   },
-  main: { flex: 1, padding: "2rem", overflowY: "auto" },
-  topbar: {
+
+  /* Main */
+  main: {
+    flex: 1,
     display: "flex",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: "2rem",
-    gap: "1rem",
+    flexDirection: "column",
+    overflowY: "auto",
+    minWidth: 0,
+  },
+  topbar: {
+    padding: "1.75rem 2rem 0",
+    marginBottom: "0.25rem",
   },
   pageTitle: {
     fontFamily: "var(--font-head)",
-    fontSize: "1.6rem",
-    fontWeight: 700,
+    fontSize: "1.7rem",
+    fontWeight: 800,
     marginBottom: "0.2rem",
+    letterSpacing: "-0.01em",
+  },
+  pageSubtitle: {
+    fontSize: "0.85rem",
+    color: "var(--muted)",
+    marginBottom: "1.5rem",
+  },
+  content: {
+    padding: "0 2rem 2.5rem",
   },
 };
