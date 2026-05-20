@@ -12,20 +12,16 @@ export type StaffUsuario = {
 };
 
 const NAV = [
-  { href: "/dashboard", icon: "◈", label: "Dashboard" },
-  { href: "/gestion-inventario", icon: "🏭", label: "Gestión inventario" },
-  { href: "/bodegas", icon: "🏗", label: "Bodegas" },
-  { href: "/inventario", icon: "📦", label: "Inventario" },
-  { href: "/inventario/entrada", icon: "⬇", label: "Entrada stock" },
-  { href: "/productos", icon: "🌿", label: "Productos" },
-  { href: "/ventas", icon: "🧾", label: "Ventas" },
-  { href: "/precios", icon: "💲", label: "Precios" },
-  { href: "/facturacion", icon: "🧮", label: "Facturación" },
-  { href: "/reportes", icon: "📊", label: "Reportes" },
-  { href: "/proveedores", icon: "🏭", label: "Proveedores" },
+  { href: "/dashboard",        icon: "◈",  label: "Dashboard" },
+  { href: "/inventario",       icon: "📦", label: "Inventario" },
+  { href: "/catalogo",         icon: "🌿", label: "Catálogo" },
+  { href: "/ventas",           icon: "🧾", label: "Ventas" },
+  { href: "/facturacion",      icon: "🧮", label: "Facturación" },
+  { href: "/reportes",         icon: "📊", label: "Reportes" },
+  { href: "/proveedores",      icon: "🚚", label: "Proveedores" },
+  { href: "/historial-ventas", icon: "📋", label: "Historial ventas" },
 ];
 
-/** Activa un ítem solo si coincide la ruta; si hay un enlace más específico en el nav (ej. /inventario/entrada), no resalta el padre. */
 function isStaffNavActive(
   pathname: string,
   href: string,
@@ -69,18 +65,17 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
   const pathname = usePathname();
   const variant = staffVariantFromTipo(usuario.tipo_usuario);
   const t = THEMES[variant];
+
   const navVisible = NAV.filter((item) => {
+    // Ventas: solo colaborador
     if (item.href === "/ventas") return isColaboradorTipo(usuario.tipo_usuario);
-    if (item.href === "/gestion-inventario" ||
-        item.href === "/inventario" ||
-        item.href === "/inventario/entrada" ||
-        item.href === "/bodegas" ||
-        item.href === "/historial-ventas"
-      ) {
+    // Solo dueño
+    if (["/inventario", "/catalogo", "/historial-ventas", "/proveedores"].includes(item.href)) {
       return isDuenoTipo(usuario.tipo_usuario);
     }
     return true;
   });
+
   const navHrefs = navVisible.map((n) => n.href);
 
   async function handleLogout() {
@@ -90,12 +85,7 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
 
   return (
     <div style={s.shell}>
-      <aside
-        style={{
-          ...s.sidebar,
-          backgroundImage: t.sidebarWash,
-        }}
-      >
+      <aside style={{ ...s.sidebar, backgroundImage: t.sidebarWash }}>
         <div style={s.sidebarTop}>
           <Link href="/dashboard" style={{ textDecoration: "none" }}>
             <div style={s.sidebarLogo}>
@@ -103,35 +93,15 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
               <span style={{ ...s.sidebarLogoText, color: t.logoTint }}>Tienda San Miguel</span>
             </div>
           </Link>
-          <div
-            style={{
-              fontSize: "0.72rem",
-              color: "var(--muted)",
-              marginTop: "-1rem",
-              marginBottom: "1.25rem",
-              paddingLeft: "0.15rem",
-            }}
-          >
+          <div style={{ fontSize: "0.72rem", color: "var(--muted)", marginTop: "-1rem", marginBottom: "1.25rem", paddingLeft: "0.15rem" }}>
             {variant === "dueno" ? "Panel del dueño" : "Panel del colaborador"}
           </div>
           <nav style={s.nav}>
             {navVisible.map((item) => {
               const active = isStaffNavActive(pathname, item.href, navHrefs);
               return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  style={{
-                    ...s.navLink,
-                    ...(active
-                      ? {
-                          background: t.accentSoft,
-                          color: t.logoTint,
-                          fontWeight: 500,
-                        }
-                      : {}),
-                  }}
-                >
+                <Link key={item.href} href={item.href} style={{ ...s.navLink, ...(active ? { background: t.accentSoft, color: t.logoTint, fontWeight: 500 } : {}) }}>
+                  <span style={s.navIcon}>{item.icon}</span>
                   <span>{item.label}</span>
                 </Link>
               );
@@ -140,33 +110,15 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
         </div>
         <div style={s.sidebarBottom}>
           <div style={s.userBadge}>
-            <div
-              style={{
-                ...s.userAvatar,
-                background: t.accent,
-                color: "#fff",
-              }}
-            >
+            <div style={{ ...s.userAvatar, background: t.accent, color: "#fff" }}>
               {usuario.nombre[0]}
             </div>
             <div>
-              <div
-                style={{
-                  fontSize: "0.82rem",
-                  fontWeight: 500,
-                  color: "var(--text)",
-                }}
-              >
-                {usuario.nombre}
-              </div>
-              <div style={{ fontSize: "0.72rem", color: t.logoTint }}>
-                {labelRol(usuario.tipo_usuario)}
-              </div>
+              <div style={{ fontSize: "0.82rem", fontWeight: 500, color: "var(--text)" }}>{usuario.nombre}</div>
+              <div style={{ fontSize: "0.72rem", color: t.logoTint }}>{labelRol(usuario.tipo_usuario)}</div>
             </div>
           </div>
-          <button type="button" onClick={handleLogout} style={s.logoutBtn}>
-            ← Salir
-          </button>
+          <button type="button" onClick={handleLogout} style={s.logoutBtn}>← Salir</button>
         </div>
       </aside>
 
@@ -174,9 +126,7 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
         <div style={s.topbar}>
           <div>
             <h1 style={{ ...s.pageTitle, color: t.logoTint }}>{title}</h1>
-            {subtitle && (
-              <p style={{ color: "var(--muted)", fontSize: "0.88rem" }}>{subtitle}</p>
-            )}
+            {subtitle && <p style={{ color: "var(--muted)", fontSize: "0.88rem" }}>{subtitle}</p>}
           </div>
         </div>
         {children}
@@ -186,92 +136,19 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
 }
 
 const s: Record<string, React.CSSProperties> = {
-  shell: {
-    display: "flex",
-    minHeight: "100vh",
-    fontFamily: "var(--font-body)",
-  },
-  sidebar: {
-    width: 220,
-    flexShrink: 0,
-    backgroundColor: "var(--surface)",
-    borderRight: "1px solid var(--border)",
-    display: "flex",
-    flexDirection: "column",
-    justifyContent: "space-between",
-    position: "sticky",
-    top: 0,
-    height: "100vh",
-  },
+  shell: { display: "flex", minHeight: "100vh", fontFamily: "var(--font-body)" },
+  sidebar: { width: 220, flexShrink: 0, backgroundColor: "var(--surface)", borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", justifyContent: "space-between", position: "sticky", top: 0, height: "100vh" },
   sidebarTop: { padding: "1.5rem 1rem" },
-  sidebarLogo: {
-    display: "flex",
-    alignItems: "center",
-    gap: "0.5rem",
-    marginBottom: "2rem",
-  },
-  sidebarLogoText: {
-    fontFamily: "var(--font-head)",
-    fontSize: "1.05rem",
-    fontWeight: 800,
-    lineHeight: 1.2,
-  },
+  sidebarLogo: { display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "2rem" },
+  sidebarLogoText: { fontFamily: "var(--font-head)", fontSize: "1.05rem", fontWeight: 800, lineHeight: 1.2 },
   nav: { display: "flex", flexDirection: "column", gap: "0.2rem" },
-  navLink: {
-    display: "flex",
-    alignItems: "center",
-    gap: "0.6rem",
-    padding: "0.55rem 0.75rem",
-    borderRadius: 8,
-    color: "var(--muted)",
-    fontSize: "0.88rem",
-    fontWeight: 400,
-    textDecoration: "none",
-    transition: "background .15s, color .15s",
-  },
+  navLink: { display: "flex", alignItems: "center", gap: "0.6rem", padding: "0.55rem 0.75rem", borderRadius: 8, color: "var(--muted)", fontSize: "0.88rem", fontWeight: 400, textDecoration: "none", transition: "background .15s, color .15s" },
   navIcon: { fontSize: "1rem", width: 20, textAlign: "center" },
   sidebarBottom: { padding: "1rem", borderTop: "1px solid var(--border)" },
-  userBadge: {
-    display: "flex",
-    alignItems: "center",
-    gap: "0.6rem",
-    marginBottom: "0.8rem",
-  },
-  userAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: "50%",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontFamily: "var(--font-head)",
-    fontSize: "0.9rem",
-    fontWeight: 700,
-    flexShrink: 0,
-  },
-  logoutBtn: {
-    width: "100%",
-    background: "transparent",
-    border: "1px solid var(--border)",
-    borderRadius: 8,
-    color: "var(--muted)",
-    padding: "0.45rem 0.75rem",
-    fontSize: "0.82rem",
-    cursor: "pointer",
-    textAlign: "left",
-  },
+  userBadge: { display: "flex", alignItems: "center", gap: "0.6rem", marginBottom: "0.8rem" },
+  userAvatar: { width: 32, height: 32, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--font-head)", fontSize: "0.9rem", fontWeight: 700, flexShrink: 0 },
+  logoutBtn: { width: "100%", background: "transparent", border: "1px solid var(--border)", borderRadius: 8, color: "var(--muted)", padding: "0.45rem 0.75rem", fontSize: "0.82rem", cursor: "pointer", textAlign: "left" },
   main: { flex: 1, padding: "2rem", overflowY: "auto" },
-  topbar: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: "2rem",
-    gap: "1rem",
-  },
-  pageTitle: {
-    fontFamily: "var(--font-head)",
-    fontSize: "1.6rem",
-    fontWeight: 700,
-    marginBottom: "0.2rem",
-  },
+  topbar: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "2rem", gap: "1rem" },
+  pageTitle: { fontFamily: "var(--font-head)", fontSize: "1.6rem", fontWeight: 700, marginBottom: "0.2rem" },
 };
