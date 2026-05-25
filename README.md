@@ -148,4 +148,5 @@ La base de datos se inicializa con estos usuarios. Contraseña para todos: **`pa
 
 - Las contraseñas en `init/01_schema.sql` son hashes bcrypt solo para desarrollo
 - El `JWT_SECRET` en `docker-compose.yml` debe cambiarse en producción
-- La carpeta `init/` contiene el schema SQL que Docker ejecuta automáticamente al crear el contenedor por primera vez
+- La carpeta `init/` contiene el schema SQL que Docker ejecuta automáticamente al crear el contenedor por primera vez (`01_schema.sql`, luego `02_cobranza.sql`, etc.)
+- Si ya tenías un volumen de Postgres y agregas migraciones nuevas: `docker compose exec db psql -U dsm_user -d deposito_san_miguel -f /docker-entrypoint-initdb.d/02_cobranza.sql`
