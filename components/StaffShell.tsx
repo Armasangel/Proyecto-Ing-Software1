@@ -20,6 +20,7 @@ const NAV = [
   { href: "/reportes",         icon: "📊", label: "Reportes" },
   { href: "/proveedores",      icon: "🚚", label: "Proveedores" },
   { href: "/historial-ventas", icon: "📋", label: "Historial ventas" },
+  { href: "/usuarios",         icon: "👥", label: "Usuarios" },
 ];
 
 function isStaffNavActive(
@@ -70,7 +71,7 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
     // Ventas: solo colaborador
     if (item.href === "/ventas") return isColaboradorTipo(usuario.tipo_usuario);
     // Solo dueño
-    if (["/inventario", "/catalogo", "/historial-ventas", "/proveedores"].includes(item.href)) {
+    if (["/inventario", "/catalogo", "/historial-ventas", "/proveedores", "/usuarios"].includes(item.href)) {
       return isDuenoTipo(usuario.tipo_usuario);
     }
     return true;
