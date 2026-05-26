@@ -1,8 +1,12 @@
 "use client";
 
+/* Shell principal para dueño y colaborador.
+   Incluye sidebar fijo, topbar con título y slot de contenido. */
+
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { isColaboradorTipo, isDuenoTipo, labelRol, staffVariantFromTipo } from "@/lib/roles";
+import { Icon, type IconName } from "@/components/Icon";
 
 export type StaffUsuario = {
   id_usuario: number;
@@ -11,15 +15,22 @@ export type StaffUsuario = {
   tipo_usuario: string;
 };
 
-const NAV = [
-  { href: "/dashboard",        icon: "◈",  label: "Dashboard" },
-  { href: "/inventario",       icon: "📦", label: "Inventario" },
-  { href: "/catalogo",         icon: "🌿", label: "Catálogo" },
-  { href: "/ventas",           icon: "🧾", label: "Ventas" },
-  { href: "/facturacion",      icon: "🧮", label: "Facturación" },
-  { href: "/reportes",         icon: "📊", label: "Reportes" },
-  { href: "/proveedores",      icon: "🚚", label: "Proveedores" },
-  { href: "/historial-ventas", icon: "📋", label: "Historial ventas" },
+type NavItem = {
+  href: string;
+  label: string;
+  icon: IconName;
+};
+
+/* Mapa de rutas a iconos */
+const NAV: NavItem[] = [
+  { href: "/dashboard",        label: "Dashboard",       icon: "dashboard"     },
+  { href: "/inventario",       label: "Inventario",      icon: "inventory"     },
+  { href: "/catalogo",         label: "Catálogo",        icon: "catalogue"     },
+  { href: "/ventas",           label: "Ventas",          icon: "shopping-cart" },
+  { href: "/facturacion",      label: "Facturación",     icon: "bill"          },
+  { href: "/reportes",         label: "Reportes",        icon: "report"        },
+  { href: "/proveedores",      label: "Proveedores",     icon: "hand-truck"    },
+  { href: "/historial-ventas", label: "Historial ventas",icon: "distribution"  },
 ];
 
 function isStaffNavActive(
@@ -38,24 +49,19 @@ function isStaffNavActive(
   );
 }
 
-// Ambos roles comparten la misma paleta azul/crema
-// Solo difieren en el color de acento del badge de rol
 const THEMES = {
   dueno: {
-    rolBadge: "#F9E8C9",
-    rolBadgeBg: "rgba(249, 232, 201, 0.18)",
     rolColor: "#F9E8C9",
     avatarBg: "#1D24CA",
     pageAccent: "#1D24CA",
-    pageAccentLight: "#98ABEE",
+    /* Icono de rol en sidebar */
+    rolIcon: "owner" as IconName,
   },
   colaborador: {
-    rolBadge: "#98ABEE",
-    rolBadgeBg: "rgba(152, 171, 238, 0.18)",
     rolColor: "#98ABEE",
     avatarBg: "#98ABEE",
     pageAccent: "#1D24CA",
-    pageAccentLight: "#98ABEE",
+    rolIcon: "seller" as IconName,
   },
 } as const;
 
@@ -89,13 +95,12 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
 
   return (
     <div style={s.shell}>
-      {/* ── Sidebar ── */}
       <aside style={s.sidebar}>
-        {/* Logo */}
         <div style={s.sidebarTop}>
+
+          {/* Logo */}
           <Link href="/dashboard" style={{ textDecoration: "none" }}>
             <div style={s.sidebarLogo}>
-              <span style={s.logoEmoji}>🏪</span>
               <div>
                 <div style={s.logoTitle}>Tienda</div>
                 <div style={s.logoSub}>San Miguel</div>
@@ -103,12 +108,13 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
             </div>
           </Link>
 
-          {/* Role badge */}
+          {/* Rol */}
           <div style={{ ...s.rolBadge, color: t.rolColor }}>
-            {variant === "dueno" ? "👑 Panel del Dueño" : "🛒 Colaborador"}
+            <Icon name={t.rolIcon} size={14} variant="light" />
+            {variant === "dueno" ? "Panel del dueño" : "Colaborador"}
           </div>
 
-          {/* Nav */}
+          {/* Navegación */}
           <nav style={s.nav}>
             {navVisible.map((item) => {
               const active = isStaffNavActive(pathname, item.href, navHrefs);
@@ -116,13 +122,15 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
                 <Link
                   key={item.href}
                   href={item.href}
-                  style={{
-                    ...s.navLink,
-                    ...(active ? s.navLinkActive : {}),
-                  }}
+                  style={{ ...s.navLink, ...(active ? s.navLinkActive : {}) }}
                 >
-                  <span style={s.navIcon}>{item.icon}</span>
-                  <span>{item.label}</span>
+                  <Icon
+                    name={item.icon}
+                    size={18}
+                    variant="light"
+                    /* Reduce opacidad en links inactivos para no competir con el label */
+                  />
+                  <span style={{ opacity: active ? 1 : 0.75 }}>{item.label}</span>
                   {active && <span style={s.navActiveDot} />}
                 </Link>
               );
@@ -130,7 +138,7 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
           </nav>
         </div>
 
-        {/* User section */}
+        {/* Usuario y logout */}
         <div style={s.sidebarBottom}>
           <div style={s.userCard}>
             <div style={{ ...s.userAvatar, background: t.avatarBg }}>
@@ -144,23 +152,17 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
             </div>
           </div>
           <button type="button" onClick={handleLogout} style={s.logoutBtn}>
-            ← Cerrar sesión
+            <Icon name="lockout" size={14} variant="light" />
+            Cerrar sesión
           </button>
         </div>
       </aside>
 
-      {/* ── Main content ── */}
+      {/* Contenido principal */}
       <main style={s.main}>
-        {/* Top bar */}
         <div style={s.topbar}>
-          <div>
-            <h1 style={{ ...s.pageTitle, color: t.pageAccent }}>{title}</h1>
-            {subtitle && (
-              <p style={s.pageSubtitle}>{subtitle}</p>
-            )}
-          </div>
-          {/* Decorative accent bar */}
-          <div style={{ ...s.accentBar, background: `linear-gradient(90deg, ${t.pageAccent}, ${t.pageAccentLight})` }} />
+          <h1 style={{ ...s.pageTitle, color: t.pageAccent }}>{title}</h1>
+          {subtitle && <p style={s.pageSubtitle}>{subtitle}</p>}
         </div>
         {children}
       </main>
@@ -168,7 +170,10 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
   );
 }
 
+/* ─── Estilos ─────────────────────────────────────────────────────────────── */
+
 const s: Record<string, React.CSSProperties> = {
+  /* Layout raíz */
   shell: {
     display: "flex",
     minHeight: "100vh",
@@ -176,45 +181,42 @@ const s: Record<string, React.CSSProperties> = {
     background: "var(--bg)",
   },
 
-  /* ── Sidebar ── */
+  /* Sidebar contenedor */
   sidebar: {
     width: 230,
     flexShrink: 0,
-    background: "#201658",           /* marino profundo */
+    background: "#150f3a",           /* más oscuro que --accent2 para más contraste */
     display: "flex",
     flexDirection: "column",
     justifyContent: "space-between",
     position: "sticky",
     top: 0,
     height: "100vh",
-    boxShadow: "4px 0 24px rgba(32, 22, 88, 0.25)",
+    boxShadow: "4px 0 20px rgba(0, 0, 0, 0.3)",
   },
 
+  /* Zona superior del sidebar */
   sidebarTop: {
     padding: "1.5rem 1rem 1rem",
   },
 
+  /* Bloque del logo */
   sidebarLogo: {
     display: "flex",
     alignItems: "center",
     gap: "0.65rem",
     marginBottom: "1.25rem",
-    padding: "0.5rem 0.5rem",
+    padding: "0.5rem",
     borderRadius: 10,
-    background: "rgba(152, 171, 238, 0.1)",
-    border: "1px solid rgba(152, 171, 238, 0.15)",
-  },
-
-  logoEmoji: {
-    fontSize: "1.6rem",
-    lineHeight: 1,
+    background: "rgba(152, 171, 238, 0.08)",
+    border: "1px solid rgba(152, 171, 238, 0.12)",
   },
 
   logoTitle: {
     fontFamily: "var(--font-head)",
     fontWeight: 800,
     fontSize: "1rem",
-    color: "#F9E8C9",
+    color: "var(--bg)",
     lineHeight: 1.1,
   },
 
@@ -222,68 +224,69 @@ const s: Record<string, React.CSSProperties> = {
     fontFamily: "var(--font-head)",
     fontWeight: 600,
     fontSize: "0.72rem",
-    color: "#98ABEE",
+    color: "var(--accent-light)",
     letterSpacing: "0.08em",
     textTransform: "uppercase",
   },
 
+  /* Badge de rol */
   rolBadge: {
+    display: "flex",
+    alignItems: "center",
+    gap: "0.4rem",
     fontSize: "0.72rem",
     fontWeight: 700,
-    color: "#98ABEE",
     marginBottom: "1.25rem",
     paddingLeft: "0.25rem",
-    letterSpacing: "0.02em",
+    opacity: 0.85,
   },
 
+  /* Nav lista */
   nav: {
     display: "flex",
     flexDirection: "column",
-    gap: "0.15rem",
+    gap: "0.1rem",
   },
 
+  /* Nav link base */
   navLink: {
     display: "flex",
     alignItems: "center",
-    gap: "0.6rem",
-    padding: "0.6rem 0.75rem",
+    gap: "0.65rem",
+    padding: "0.55rem 0.75rem",
     borderRadius: 8,
-    color: "#98ABEE",
-    fontSize: "0.87rem",
+    color: "var(--accent-light)",
+    fontSize: "0.85rem",
     fontWeight: 400,
     textDecoration: "none",
-    transition: "background .15s, color .15s",
-    position: "relative",
+    transition: "background .15s",
   },
 
+  /* Nav link activo */
   navLinkActive: {
-    background: "rgba(152, 171, 238, 0.2)",
-    color: "#F9E8C9",
+    background: "rgba(152, 171, 238, 0.15)",
+    color: "var(--bg)",
     fontWeight: 600,
   },
 
+  /* Punto indicador de ruta activa */
   navActiveDot: {
     width: 5,
     height: 5,
     borderRadius: "50%",
-    background: "#F9E8C9",
+    background: "var(--bg)",
     marginLeft: "auto",
     flexShrink: 0,
+    opacity: 0.7,
   },
 
-  navIcon: {
-    fontSize: "1rem",
-    width: 20,
-    textAlign: "center",
-    flexShrink: 0,
-  },
-
-  /* ── Sidebar bottom ── */
+  /* Zona inferior del sidebar */
   sidebarBottom: {
     padding: "1rem",
-    borderTop: "1px solid rgba(152, 171, 238, 0.2)",
+    borderTop: "1px solid rgba(152, 171, 238, 0.12)",
   },
 
+  /* Card de usuario */
   userCard: {
     display: "flex",
     alignItems: "center",
@@ -291,9 +294,10 @@ const s: Record<string, React.CSSProperties> = {
     marginBottom: "0.75rem",
     padding: "0.5rem",
     borderRadius: 8,
-    background: "rgba(152, 171, 238, 0.08)",
+    background: "rgba(152, 171, 238, 0.07)",
   },
 
+  /* Avatar inicial */
   userAvatar: {
     width: 34,
     height: 34,
@@ -304,7 +308,7 @@ const s: Record<string, React.CSSProperties> = {
     fontFamily: "var(--font-head)",
     fontSize: "0.9rem",
     fontWeight: 700,
-    color: "#201658",
+    color: "#150f3a",
     flexShrink: 0,
   },
 
@@ -315,7 +319,7 @@ const s: Record<string, React.CSSProperties> = {
   userName: {
     fontSize: "0.85rem",
     fontWeight: 600,
-    color: "#F9E8C9",
+    color: "var(--bg)",
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
@@ -323,24 +327,27 @@ const s: Record<string, React.CSSProperties> = {
 
   userRole: {
     fontSize: "0.7rem",
-    color: "#98ABEE",
     marginTop: "0.05rem",
   },
 
+  /* Botón de logout */
   logoutBtn: {
     width: "100%",
+    display: "flex",
+    alignItems: "center",
+    gap: "0.5rem",
     background: "transparent",
-    border: "1px solid rgba(152, 171, 238, 0.3)",
+    border: "1px solid rgba(152, 171, 238, 0.2)",
     borderRadius: 8,
-    color: "#98ABEE",
+    color: "rgba(152, 171, 238, 0.7)",
     padding: "0.45rem 0.75rem",
     fontSize: "0.82rem",
     cursor: "pointer",
     textAlign: "left",
-    transition: "background .15s",
+    transition: "background .15s, color .15s",
   },
 
-  /* ── Main ── */
+  /* Área de contenido */
   main: {
     flex: 1,
     padding: "2rem",
@@ -348,9 +355,9 @@ const s: Record<string, React.CSSProperties> = {
     background: "var(--bg)",
   },
 
+  /* Topbar de página */
   topbar: {
     marginBottom: "2rem",
-    position: "relative",
   },
 
   pageTitle: {
@@ -358,22 +365,10 @@ const s: Record<string, React.CSSProperties> = {
     fontSize: "1.7rem",
     fontWeight: 800,
     marginBottom: "0.2rem",
-    color: "#201658",
   },
 
   pageSubtitle: {
     color: "var(--muted)",
     fontSize: "0.88rem",
-  },
-
-  accentBar: {
-    position: "absolute",
-    top: "50%",
-    right: 0,
-    width: 60,
-    height: 3,
-    borderRadius: 99,
-    transform: "translateY(-50%)",
-    opacity: 0.4,
   },
 };

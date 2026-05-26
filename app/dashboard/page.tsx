@@ -72,7 +72,7 @@ export default function DashboardPage() {
       label: "Ventas pendientes",
       value: stats.pendientes,
       icon: "⏳",
-      bg: "rgba(249, 232, 201, 0.6)",
+      bg: "#EEF1FB",
       iconBg: "rgba(152, 171, 238, 0.3)",
       valueColor: "#1D24CA",
     },
