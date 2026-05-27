@@ -1,8 +1,12 @@
 "use client";
 
+/* Shell principal para dueño y colaborador.
+   Incluye sidebar fijo, topbar con título y slot de contenido. */
+
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { isColaboradorTipo, isDuenoTipo, labelRol, staffVariantFromTipo } from "@/lib/roles";
+import { Icon, type IconName } from "@/components/Icon";
 
 export type StaffUsuario = {
   id_usuario: number;
@@ -11,15 +15,22 @@ export type StaffUsuario = {
   tipo_usuario: string;
 };
 
-const NAV = [
-  { href: "/dashboard",        icon: "◈",  label: "Dashboard" },
-  { href: "/inventario",       icon: "📦", label: "Inventario" },
-  { href: "/catalogo",         icon: "🌿", label: "Catálogo" },
-  { href: "/ventas",           icon: "🧾", label: "Ventas" },
-  { href: "/facturacion",      icon: "🧮", label: "Facturación" },
-  { href: "/reportes",         icon: "📊", label: "Reportes" },
-  { href: "/proveedores",      icon: "🚚", label: "Proveedores" },
-  { href: "/historial-ventas", icon: "📋", label: "Historial ventas" },
+type NavItem = {
+  href: string;
+  label: string;
+  icon: IconName;
+};
+
+/* Mapa de rutas a iconos */
+const NAV: NavItem[] = [
+  { href: "/dashboard",        label: "Dashboard",       icon: "dashboard"     },
+  { href: "/inventario",       label: "Inventario",      icon: "inventory"     },
+  { href: "/catalogo",         label: "Catálogo",        icon: "catalogue"     },
+  { href: "/ventas",           label: "Ventas",          icon: "shopping-cart" },
+  { href: "/facturacion",      label: "Facturación",     icon: "bill"          },
+  { href: "/reportes",         label: "Reportes",        icon: "report"        },
+  { href: "/proveedores",      label: "Proveedores",     icon: "hand-truck"    },
+  { href: "/historial-ventas", label: "Historial ventas",icon: "distribution"  },
 ];
 
 function isStaffNavActive(
@@ -40,16 +51,17 @@ function isStaffNavActive(
 
 const THEMES = {
   dueno: {
-    accent: "#2d6a4f",
-    accentSoft: "rgba(45, 106, 79, 0.35)",
-    logoTint: "#52b788",
-    sidebarWash: "linear-gradient(180deg, rgba(45,106,79,0.12) 0%, transparent 55%)",
+    rolColor: "#F9E8C9",
+    avatarBg: "#1D24CA",
+    pageAccent: "#1D24CA",
+    /* Icono de rol en sidebar */
+    rolIcon: "owner" as IconName,
   },
   colaborador: {
-    accent: "#4c6ef5",
-    accentSoft: "rgba(76, 110, 245, 0.35)",
-    logoTint: "#91a7ff",
-    sidebarWash: "linear-gradient(180deg, rgba(76,110,245,0.12) 0%, transparent 55%)",
+    rolColor: "#98ABEE",
+    avatarBg: "#98ABEE",
+    pageAccent: "#1D24CA",
+    rolIcon: "seller" as IconName,
   },
 } as const;
 
@@ -67,9 +79,7 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
   const t = THEMES[variant];
 
   const navVisible = NAV.filter((item) => {
-    // Ventas: solo colaborador
     if (item.href === "/ventas") return isColaboradorTipo(usuario.tipo_usuario);
-    // Solo dueño
     if (["/inventario", "/catalogo", "/historial-ventas", "/proveedores"].includes(item.href)) {
       return isDuenoTipo(usuario.tipo_usuario);
     }
@@ -85,49 +95,74 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
 
   return (
     <div style={s.shell}>
-      <aside style={{ ...s.sidebar, backgroundImage: t.sidebarWash }}>
+      <aside style={s.sidebar}>
         <div style={s.sidebarTop}>
+
+          {/* Logo */}
           <Link href="/dashboard" style={{ textDecoration: "none" }}>
             <div style={s.sidebarLogo}>
-              <span>🏪</span>
-              <span style={{ ...s.sidebarLogoText, color: t.logoTint }}>Tienda San Miguel</span>
+              <div>
+                <div style={s.logoTitle}>Tienda</div>
+                <div style={s.logoSub}>San Miguel</div>
+              </div>
             </div>
           </Link>
-          <div style={{ fontSize: "0.72rem", color: "var(--muted)", marginTop: "-1rem", marginBottom: "1.25rem", paddingLeft: "0.15rem" }}>
-            {variant === "dueno" ? "Panel del dueño" : "Panel del colaborador"}
+
+          {/* Rol */}
+          <div style={{ ...s.rolBadge, color: t.rolColor }}>
+            <Icon name={t.rolIcon} size={14} variant="light" />
+            {variant === "dueno" ? "Panel del dueño" : "Colaborador"}
           </div>
+
+          {/* Navegación */}
           <nav style={s.nav}>
             {navVisible.map((item) => {
               const active = isStaffNavActive(pathname, item.href, navHrefs);
               return (
-                <Link key={item.href} href={item.href} style={{ ...s.navLink, ...(active ? { background: t.accentSoft, color: t.logoTint, fontWeight: 500 } : {}) }}>
-                  <span style={s.navIcon}>{item.icon}</span>
-                  <span>{item.label}</span>
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  style={{ ...s.navLink, ...(active ? s.navLinkActive : {}) }}
+                >
+                  <Icon
+                    name={item.icon}
+                    size={18}
+                    variant="light"
+                    /* Reduce opacidad en links inactivos para no competir con el label */
+                  />
+                  <span style={{ opacity: active ? 1 : 0.75 }}>{item.label}</span>
+                  {active && <span style={s.navActiveDot} />}
                 </Link>
               );
             })}
           </nav>
         </div>
+
+        {/* Usuario y logout */}
         <div style={s.sidebarBottom}>
-          <div style={s.userBadge}>
-            <div style={{ ...s.userAvatar, background: t.accent, color: "#fff" }}>
-              {usuario.nombre[0]}
+          <div style={s.userCard}>
+            <div style={{ ...s.userAvatar, background: t.avatarBg }}>
+              {usuario.nombre[0].toUpperCase()}
             </div>
-            <div>
-              <div style={{ fontSize: "0.82rem", fontWeight: 500, color: "var(--text)" }}>{usuario.nombre}</div>
-              <div style={{ fontSize: "0.72rem", color: t.logoTint }}>{labelRol(usuario.tipo_usuario)}</div>
+            <div style={s.userInfo}>
+              <div style={s.userName}>{usuario.nombre.split(" ")[0]}</div>
+              <div style={{ ...s.userRole, color: t.rolColor }}>
+                {labelRol(usuario.tipo_usuario)}
+              </div>
             </div>
           </div>
-          <button type="button" onClick={handleLogout} style={s.logoutBtn}>← Salir</button>
+          <button type="button" onClick={handleLogout} style={s.logoutBtn}>
+            <Icon name="lockout" size={14} variant="light" />
+            Cerrar sesión
+          </button>
         </div>
       </aside>
 
+      {/* Contenido principal */}
       <main style={s.main}>
         <div style={s.topbar}>
-          <div>
-            <h1 style={{ ...s.pageTitle, color: t.logoTint }}>{title}</h1>
-            {subtitle && <p style={{ color: "var(--muted)", fontSize: "0.88rem" }}>{subtitle}</p>}
-          </div>
+          <h1 style={{ ...s.pageTitle, color: t.pageAccent }}>{title}</h1>
+          {subtitle && <p style={s.pageSubtitle}>{subtitle}</p>}
         </div>
         {children}
       </main>
@@ -135,20 +170,205 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
   );
 }
 
+/* ─── Estilos ─────────────────────────────────────────────────────────────── */
+
 const s: Record<string, React.CSSProperties> = {
-  shell: { display: "flex", minHeight: "100vh", fontFamily: "var(--font-body)" },
-  sidebar: { width: 220, flexShrink: 0, backgroundColor: "var(--surface)", borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", justifyContent: "space-between", position: "sticky", top: 0, height: "100vh" },
-  sidebarTop: { padding: "1.5rem 1rem" },
-  sidebarLogo: { display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "2rem" },
-  sidebarLogoText: { fontFamily: "var(--font-head)", fontSize: "1.05rem", fontWeight: 800, lineHeight: 1.2 },
-  nav: { display: "flex", flexDirection: "column", gap: "0.2rem" },
-  navLink: { display: "flex", alignItems: "center", gap: "0.6rem", padding: "0.55rem 0.75rem", borderRadius: 8, color: "var(--muted)", fontSize: "0.88rem", fontWeight: 400, textDecoration: "none", transition: "background .15s, color .15s" },
-  navIcon: { fontSize: "1rem", width: 20, textAlign: "center" },
-  sidebarBottom: { padding: "1rem", borderTop: "1px solid var(--border)" },
-  userBadge: { display: "flex", alignItems: "center", gap: "0.6rem", marginBottom: "0.8rem" },
-  userAvatar: { width: 32, height: 32, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--font-head)", fontSize: "0.9rem", fontWeight: 700, flexShrink: 0 },
-  logoutBtn: { width: "100%", background: "transparent", border: "1px solid var(--border)", borderRadius: 8, color: "var(--muted)", padding: "0.45rem 0.75rem", fontSize: "0.82rem", cursor: "pointer", textAlign: "left" },
-  main: { flex: 1, padding: "2rem", overflowY: "auto" },
-  topbar: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "2rem", gap: "1rem" },
-  pageTitle: { fontFamily: "var(--font-head)", fontSize: "1.6rem", fontWeight: 700, marginBottom: "0.2rem" },
+  /* Layout raíz */
+  shell: {
+    display: "flex",
+    minHeight: "100vh",
+    fontFamily: "var(--font-body)",
+    background: "var(--bg)",
+  },
+
+  /* Sidebar contenedor */
+  sidebar: {
+    width: 230,
+    flexShrink: 0,
+    background: "#150f3a",           /* más oscuro que --accent2 para más contraste */
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "space-between",
+    position: "sticky",
+    top: 0,
+    height: "100vh",
+    boxShadow: "4px 0 20px rgba(0, 0, 0, 0.3)",
+  },
+
+  /* Zona superior del sidebar */
+  sidebarTop: {
+    padding: "1.5rem 1rem 1rem",
+  },
+
+  /* Bloque del logo */
+  sidebarLogo: {
+    display: "flex",
+    alignItems: "center",
+    gap: "0.65rem",
+    marginBottom: "1.25rem",
+    padding: "0.5rem",
+    borderRadius: 10,
+    background: "rgba(152, 171, 238, 0.08)",
+    border: "1px solid rgba(152, 171, 238, 0.12)",
+  },
+
+  logoTitle: {
+    fontFamily: "var(--font-head)",
+    fontWeight: 800,
+    fontSize: "1rem",
+    color: "var(--bg)",
+    lineHeight: 1.1,
+  },
+
+  logoSub: {
+    fontFamily: "var(--font-head)",
+    fontWeight: 600,
+    fontSize: "0.72rem",
+    color: "var(--accent-light)",
+    letterSpacing: "0.08em",
+    textTransform: "uppercase",
+  },
+
+  /* Badge de rol */
+  rolBadge: {
+    display: "flex",
+    alignItems: "center",
+    gap: "0.4rem",
+    fontSize: "0.72rem",
+    fontWeight: 700,
+    marginBottom: "1.25rem",
+    paddingLeft: "0.25rem",
+    opacity: 0.85,
+  },
+
+  /* Nav lista */
+  nav: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.1rem",
+  },
+
+  /* Nav link base */
+  navLink: {
+    display: "flex",
+    alignItems: "center",
+    gap: "0.65rem",
+    padding: "0.55rem 0.75rem",
+    borderRadius: 8,
+    color: "var(--accent-light)",
+    fontSize: "0.85rem",
+    fontWeight: 400,
+    textDecoration: "none",
+    transition: "background .15s",
+  },
+
+  /* Nav link activo */
+  navLinkActive: {
+    background: "rgba(152, 171, 238, 0.15)",
+    color: "var(--bg)",
+    fontWeight: 600,
+  },
+
+  /* Punto indicador de ruta activa */
+  navActiveDot: {
+    width: 5,
+    height: 5,
+    borderRadius: "50%",
+    background: "var(--bg)",
+    marginLeft: "auto",
+    flexShrink: 0,
+    opacity: 0.7,
+  },
+
+  /* Zona inferior del sidebar */
+  sidebarBottom: {
+    padding: "1rem",
+    borderTop: "1px solid rgba(152, 171, 238, 0.12)",
+  },
+
+  /* Card de usuario */
+  userCard: {
+    display: "flex",
+    alignItems: "center",
+    gap: "0.65rem",
+    marginBottom: "0.75rem",
+    padding: "0.5rem",
+    borderRadius: 8,
+    background: "rgba(152, 171, 238, 0.07)",
+  },
+
+  /* Avatar inicial */
+  userAvatar: {
+    width: 34,
+    height: 34,
+    borderRadius: "50%",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontFamily: "var(--font-head)",
+    fontSize: "0.9rem",
+    fontWeight: 700,
+    color: "#150f3a",
+    flexShrink: 0,
+  },
+
+  userInfo: {
+    minWidth: 0,
+  },
+
+  userName: {
+    fontSize: "0.85rem",
+    fontWeight: 600,
+    color: "var(--bg)",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+
+  userRole: {
+    fontSize: "0.7rem",
+    marginTop: "0.05rem",
+  },
+
+  /* Botón de logout */
+  logoutBtn: {
+    width: "100%",
+    display: "flex",
+    alignItems: "center",
+    gap: "0.5rem",
+    background: "transparent",
+    border: "1px solid rgba(152, 171, 238, 0.2)",
+    borderRadius: 8,
+    color: "rgba(152, 171, 238, 0.7)",
+    padding: "0.45rem 0.75rem",
+    fontSize: "0.82rem",
+    cursor: "pointer",
+    textAlign: "left",
+    transition: "background .15s, color .15s",
+  },
+
+  /* Área de contenido */
+  main: {
+    flex: 1,
+    padding: "2rem",
+    overflowY: "auto",
+    background: "var(--bg)",
+  },
+
+  /* Topbar de página */
+  topbar: {
+    marginBottom: "2rem",
+  },
+
+  pageTitle: {
+    fontFamily: "var(--font-head)",
+    fontSize: "1.7rem",
+    fontWeight: 800,
+    marginBottom: "0.2rem",
+  },
+
+  pageSubtitle: {
+    color: "var(--muted)",
+    fontSize: "0.88rem",
+  },
 };

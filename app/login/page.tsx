@@ -1,5 +1,9 @@
 "use client";
 
+/* Página de login.
+   Panel izquierdo: branding con fondo sólido oscuro, texto ordenado en bloque único.
+   Panel derecho: formulario limpio sobre fondo blanco. */
+
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -41,37 +45,52 @@ export default function LoginPage() {
 
   return (
     <main style={s.page}>
-      {/* Panel izquierdo — branding */}
+
+      {/* ── Panel izquierdo: branding ─────────────────────────────────────── */}
       <div style={s.brand}>
-        <div style={s.brandInner}>
-          <div style={s.logo}>
-            <span style={s.logoIcon}>🏪</span>
-            <span style={s.logoText}>Tienda San Miguel</span>
+        <div style={s.brandContent}>
+
+          {/* Nombre del sistema */}
+          <div style={s.brandHeader}>
+            <p style={s.brandEyebrow}>Sistema de gestión</p>
+            <h1 style={s.brandTitle}>Tienda San Miguel</h1>
           </div>
-          <p style={s.tagline}>
-            Sistema de gestión de inventario y ventas para Mayoristas de Guatemala.
-          </p>
-          <div style={s.features}>
-            {["Control de inventario en tiempo real", "Ventas mayoristas y minoristas", "Kardex y trazabilidad", "Reportes y facturación"].map(f => (
-              <div key={f} style={s.feature}>
-                <span style={s.featureDot} />
-                <span>{f}</span>
-              </div>
-            ))}
+
+          {/* Descripción y features en bloque compacto */}
+          <div style={s.brandBody}>
+            <p style={s.brandDesc}>
+              Plataforma de inventario y ventas para mayoristas de Guatemala.
+            </p>
+            <ul style={s.featureList}>
+              {[
+                "Control de inventario en tiempo real",
+                "Ventas mayoristas y minoristas",
+                "Kardex y trazabilidad",
+                "Reportes y facturación",
+              ].map((f) => (
+                <li key={f} style={s.featureItem}>
+                  <span style={s.featureDot} />
+                  {f}
+                </li>
+              ))}
+            </ul>
           </div>
+
         </div>
-        <div style={s.brandBg} />
       </div>
 
-      {/* Panel derecho — formulario */}
+      {/* ── Panel derecho: formulario ─────────────────────────────────────── */}
       <div style={s.formPanel}>
         <div style={s.formCard}>
+
           <div style={s.formHeader}>
-            <h1 style={s.formTitle}>Bienvenido de vuelta</h1>
+            <h2 style={s.formTitle}>Bienvenido de vuelta</h2>
             <p style={s.formSub}>Ingresa tus credenciales para continuar</p>
           </div>
 
           <form onSubmit={handleLogin} style={s.form}>
+
+            {/* Correo */}
             <div style={s.field}>
               <label style={s.label}>Correo electrónico</label>
               <input
@@ -79,14 +98,13 @@ export default function LoginPage() {
                 autoComplete="email"
                 placeholder="usuario@tienda.com"
                 value={username}
-                onChange={e => setUsername(e.target.value)}
+                onChange={(e) => setUsername(e.target.value)}
                 required
                 style={s.input}
-                onFocus={e => Object.assign(e.target.style, s.inputFocus)}
-                onBlur={e => Object.assign(e.target.style, { borderColor: "var(--border)", boxShadow: "none" })}
               />
             </div>
 
+            {/* Contraseña */}
             <div style={s.field}>
               <label style={s.label}>Contraseña</label>
               <input
@@ -94,17 +112,15 @@ export default function LoginPage() {
                 autoComplete="current-password"
                 placeholder="••••••••"
                 value={password}
-                onChange={e => setPassword(e.target.value)}
+                onChange={(e) => setPassword(e.target.value)}
                 required
                 style={s.input}
-                onFocus={e => Object.assign(e.target.style, s.inputFocus)}
-                onBlur={e => Object.assign(e.target.style, { borderColor: "var(--border)", boxShadow: "none" })}
               />
             </div>
 
             {error && (
               <div style={s.errorBox}>
-                <span>⚠️</span> {error}
+                <span>{error}</span>
               </div>
             )}
 
@@ -112,8 +128,6 @@ export default function LoginPage() {
               type="submit"
               disabled={loading}
               style={{ ...s.btn, opacity: loading ? 0.7 : 1 }}
-              onMouseEnter={e => !loading && Object.assign((e.target as HTMLElement).style, s.btnHover)}
-              onMouseLeave={e => Object.assign((e.target as HTMLElement).style, { background: "var(--accent)", transform: "none" })}
             >
               {loading ? "Ingresando…" : "Ingresar al sistema"}
             </button>
@@ -121,22 +135,24 @@ export default function LoginPage() {
 
           <p style={s.switchLink}>
             ¿No tienes cuenta?{" "}
-            <Link href="/register" style={{ color: "var(--accent)", fontWeight: 500 }}>
+            <Link href="/register" style={s.switchLinkAnchor}>
               Regístrate aquí
             </Link>
           </p>
 
+          {/* Usuarios de prueba */}
           <div style={s.demo}>
-            <p style={{ color: "var(--muted)", fontSize: "0.78rem", marginBottom: "0.4rem" }}>Usuarios de prueba (password123):</p>
-            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+            <p style={s.demoLabel}>Usuarios de prueba (password123):</p>
+            <div style={s.demoBtns}>
               {[
-                { label: "Dueño", correo: "dueno@tienda.com" },
-                { label: "Colaborador", correo: "empleado@tienda.com" },
-                { label: "Comprador", correo: "maria@gmail.com" },
-                { label: "Comprador mayor", correo: "pedro@gmail.com" },
-              ].map(u => (
+                { label: "Dueño",           correo: "dueno@tienda.com"    },
+                { label: "Colaborador",     correo: "empleado@tienda.com" },
+                { label: "Comprador",       correo: "maria@gmail.com"     },
+                { label: "Comprador mayor", correo: "pedro@gmail.com"     },
+              ].map((u) => (
                 <button
                   key={u.correo}
+                  type="button"
                   onClick={() => setUsername(u.correo)}
                   style={s.demoBtn}
                 >
@@ -145,80 +161,126 @@ export default function LoginPage() {
               ))}
             </div>
           </div>
+
         </div>
       </div>
     </main>
   );
 }
 
+/* ─── Estilos ─────────────────────────────────────────────────────────────── */
+
 const s: Record<string, React.CSSProperties> = {
+  /* Layout de dos columnas */
   page: {
     minHeight: "100vh",
     display: "flex",
     fontFamily: "var(--font-body)",
   },
+
+  /* ── Panel izquierdo ── */
+
+  /* Fondo sólido oscuro, sin gradientes raros */
   brand: {
-    position: "relative",
     flex: "0 0 42%",
-    background: "linear-gradient(145deg, #0d2b0f 0%, #0d1117 60%, #1a1200 100%)",
+    background: "#150f3a",
     display: "flex",
     alignItems: "center",
-    overflow: "hidden",
-  },
-  brandBg: {
-    position: "absolute",
-    inset: 0,
-    backgroundImage: `radial-gradient(ellipse at 20% 50%, rgba(232,160,69,.12) 0%, transparent 60%),
-                      radial-gradient(ellipse at 80% 20%, rgba(63,185,80,.08) 0%, transparent 50%)`,
-    pointerEvents: "none",
-  },
-  brandInner: {
-    position: "relative",
-    zIndex: 1,
     padding: "3rem",
   },
-  logo: {
+
+  /* Bloque de contenido alineado como unidad */
+  brandContent: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "2rem",
+    maxWidth: 340,
+  },
+
+  brandHeader: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.4rem",
+  },
+
+  /* "Sistema de gestión" pequeño arriba del título */
+  brandEyebrow: {
+    fontSize: "0.78rem",
+    fontWeight: 600,
+    color: "var(--accent-light)",
+    letterSpacing: "0.1em",
+    textTransform: "uppercase",
+    margin: 0,
+  },
+
+  brandTitle: {
+    fontFamily: "var(--font-head)",
+    fontSize: "2.2rem",
+    fontWeight: 800,
+    color: "var(--bg)",
+    lineHeight: 1.15,
+    margin: 0,
+  },
+
+  brandBody: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "1rem",
+  },
+
+  brandDesc: {
+    fontSize: "0.92rem",
+    color: "rgba(152, 171, 238, 0.8)",
+    lineHeight: 1.65,
+    margin: 0,
+  },
+
+  /* Lista de features compacta, sin "niveles" extraños */
+  featureList: {
+    listStyle: "none",
+    padding: 0,
+    margin: 0,
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.6rem",
+  },
+
+  featureItem: {
     display: "flex",
     alignItems: "center",
-    gap: "0.75rem",
-    marginBottom: "2rem",
+    gap: "0.65rem",
+    fontSize: "0.88rem",
+    color: "rgba(249, 232, 201, 0.75)",
   },
-  logoIcon: { fontSize: "2.2rem" },
-  logoText: {
-    fontFamily: "var(--font-head)",
-    fontSize: "2rem",
-    fontWeight: 800,
-    color: "var(--accent)",
-    letterSpacing: "-0.5px",
-  },
-  tagline: {
-    color: "var(--muted)",
-    fontSize: "1rem",
-    lineHeight: 1.7,
-    maxWidth: 320,
-    marginBottom: "2.5rem",
-  },
-  features: { display: "flex", flexDirection: "column", gap: "0.9rem" },
-  feature: { display: "flex", alignItems: "center", gap: "0.75rem", color: "var(--text)", fontSize: "0.9rem" },
+
   featureDot: {
-    width: 8, height: 8,
+    width: 6,
+    height: 6,
     borderRadius: "50%",
-    background: "var(--accent)",
+    background: "var(--accent-light)",
     flexShrink: 0,
   },
+
+  /* ── Panel derecho ── */
+
   formPanel: {
     flex: 1,
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     padding: "2rem",
-    background: "var(--bg)",
+    background: "#ffffff",
   },
+
   formCard: {
     width: "100%",
     maxWidth: 420,
   },
-  formHeader: { marginBottom: "2rem" },
+
+  formHeader: {
+    marginBottom: "2rem",
+  },
+
   formTitle: {
     fontFamily: "var(--font-head)",
     fontSize: "1.8rem",
@@ -226,39 +288,50 @@ const s: Record<string, React.CSSProperties> = {
     color: "var(--text)",
     marginBottom: "0.4rem",
   },
-  formSub: { color: "var(--muted)", fontSize: "0.9rem" },
-  form: { display: "flex", flexDirection: "column", gap: "1.2rem", marginBottom: "1.5rem" },
-  field: { display: "flex", flexDirection: "column", gap: "0.4rem" },
-  label: { fontSize: "0.85rem", fontWeight: 500, color: "var(--muted)", letterSpacing: "0.02em" },
+
+  formSub: {
+    color: "var(--muted)",
+    fontSize: "0.9rem",
+    margin: 0,
+  },
+
+  /* Formulario */
+  form: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "1.2rem",
+    marginBottom: "1.25rem",
+  },
+
+  field: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.4rem",
+  },
+
+  label: {
+    fontSize: "0.85rem",
+    fontWeight: 500,
+    color: "var(--muted)",
+  },
+
   input: {
-    background: "var(--surface)",
+    background: "#ffffff",
     border: "1px solid var(--border)",
     borderRadius: "var(--radius)",
     padding: "0.75rem 1rem",
     color: "var(--text)",
     fontSize: "0.95rem",
     outline: "none",
-    transition: "border-color .2s, box-shadow .2s",
     width: "100%",
+    transition: "border-color .2s, box-shadow .2s",
   },
-  inputFocus: {
-    borderColor: "var(--accent)",
-    boxShadow: "0 0 0 3px rgba(232,160,69,.15)",
-  },
-  errorBox: {
-    background: "rgba(248,81,73,.12)",
-    border: "1px solid rgba(248,81,73,.3)",
-    borderRadius: "var(--radius)",
-    padding: "0.75rem 1rem",
-    color: "var(--red)",
-    fontSize: "0.88rem",
-    display: "flex",
-    gap: "0.5rem",
-    alignItems: "center",
-  },
+
+  /* El hover/focus del botón no afecta otros elementos porque
+     box-shadow y transform están aplicados solo al <button> */
   btn: {
     background: "var(--accent)",
-    color: "#0d1117",
+    color: "var(--bg)",                /* crema, no negro */
     border: "none",
     borderRadius: "var(--radius)",
     padding: "0.85rem",
@@ -266,20 +339,57 @@ const s: Record<string, React.CSSProperties> = {
     fontSize: "0.95rem",
     fontWeight: 700,
     cursor: "pointer",
-    transition: "transform .15s, background .15s",
-    letterSpacing: "0.02em",
+    width: "100%",
+    transition: "box-shadow .2s, transform .15s",
   },
-  btnHover: { background: "var(--accent2)", transform: "translateY(-1px)" },
-  switchLink: { textAlign: "center", color: "var(--muted)", fontSize: "0.88rem", marginBottom: "1.5rem" },
+
+  errorBox: {
+    background: "rgba(192, 57, 43, 0.08)",
+    border: "1px solid rgba(192, 57, 43, 0.25)",
+    borderRadius: "var(--radius)",
+    padding: "0.75rem 1rem",
+    color: "var(--red)",
+    fontSize: "0.88rem",
+  },
+
+  switchLink: {
+    textAlign: "center",
+    color: "var(--muted)",
+    fontSize: "0.88rem",
+    marginBottom: "1.25rem",
+    margin: "0 0 1.25rem",
+  },
+
+  switchLinkAnchor: {
+    color: "var(--accent)",
+    fontWeight: 500,
+    textDecoration: "none",
+  },
+
+  /* Bloque de usuarios de prueba */
   demo: {
-    marginTop: "1rem",
+    marginTop: "1.25rem",
     padding: "1rem",
-    background: "var(--surface)",
+    background: "var(--surface2)",
     borderRadius: "var(--radius)",
     border: "1px solid var(--border)",
   },
+
+  demoLabel: {
+    color: "var(--muted)",
+    fontSize: "0.78rem",
+    marginBottom: "0.5rem",
+    margin: "0 0 0.5rem",
+  },
+
+  demoBtns: {
+    display: "flex",
+    gap: "0.5rem",
+    flexWrap: "wrap",
+  },
+
   demoBtn: {
-    background: "var(--surface2)",
+    background: "var(--surface)",
     border: "1px solid var(--border)",
     borderRadius: 6,
     padding: "0.3rem 0.7rem",

@@ -7,21 +7,31 @@
 }
 
 :root {
-  --bg:        #0d1117;
-  --surface:   #161b22;
-  --surface2:  #21262d;
-  --border:    #30363d;
-  --accent:    #e8a045;
-  --accent2:   #c67c1a;
-  --green:     #3fb950;
-  --red:       #f85149;
-  --blue:      #58a6ff;
-  --text:      #e6edf3;
-  --muted:     #8b949e;
+  /* ── Nueva paleta Tienda San Miguel ── */
+  --bg:        #ffffff;        /* Fondo principal — crema cálido */
+  --surface:   #ffffff;        /* Cards y paneles elevados */
+  --surface2:  #EEF1FB;        /* Superficies secundarias — azul muy claro */
+  --border:    #C5CEED;        /* Bordes suaves */
+  --accent:    #1D24CA;        /* Azul eléctrico — CTA principal */
+  --accent2:   #201658;        /* Azul marino profundo — hover/dark */
+  --accent-light: #98ABEE;     /* Azul lavanda — badges, chips, highlights */
+  --green:     #1a477a;        /* Verde éxito */
+  --red:       #2b53c0;        /* Rojo error */
+  --blue:      #1D24CA;        /* Alias azul */
+  --text:      #201658;        /* Texto principal — marino oscuro */
+  --muted:     #5a6495;        /* Texto secundario — marino medio */
   --font-head: 'Syne', sans-serif;
   --font-body: 'DM Sans', sans-serif;
   --radius:    10px;
-  --shadow:    0 4px 24px rgba(0, 0, 0, .45);
+  --shadow:    0 4px 24px rgba(29, 36, 202, 0.12);
+
+  /* Variables de sidebar (usadas en StaffShell) */
+  --sidebar-bg:      #201658;
+  --sidebar-text:    #F9E8C9;
+  --sidebar-muted:   #98ABEE;
+  --sidebar-hover:   rgba(152, 171, 238, 0.18);
+  --sidebar-active:  rgba(152, 171, 238, 0.28);
+  --sidebar-border:  rgba(152, 171, 238, 0.2);
 }
 
 body {
@@ -44,4 +54,4 @@ a:hover {
 
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb { background: var(--accent-light); border-radius: 3px; }
