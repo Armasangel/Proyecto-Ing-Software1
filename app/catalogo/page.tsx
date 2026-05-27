@@ -275,8 +275,8 @@ export default function CatalogoPage() {
                     </td>
                     <td style={{ ...s.td, textAlign: "center" }}>
                       <div style={{ display: "flex", gap: "0.4rem", justifyContent: "center" }}>
-                        <button type="button" onClick={() => abrirEditar(p)} style={s.btnEdit} title="Editar"><Icon name ={item.icon as IconName} variant="dark" size={24}/></button>
-                        <button type="button" onClick={() => setConfirmId(p.id_producto)} style={s.btnDel} title="Eliminar"><Icon name ={item.icon as IconName} variant="dark" size={24}/></button>
+                        <button type="button" onClick={() => abrirEditar(p)} style={s.btnEdit} title="Editar"><Icon name ="pencil" variant="dark" size={24}/></button>
+                        <button type="button" onClick={() => setConfirmId(p.id_producto)} style={s.btnDel} title="Eliminar"><Icon name ="trash" variant="dark" size={24}/></button>
                       </div>
                     </td>
                   </tr>
