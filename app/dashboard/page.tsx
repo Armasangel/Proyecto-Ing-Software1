@@ -37,7 +37,7 @@ export default function DashboardPage() {
     {
       label: "Productos activos",
       value: stats.productos,
-      icon: "🌿",
+      icon: "box",
       bg: "#EEF1FB",
       iconBg: "rgba(29, 36, 202, 0.1)",
       valueColor: "#1D24CA",
@@ -45,7 +45,7 @@ export default function DashboardPage() {
     {
       label: "Ventas registradas",
       value: stats.ventas,
-      icon: "🧾",
+      icon: "bill",
       bg: "#EEF1FB",
       iconBg: "rgba(32, 22, 88, 0.1)",
       valueColor: "#201658",
@@ -53,7 +53,7 @@ export default function DashboardPage() {
     {
       label: "Ventas pendientes",
       value: stats.pendientes,
-      icon: "⏳",
+      icon: "hourglass",
       bg: "#EEF1FB",
       iconBg: "rgba(152, 171, 238, 0.3)",
       valueColor: "#1D24CA",
@@ -61,7 +61,7 @@ export default function DashboardPage() {
     {
       label: "Proveedores",
       value: stats.proveedores,
-      icon: "🚚",
+      icon: "truck",
       bg: "#EEF1FB",
       iconBg: "rgba(152, 171, 238, 0.2)",
       valueColor: "#201658",
@@ -83,7 +83,7 @@ export default function DashboardPage() {
         {STATS_CONFIG.map((stat) => (
           <div key={stat.label} style={{ ...s.statCard, background: stat.bg }}>
             <div style={{ ...s.statIconWrap, background: stat.iconBg }}>
-              <span style={{ fontSize: "1.4rem" }}>{stat.icon}</span>
+              <Icon name={stat.icon as IconName} variant="dark" size={24} />
             </div>
             <div style={{ ...s.statValue, color: stat.valueColor }}>
               {stat.value.toLocaleString("es-GT")}
@@ -91,22 +91,6 @@ export default function DashboardPage() {
             <div style={s.statLabel}>{stat.label}</div>
           </div>
         ))}
-      </div>
-
-      {/* ── Quick actions ── */}
-      <div style={s.section}>
-        <h2 style={s.sectionTitle}>Acciones rápidas</h2>
-        <div style={s.actionsGrid}>
-          {quickActions.map((item) => (
-            <Link key={item.href} href={item.href} style={s.actionCard}>
-              <div style={s.actionIconWrap}>
-                <span style={{ fontSize: "1.6rem" }}>{item.icon}</span>
-              </div>
-              <span style={s.actionLabel}>{item.label}</span>
-              <span style={s.actionArrow}>→</span>
-            </Link>
-          ))}
-        </div>
       </div>
 
       {/* ── Notification card (matches reference image) ── */}

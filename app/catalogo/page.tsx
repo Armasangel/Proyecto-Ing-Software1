@@ -1,119 +1,82 @@
 "use client";
 
-import type { CSSProperties } from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { StaffShell } from "@/components/StaffShell";
 import { useDuenoSession } from "@/hooks/useDuenoSession";
+import { Icon, type IconName } from "@/components/Icon";
 
-// ─── Tipos ────────────────────────────────────────────────────────────────────
+const MIS_ITEMS = [
+  {label: "editar", icon: "pencil"},
+  {label: "borar", icon: "trash"},
+]
 
-type Bodega = {
-  id_bodega: number;
-  nombre_bodega: string;
-  ubicacion: string | null;
-  total_productos: number;
-  stock_total: string | number;
-};
-
-type Producto = {
+interface Producto {
   id_producto: number;
   codigo_producto: string;
   nombre_producto: string;
-  unidad_medida: string;
-  estado_producto: boolean;
-};
-
-type StockRow = {
-  id_bodega: number;
-  nombre_bodega: string;
-  ubicacion: string | null;
-  id_producto: number;
-  codigo_producto: string;
-  nombre_producto: string;
-  unidad_medida: string;
-  estado_producto: boolean;
   nombre_categoria: string;
+  id_categoria: number;
   nombre_marca: string;
-  cantidad_disponible: string | number;
-  stock_minimo: string | number;
-  ultima_actualizacion: string;
-  bajo_minimo: boolean;
-};
-
-type KardexRow = {
-  id_kardex: number;
-  fecha_movimiento: string;
-  tipo_movimiento: "ENTRADA" | "SALIDA" | "AJUSTE";
-  cantidad: string | number;
-  descripcion: string | null;
-  id_bodega: number;
-  nombre_bodega: string;
-  id_producto: number;
-  codigo_producto: string;
-  nombre_producto: string;
+  id_marca: number;
+  precio_unitario: string | null;
+  precio_mayoreo: string | null;
   unidad_medida: string;
+  estado_producto: boolean;
+  caducidad: boolean;
+  exento_iva: boolean;
+}
+
+interface Categoria {
+  id_categoria: number;
+  nombre_categoria: string;
+}
+interface Marca {
+  id_marca: number;
+  nombre_marca: string;
+}
+
+const EMPTY_FORM = {
+  codigo_producto: "",
+  nombre_producto: "",
+  precio_unitario: "",
+  precio_mayoreo: "",
+  unidad_medida: "",
+  id_categoria: "",
+  id_marca: "",
+  caducidad: false,
+  exento_iva: false,
+  estado_producto: true,
 };
 
-type StockActualizado = {
-  nombre_producto: string;
-  nombre_bodega: string;
-  cantidad_disponible: number;
-  unidad_medida: string;
-  ultima_actualizacion: string;
-};
+type TabKey = "productos" | "precios";
 
-type TabKey = "stock" | "operaciones" | "kardex" | "bodegas";
-
-const EMPTY_BODEGA_FORM = { nombre_bodega: "", ubicacion: "" };
-
-// ─── Componente principal ─────────────────────────────────────────────────────
-
-export default function InventarioPage() {
+export default function CatalogoPage() {
   const usuario = useDuenoSession();
 
-  const [tab, setTab] = useState<TabKey>("stock");
-
-  // Maestros
-  const [bodegas, setBodegas] = useState<Bodega[]>([]);
-  const [bodegasSimple, setBodegasSimple] = useState<{ id_bodega: number; nombre_bodega: string }[]>([]);
+  const [tab, setTab] = useState<TabKey>("productos");
   const [productos, setProductos] = useState<Producto[]>([]);
+  const [categorias, setCategorias] = useState<Categoria[]>([]);
+  const [marcas, setMarcas] = useState<Marca[]>([]);
 
-  // Filtros comunes
-  const [filtroBodega, setFiltroBodega] = useState("");
-  const [filtroProducto, setFiltroProducto] = useState("");
-  const [soloBajoMinimo, setSoloBajoMinimo] = useState(false);
-  const [incluirInactivos, setIncluirInactivos] = useState(false);
+  const [busqueda, setBusqueda] = useState("");
+  const [soloActivos, setSoloActivos] = useState(true);
 
-  // Stock
-  const [stock, setStock] = useState<StockRow[]>([]);
-  const [resumen, setResumen] = useState<{ filas: number; bajo_minimo: number } | null>(null);
-  const [loadingStock, setLoadingStock] = useState(false);
-  const [minEdits, setMinEdits] = useState<Record<string, string>>({});
+  // Modal producto
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editando, setEditando] = useState<Producto | null>(null);
+  const [form, setForm] = useState({ ...EMPTY_FORM });
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState("");
 
-  // Kardex
-  const [kardex, setKardex] = useState<KardexRow[]>([]);
-  const [loadingKardex, setLoadingKardex] = useState(false);
+  // Confirm delete
+  const [confirmId, setConfirmId] = useState<number | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
-  // Operaciones: Entrada
-  const [entradaForm, setEntradaForm] = useState({ id_bodega: "", id_producto: "", cantidad: "", tipo_ingreso: "UNIDADES", descripcion: "" });
-  const [entradaLoading, setEntradaLoading] = useState(false);
-  const [entradaResultado, setEntradaResultado] = useState<StockActualizado | null>(null);
-  const [entradaError, setEntradaError] = useState<string | null>(null);
-
-  // Operaciones: Transferencia
-  const [xfer, setXfer] = useState({ id_bodega_origen: "", id_bodega_destino: "", id_producto: "", cantidad: "", descripcion: "" });
-
-  // Operaciones: Ajuste
-  const [adj, setAdj] = useState({ id_bodega: "", id_producto: "", nueva_cantidad: "", descripcion: "" });
-
-  // Bodegas CRUD
-  const [modalBodegaOpen, setModalBodegaOpen] = useState(false);
-  const [editandoBodega, setEditandoBodega] = useState<Bodega | null>(null);
-  const [bodegaForm, setBodegaForm] = useState({ ...EMPTY_BODEGA_FORM });
-  const [savingBodega, setSavingBodega] = useState(false);
-  const [bodegaFormError, setBodegaFormError] = useState("");
-  const [confirmDeleteBodega, setConfirmDeleteBodega] = useState<number | null>(null);
-  const [deletingBodega, setDeletingBodega] = useState(false);
+  // Precios inline
+  const [precioEditando, setPrecioEditando] = useState<number | null>(null);
+  const [precioForm, setPrecioForm] = useState({ precio_unitario: "", precio_mayoreo: "" });
+  const [savingPrecio, setSavingPrecio] = useState(false);
 
   // Toast
   const [toast, setToast] = useState<{ msg: string; tipo: "ok" | "err" } | null>(null);
@@ -123,529 +86,337 @@ export default function InventarioPage() {
     setTimeout(() => setToast(null), 3500);
   };
 
-  // ── Queries ────────────────────────────────────────────────────────────────
-
-  const stockQuery = useMemo(() => {
-    const p = new URLSearchParams();
-    if (filtroBodega) p.set("id_bodega", filtroBodega);
-    if (filtroProducto) p.set("id_producto", filtroProducto);
-    if (soloBajoMinimo) p.set("solo_bajo_minimo", "1");
-    if (incluirInactivos) p.set("incluir_inactivos", "1");
-    const qs = p.toString();
-    return qs ? `?${qs}` : "";
-  }, [filtroBodega, filtroProducto, soloBajoMinimo, incluirInactivos]);
-
-  const kardexQuery = useMemo(() => {
-    const p = new URLSearchParams();
-    if (filtroBodega) p.set("id_bodega", filtroBodega);
-    if (filtroProducto) p.set("id_producto", filtroProducto);
-    p.set("limit", "200");
-    return `?${p.toString()}`;
-  }, [filtroBodega, filtroProducto]);
-
-  // ── Carga de datos ─────────────────────────────────────────────────────────
-
-  const cargarBodegas = useCallback(async () => {
-    const r = await fetch("/api/bodegas");
-    const d = await r.json();
-    if (r.ok) {
-      setBodegas(d.bodegas || []);
-      setBodegasSimple((d.bodegas || []).map((b: Bodega) => ({ id_bodega: b.id_bodega, nombre_bodega: b.nombre_bodega })));
-    }
+  const cargarProductos = useCallback(() => {
+    fetch("/api/productos")
+      .then((r) => r.json())
+      .then((d) => setProductos(d.productos || []));
   }, []);
-
-  const cargarProductos = useCallback(async () => {
-    const r = await fetch("/api/productos");
-    const d = await r.json();
-    if (r.ok) setProductos(d.productos || []);
-  }, []);
-
-  const cargarStock = useCallback(async () => {
-    setLoadingStock(true);
-    try {
-      const r = await fetch(`/api/gestion-inventario${stockQuery}`);
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error || "Error al cargar stock");
-      setStock(d.stock || []);
-      setResumen(d.resumen || null);
-    } catch (e) { showToast(String(e), "err"); }
-    finally { setLoadingStock(false); }
-  }, [stockQuery]);
-
-  const cargarKardex = useCallback(async () => {
-    setLoadingKardex(true);
-    try {
-      const r = await fetch(`/api/gestion-inventario/kardex${kardexQuery}`);
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error || "Error al cargar kardex");
-      setKardex(d.movimientos || []);
-    } catch (e) { showToast(String(e), "err"); }
-    finally { setLoadingKardex(false); }
-  }, [kardexQuery]);
 
   useEffect(() => {
     if (!usuario) return;
-    cargarBodegas();
     cargarProductos();
-    cargarStock();
-  }, [usuario, cargarBodegas, cargarProductos, cargarStock]);
+    fetch("/api/categorias").then((r) => r.json()).then((d) => setCategorias(d.categorias || []));
+    fetch("/api/marcas").then((r) => r.json()).then((d) => setMarcas(d.marcas || []));
+  }, [usuario, cargarProductos]);
 
-  useEffect(() => {
-    if (!usuario || tab !== "kardex") return;
-    cargarKardex();
-  }, [usuario, tab, cargarKardex]);
-
-  // ── Operaciones ────────────────────────────────────────────────────────────
-
-  const patchMinimo = async (idBodega: number, idProducto: number) => {
-    const key = `${idBodega}:${idProducto}`;
-    const minimo = Number((minEdits[key] ?? "").trim());
-    if (!Number.isFinite(minimo) || minimo < 0) { showToast("Stock mínimo inválido", "err"); return; }
-    try {
-      const r = await fetch("/api/gestion-inventario/stock-minimo", {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id_bodega: idBodega, id_producto: idProducto, stock_minimo: minimo }),
-      });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error || "No se pudo actualizar");
-      showToast("Stock mínimo actualizado", "ok");
-      setMinEdits(m => { const next = { ...m }; delete next[key]; return next; });
-      await cargarStock();
-    } catch (e) { showToast(String(e), "err"); }
+  // ── Modal helpers ──────────────────────────────────────────────────────────
+  const abrirCrear = () => {
+    setEditando(null);
+    setForm({ ...EMPTY_FORM });
+    setFormError("");
+    setModalOpen(true);
   };
 
-  const registrarEntrada = async () => {
-    setEntradaLoading(true);
-    setEntradaError(null);
-    setEntradaResultado(null);
+  const abrirEditar = (p: Producto) => {
+    setEditando(p);
+    setForm({
+      codigo_producto: p.codigo_producto,
+      nombre_producto: p.nombre_producto,
+      precio_unitario: p.precio_unitario ?? "",
+      precio_mayoreo: p.precio_mayoreo ?? "",
+      unidad_medida: p.unidad_medida,
+      id_categoria: String(p.id_categoria),
+      id_marca: String(p.id_marca),
+      caducidad: p.caducidad,
+      exento_iva: p.exento_iva,
+      estado_producto: p.estado_producto,
+    });
+    setFormError("");
+    setModalOpen(true);
+  };
+
+  const cerrarModal = () => { setModalOpen(false); setEditando(null); };
+
+  const handleGuardar = async () => {
+    if (!form.codigo_producto || !form.nombre_producto || !form.unidad_medida || !form.id_categoria || !form.id_marca) {
+      setFormError("Completa todos los campos obligatorios (*)");
+      return;
+    }
+    setSaving(true);
+    setFormError("");
+    const url = editando ? `/api/productos/${editando.id_producto}` : "/api/productos";
+    const method = editando ? "PUT" : "POST";
+    const payload = {
+      ...form,
+      precio_unitario: form.precio_unitario ? Number(form.precio_unitario) : null,
+      precio_mayoreo: form.precio_mayoreo ? Number(form.precio_mayoreo) : null,
+      id_categoria: Number(form.id_categoria),
+      id_marca: Number(form.id_marca),
+    };
     try {
-      const res = await fetch("/api/inventario/entrada", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id_bodega: Number(entradaForm.id_bodega), id_producto: Number(entradaForm.id_producto), cantidad: Number(entradaForm.cantidad), tipo_ingreso: entradaForm.tipo_ingreso, descripcion: entradaForm.descripcion }),
-      });
+      const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const data = await res.json();
-      if (!res.ok) { setEntradaError(data.error || "Error desconocido"); }
-      else {
-        setEntradaResultado(data.stock);
-        setEntradaForm(f => ({ ...f, id_producto: "", cantidad: "", tipo_ingreso: "UNIDADES", descripcion: "" }));
-        showToast("Entrada registrada ✓", "ok");
-        await cargarStock();
-      }
-    } catch { setEntradaError("No se pudo conectar con el servidor"); }
-    finally { setEntradaLoading(false); }
+      if (!res.ok) { setFormError(data.error || "Error al guardar"); }
+      else { cerrarModal(); cargarProductos(); showToast(editando ? "Producto actualizado ✓" : "Producto creado ✓", "ok"); }
+    } catch { setFormError("No se pudo conectar con el servidor"); }
+    finally { setSaving(false); }
   };
 
-  const registrarTransferencia = async () => {
+  const handleEliminar = async (id: number) => {
+    setDeleting(true);
     try {
-      const r = await fetch("/api/gestion-inventario/transferencia", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id_bodega_origen: Number(xfer.id_bodega_origen), id_bodega_destino: Number(xfer.id_bodega_destino), id_producto: Number(xfer.id_producto), cantidad: Number(xfer.cantidad), descripcion: xfer.descripcion }),
-      });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error || "No se pudo transferir");
-      showToast(d.mensaje || "Transferencia OK", "ok");
-      setXfer(x => ({ ...x, id_producto: "", cantidad: "", descripcion: "" }));
-      await cargarStock();
-    } catch (e) { showToast(String(e), "err"); }
-  };
-
-  const registrarAjuste = async () => {
-    try {
-      const r = await fetch("/api/gestion-inventario/ajuste", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id_bodega: Number(adj.id_bodega), id_producto: Number(adj.id_producto), nueva_cantidad: Number(adj.nueva_cantidad), descripcion: adj.descripcion }),
-      });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error || "No se pudo ajustar");
-      showToast(d.mensaje || "Ajuste OK", "ok");
-      setAdj(a => ({ ...a, nueva_cantidad: "", descripcion: "" }));
-      await cargarStock();
-    } catch (e) { showToast(String(e), "err"); }
-  };
-
-  // ── Bodegas CRUD ───────────────────────────────────────────────────────────
-
-  const abrirCrearBodega = () => { setEditandoBodega(null); setBodegaForm({ ...EMPTY_BODEGA_FORM }); setBodegaFormError(""); setModalBodegaOpen(true); };
-  const abrirEditarBodega = (b: Bodega) => { setEditandoBodega(b); setBodegaForm({ nombre_bodega: b.nombre_bodega, ubicacion: b.ubicacion ?? "" }); setBodegaFormError(""); setModalBodegaOpen(true); };
-  const cerrarModalBodega = () => { setModalBodegaOpen(false); setEditandoBodega(null); setBodegaFormError(""); };
-
-  const handleGuardarBodega = async () => {
-    if (!bodegaForm.nombre_bodega.trim()) { setBodegaFormError("El nombre de la bodega es obligatorio"); return; }
-    setSavingBodega(true);
-    setBodegaFormError("");
-    const url = editandoBodega ? `/api/bodegas/${editandoBodega.id_bodega}` : "/api/bodegas";
-    const method = editandoBodega ? "PATCH" : "POST";
-    try {
-      const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ nombre_bodega: bodegaForm.nombre_bodega.trim(), ubicacion: bodegaForm.ubicacion.trim() || null }) });
-      const data = await res.json();
-      if (!res.ok) { setBodegaFormError(data.error || "Error al guardar"); }
-      else { cerrarModalBodega(); cargarBodegas(); showToast(editandoBodega ? "Bodega actualizada ✓" : "Bodega creada ✓", "ok"); }
-    } catch { setBodegaFormError("No se pudo conectar con el servidor"); }
-    finally { setSavingBodega(false); }
-  };
-
-  const handleEliminarBodega = async (id: number) => {
-    setDeletingBodega(true);
-    try {
-      const res = await fetch(`/api/bodegas/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/productos/${id}`, { method: "DELETE" });
       const data = await res.json();
       if (!res.ok) showToast(data.error || "Error al eliminar", "err");
-      else { showToast("Bodega eliminada ✓", "ok"); cargarBodegas(); }
+      else { showToast(data.desactivado ? "Producto desactivado (tiene historial)" : "Producto eliminado ✓", "ok"); cargarProductos(); }
     } catch { showToast("Error de conexión", "err"); }
-    finally { setDeletingBodega(false); setConfirmDeleteBodega(null); }
+    finally { setDeleting(false); setConfirmId(null); }
   };
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // ── Precios inline ─────────────────────────────────────────────────────────
+  const iniciarEditarPrecio = (p: Producto) => {
+    setPrecioEditando(p.id_producto);
+    setPrecioForm({ precio_unitario: p.precio_unitario ?? "", precio_mayoreo: p.precio_mayoreo ?? "" });
+  };
 
+  const guardarPrecio = async (id_producto: number) => {
+    setSavingPrecio(true);
+    try {
+      const res = await fetch("/api/precios", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id_producto, precio_unitario: parseFloat(precioForm.precio_unitario), precio_mayoreo: parseFloat(precioForm.precio_mayoreo) }),
+      });
+      if (res.ok) { showToast("Precio actualizado ✓", "ok"); setPrecioEditando(null); cargarProductos(); }
+      else { const d = await res.json(); showToast(d.error || "Error al actualizar precio", "err"); }
+    } catch { showToast("Error de conexión", "err"); }
+    finally { setSavingPrecio(false); }
+  };
+
+  // ── Filtros ────────────────────────────────────────────────────────────────
   if (!usuario) return <div style={{ padding: "2rem", color: "var(--muted)" }}>Cargando…</div>;
 
-  const productoSeleccionado = productos.find(p => p.id_producto === Number(entradaForm.id_producto));
+  const productosFiltrados = productos.filter((p) => {
+    if (soloActivos && !p.estado_producto) return false;
+    const q = busqueda.toLowerCase();
+    return (
+      p.nombre_producto.toLowerCase().includes(q) ||
+      p.codigo_producto.toLowerCase().includes(q) ||
+      p.nombre_categoria.toLowerCase().includes(q) ||
+      p.nombre_marca.toLowerCase().includes(q)
+    );
+  });
 
   return (
     <StaffShell
       usuario={usuario}
-      title="Inventario"
-      subtitle={resumen ? `${resumen.filas} filas · alertas: ${resumen.bajo_minimo}` : "Stock, entradas, transferencias, ajustes y bodegas"}
+      title="Catálogo"
+      subtitle={`${productosFiltrados.length} producto${productosFiltrados.length !== 1 ? "s" : ""}${!soloActivos ? " (incluyendo inactivos)" : ""}`}
     >
-      <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+      {/* ── Tabs ── */}
+      <div style={s.tabRow}>
+        {([ ["productos", "Productos"], ["precios", "Precios"] ] as const).map(([k, label]) => (
+          <button key={k} type="button" onClick={() => setTab(k)} style={{ ...s.tabBtn, borderColor: tab === k ? "rgba(45,106,79,.55)" : "var(--border)", background: tab === k ? "rgba(45,106,79,.12)" : "transparent", color: tab === k ? "var(--text)" : "var(--muted)" }}>
+            {label}
+          </button>
+        ))}
+      </div>
 
-        {/* ── Tabs ── */}
-        <div style={s.card}>
-          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-            {([
-              ["stock",       "Stock"],
-              ["operaciones", "Operaciones"],
-              ["kardex",      "Kardex"],
-              ["bodegas",     "Bodegas"],
-            ] as const).map(([k, label]) => (
-              <button key={k} type="button" onClick={() => setTab(k)} style={{ ...s.tabBtn, borderColor: tab === k ? "rgba(45,106,79,.55)" : "var(--border)", background: tab === k ? "rgba(45,106,79,.12)" : "transparent", color: tab === k ? "var(--text)" : "var(--muted)" }}>
-                {label}
-              </button>
-            ))}
-          </div>
+      {/* ── Barra de búsqueda + acciones ── */}
+      <div style={s.toolbar}>
+        <input
+          type="text"
+          placeholder="Buscar producto, código, categoría…"
+          value={busqueda}
+          onChange={(e) => setBusqueda(e.target.value)}
+          style={s.searchInput}
+        />
+        <label style={s.checkLabel}>
+          <input type="checkbox" checked={!soloActivos} onChange={(e) => setSoloActivos(!e.target.checked)} style={{ accentColor: "var(--accent)" }} />
+          Ver inactivos
+        </label>
+        {tab === "productos" && (
+          <button type="button" onClick={abrirCrear} style={s.btnPrimary}>+ Nuevo producto</button>
+        )}
+      </div>
 
-          {/* Filtros comunes (stock y kardex) */}
-          {(tab === "stock" || tab === "kardex") && (
-            <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginTop: "1rem" }}>
-              <select value={filtroBodega} onChange={e => setFiltroBodega(e.target.value)} style={s.select}>
-                <option value="">Todas las bodegas</option>
-                {bodegasSimple.map(b => <option key={b.id_bodega} value={b.id_bodega}>{b.nombre_bodega}</option>)}
-              </select>
-              <select value={filtroProducto} onChange={e => setFiltroProducto(e.target.value)} style={{ ...s.select, minWidth: 260 }}>
-                <option value="">Todos los productos</option>
-                {productos.map(p => <option key={p.id_producto} value={p.id_producto}>[{p.codigo_producto}] {p.nombre_producto}{!p.estado_producto ? " (inactivo)" : ""}</option>)}
-              </select>
-              {tab === "stock" && (
-                <>
-                  <label style={s.check}><input type="checkbox" checked={soloBajoMinimo} onChange={e => setSoloBajoMinimo(e.target.checked)} style={{ accentColor: "var(--accent)" }} /> Solo bajo mínimo</label>
-                  <label style={s.check}><input type="checkbox" checked={incluirInactivos} onChange={e => setIncluirInactivos(e.target.checked)} style={{ accentColor: "var(--accent)" }} /> Incluir inactivos</label>
-                </>
+      {/* ══════════════════════════════════════════════════════════════════════
+          TAB: PRODUCTOS
+      ══════════════════════════════════════════════════════════════════════ */}
+      {tab === "productos" && (
+        <div style={s.tableWrapper}>
+          <table style={s.table}>
+            <thead>
+              <tr>
+                <th style={s.th}>Código</th>
+                <th style={s.th}>Producto</th>
+                <th style={s.th}>Categoría</th>
+                <th style={s.th}>Marca</th>
+                <th style={s.th}>Unidad</th>
+                <th style={{ ...s.th, textAlign: "right" }}>P. Unit.</th>
+                <th style={{ ...s.th, textAlign: "right" }}>P. Mayor.</th>
+                <th style={{ ...s.th, textAlign: "center" }}>Estado</th>
+                <th style={{ ...s.th, textAlign: "center" }}>Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {productosFiltrados.length === 0 ? (
+                <tr><td colSpan={9} style={{ ...s.td, textAlign: "center", color: "var(--muted)", padding: "3rem" }}>No se encontraron productos.</td></tr>
+              ) : (
+                productosFiltrados.map((p) => (
+                  <tr key={p.id_producto} style={{ ...s.tr, opacity: p.estado_producto ? 1 : 0.5 }}>
+                    <td style={s.td}><code style={s.code}>{p.codigo_producto}</code></td>
+                    <td style={s.td}>
+                      <span style={{ fontWeight: 500 }}>{p.nombre_producto}</span>
+                      <div style={{ display: "flex", gap: "0.3rem", marginTop: "0.2rem", flexWrap: "wrap" }}>
+                        {p.caducidad && <span style={s.badge}>Caduca</span>}
+                        {p.exento_iva && <span style={{ ...s.badge, background: "rgba(88,166,255,.15)", color: "var(--blue)", borderColor: "rgba(88,166,255,.3)" }}>Exento IVA</span>}
+                      </div>
+                    </td>
+                    <td style={s.td}>{p.nombre_categoria}</td>
+                    <td style={s.td}>{p.nombre_marca}</td>
+                    <td style={s.td}>{p.unidad_medida}</td>
+                    <td style={{ ...s.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{p.precio_unitario ? `Q${Number(p.precio_unitario).toFixed(2)}` : "—"}</td>
+                    <td style={{ ...s.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{p.precio_mayoreo ? `Q${Number(p.precio_mayoreo).toFixed(2)}` : "—"}</td>
+                    <td style={{ ...s.td, textAlign: "center" }}>
+                      <span style={{ ...s.statusBadge, background: p.estado_producto ? "rgba(63,185,80,.15)" : "rgba(139,148,158,.1)", color: p.estado_producto ? "var(--green)" : "var(--muted)", borderColor: p.estado_producto ? "rgba(63,185,80,.3)" : "rgba(139,148,158,.2)" }}>
+                        {p.estado_producto ? "Activo" : "Inactivo"}
+                      </span>
+                    </td>
+                    <td style={{ ...s.td, textAlign: "center" }}>
+                      <div style={{ display: "flex", gap: "0.4rem", justifyContent: "center" }}>
+                        <button type="button" onClick={() => abrirEditar(p)} style={s.btnEdit} title="Editar"><Icon name ={item.icon as IconName} variant="dark" size={24}/></button>
+                        <button type="button" onClick={() => setConfirmId(p.id_producto)} style={s.btnDel} title="Eliminar"><Icon name ={item.icon as IconName} variant="dark" size={24}/></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
               )}
-              <button type="button" onClick={() => tab === "stock" ? cargarStock() : cargarKardex()} style={s.btnGhost} disabled={loadingStock || loadingKardex}>
-                {(loadingStock || loadingKardex) ? "Actualizando…" : "Actualizar"}
-              </button>
-            </div>
-          )}
+            </tbody>
+          </table>
         </div>
+      )}
 
-        {/* ══════════════════════════════════════════════════════════════════
-            TAB: STOCK
-        ══════════════════════════════════════════════════════════════════ */}
-        {tab === "stock" && (
-          <div style={{ ...s.card, padding: 0, overflow: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 980 }}>
-              <thead>
-                <tr style={{ background: "var(--surface2)" }}>
-                  <th style={s.th}>Bodega</th>
-                  <th style={s.th}>Producto</th>
-                  <th style={{ ...s.th, textAlign: "right" }}>Stock</th>
-                  <th style={{ ...s.th, textAlign: "right" }}>Mínimo</th>
-                  <th style={s.th}>Alerta</th>
-                  <th style={s.th}>Última act.</th>
-                  <th style={s.th}>Guardar mínimo</th>
-                </tr>
-              </thead>
-              <tbody>
-                {stock.length === 0 ? (
-                  <tr><td colSpan={7} style={{ ...s.td, textAlign: "center", padding: "2rem", color: "var(--muted)" }}>No hay filas para estos filtros.</td></tr>
-                ) : stock.map(r => {
-                  const key = `${r.id_bodega}:${r.id_producto}`;
-                  const minVal = minEdits[key] ?? String(r.stock_minimo);
+      {/* ══════════════════════════════════════════════════════════════════════
+          TAB: PRECIOS
+      ══════════════════════════════════════════════════════════════════════ */}
+      {tab === "precios" && (
+        <div style={s.tableWrapper}>
+          <table style={s.table}>
+            <thead>
+              <tr>
+                <th style={s.th}>Código</th>
+                <th style={s.th}>Producto</th>
+                <th style={s.th}>Categoría</th>
+                <th style={s.th}>Unidad</th>
+                <th style={{ ...s.th, textAlign: "right" }}>P. Unitario</th>
+                <th style={{ ...s.th, textAlign: "right" }}>P. Mayoreo</th>
+                <th style={{ ...s.th, textAlign: "center" }}>Acción</th>
+              </tr>
+            </thead>
+            <tbody>
+              {productosFiltrados.length === 0 ? (
+                <tr><td colSpan={7} style={{ ...s.td, textAlign: "center", color: "var(--muted)", padding: "3rem" }}>No se encontraron productos.</td></tr>
+              ) : (
+                productosFiltrados.map((p) => {
+                  const editingThis = precioEditando === p.id_producto;
                   return (
-                    <tr key={key} style={{ borderTop: "1px solid var(--border)" }}>
-                      <td style={s.td}>
-                        <div style={{ fontWeight: 600 }}>{r.nombre_bodega}</div>
-                        <div style={{ fontSize: "0.78rem", color: "var(--muted)" }}>{r.ubicacion || "—"}</div>
-                      </td>
-                      <td style={s.td}>
-                        <div style={{ fontWeight: 600 }}><code style={s.code}>{r.codigo_producto}</code> {r.nombre_producto}</div>
-                        <div style={{ fontSize: "0.78rem", color: "var(--muted)" }}>{r.nombre_categoria} · {r.nombre_marca} · {r.unidad_medida}{!r.estado_producto ? " · inactivo" : ""}</div>
-                      </td>
-                      <td style={{ ...s.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{Number(r.cantidad_disponible).toFixed(3)}</td>
+                    <tr key={p.id_producto} style={s.tr}>
+                      <td style={s.td}><code style={s.code}>{p.codigo_producto}</code></td>
+                      <td style={{ ...s.td, fontWeight: 500 }}>{p.nombre_producto}</td>
+                      <td style={{ ...s.td, color: "var(--muted)" }}>{p.nombre_categoria}</td>
+                      <td style={{ ...s.td, color: "var(--muted)" }}>{p.unidad_medida}</td>
                       <td style={{ ...s.td, textAlign: "right" }}>
-                        <input value={minVal} onChange={e => setMinEdits(m => ({ ...m, [key]: e.target.value }))} style={{ ...s.select, padding: "0.45rem 0.55rem", maxWidth: 120, textAlign: "right" }} />
+                        {editingThis ? (
+                          <input type="number" step="0.01" min="0" value={precioForm.precio_unitario} onChange={(e) => setPrecioForm(f => ({ ...f, precio_unitario: e.target.value }))} style={{ ...s.priceInput }} />
+                        ) : (
+                          <span style={{ fontVariantNumeric: "tabular-nums" }}>Q{Number(p.precio_unitario ?? 0).toFixed(2)}</span>
+                        )}
                       </td>
-                      <td style={s.td}>{r.bajo_minimo ? <span style={s.badgeWarn}>Bajo mínimo</span> : <span style={s.badgeOk}>OK</span>}</td>
-                      <td style={{ ...s.td, fontSize: "0.82rem", color: "var(--muted)" }}>{new Date(r.ultima_actualizacion).toLocaleString("es-GT")}</td>
-                      <td style={s.td}>
-                        <button type="button" style={s.btnPrimary} onClick={() => void patchMinimo(r.id_bodega, r.id_producto)}>Guardar</button>
+                      <td style={{ ...s.td, textAlign: "right" }}>
+                        {editingThis ? (
+                          <input type="number" step="0.01" min="0" value={precioForm.precio_mayoreo} onChange={(e) => setPrecioForm(f => ({ ...f, precio_mayoreo: e.target.value }))} style={{ ...s.priceInput }} />
+                        ) : (
+                          <span style={{ fontVariantNumeric: "tabular-nums" }}>Q{Number(p.precio_mayoreo ?? 0).toFixed(2)}</span>
+                        )}
+                      </td>
+                      <td style={{ ...s.td, textAlign: "center" }}>
+                        {editingThis ? (
+                          <div style={{ display: "flex", gap: "0.4rem", justifyContent: "center" }}>
+                            <button type="button" onClick={() => guardarPrecio(p.id_producto)} disabled={savingPrecio} style={{ ...s.btnSave }}>{savingPrecio ? "…" : "Guardar"}</button>
+                            <button type="button" onClick={() => setPrecioEditando(null)} style={s.btnCancel}>Cancelar</button>
+                          </div>
+                        ) : (
+                          <button type="button" onClick={() => iniciarEditarPrecio(p)} style={s.btnEdit}><Icon name ={item.icon as IconName} variant="dark" size={24}/> Editar</button>
+                        )}
                       </td>
                     </tr>
                   );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* ══════════════════════════════════════════════════════════════════
-            TAB: OPERACIONES
-        ══════════════════════════════════════════════════════════════════ */}
-        {tab === "operaciones" && (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "1rem" }}>
-
-            {/* Entrada de stock */}
-            <div style={s.card}>
-              <h3 style={s.h3}>📦 Entrada de stock</h3>
-              <p style={s.help}>Registra el ingreso de mercancía. Queda trazado en kardex.</p>
-              <div style={s.field}>
-                <label style={s.label}>Bodega *</label>
-                <select value={entradaForm.id_bodega} onChange={e => { setEntradaForm(f => ({ ...f, id_bodega: e.target.value })); setEntradaError(null); setEntradaResultado(null); }} style={s.select}>
-                  <option value="">— Selecciona —</option>
-                  {bodegasSimple.map(b => <option key={b.id_bodega} value={b.id_bodega}>{b.nombre_bodega}</option>)}
-                </select>
-              </div>
-              <div style={s.field}>
-                <label style={s.label}>Producto *</label>
-                <select value={entradaForm.id_producto} onChange={e => { setEntradaForm(f => ({ ...f, id_producto: e.target.value })); setEntradaError(null); setEntradaResultado(null); }} style={s.select}>
-                  <option value="">— Selecciona —</option>
-                  {productos.map(p => <option key={p.id_producto} value={p.id_producto}>[{p.codigo_producto}] {p.nombre_producto}</option>)}
-                </select>
-                {productoSeleccionado && <span style={{ fontSize: "0.78rem", color: "var(--muted)" }}>Unidad: <strong style={{ color: "var(--text)" }}>{productoSeleccionado.unidad_medida}</strong></span>}
-              </div>
-              <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
-                <div style={{ ...s.field, flex: "1 1 120px" }}>
-                  <label style={s.label}>Tipo *</label>
-                  <select value={entradaForm.tipo_ingreso} onChange={e => setEntradaForm(f => ({ ...f, tipo_ingreso: e.target.value }))} style={s.select}>
-                    <option value="UNIDADES">Unidades</option>
-                    <option value="CAJAS">Cajas</option>
-                  </select>
-                </div>
-                <div style={{ ...s.field, flex: "1 1 120px" }}>
-                  <label style={s.label}>Cantidad *</label>
-                  <input type="number" min="0.001" step="0.001" value={entradaForm.cantidad} onChange={e => setEntradaForm(f => ({ ...f, cantidad: e.target.value }))} style={s.select} />
-                </div>
-              </div>
-              <div style={s.field}>
-                <label style={s.label}>Descripción (opcional)</label>
-                <textarea value={entradaForm.descripcion} onChange={e => setEntradaForm(f => ({ ...f, descripcion: e.target.value }))} rows={2} placeholder="Ej: Compra a proveedor XYZ…" style={{ ...s.select, resize: "vertical" }} />
-              </div>
-              <button type="button" onClick={registrarEntrada} disabled={entradaLoading || !entradaForm.id_bodega || !entradaForm.id_producto || !entradaForm.cantidad} style={{ ...s.btnPrimary, opacity: (!entradaForm.id_bodega || !entradaForm.id_producto || !entradaForm.cantidad) ? 0.5 : 1 }}>
-                {entradaLoading ? "Registrando…" : "Registrar entrada"}
-              </button>
-              {entradaError && <div style={s.alertErr}>{entradaError}</div>}
-              {entradaResultado && (
-                <div style={s.alertOk}>
-                  <strong style={{ color: "var(--text)" }}>Entrada registrada</strong>
-                  <div style={{ fontSize: "0.82rem", marginTop: "0.35rem", color: "var(--muted)" }}>
-                    {entradaResultado.nombre_producto} · {entradaResultado.nombre_bodega}<br />
-                    Stock actual: <strong style={{ color: "var(--text)" }}>{Number(entradaResultado.cantidad_disponible).toFixed(2)} {entradaResultado.unidad_medida}</strong>
-                  </div>
-                </div>
+                })
               )}
-            </div>
+            </tbody>
+          </table>
+        </div>
+      )}
 
-            {/* Transferencia */}
-            <div style={s.card}>
-              <h3 style={s.h3}>🔄 Transferencia entre bodegas</h3>
-              <p style={s.help}>Descuenta en origen, suma en destino y genera 2 movimientos en kardex.</p>
-              <div style={s.field}>
-                <label style={s.label}>Bodega origen</label>
-                <select value={xfer.id_bodega_origen} onChange={e => setXfer(x => ({ ...x, id_bodega_origen: e.target.value }))} style={s.select}>
-                  <option value="">— Selecciona —</option>
-                  {bodegasSimple.map(b => <option key={b.id_bodega} value={b.id_bodega}>{b.nombre_bodega}</option>)}
-                </select>
-              </div>
-              <div style={s.field}>
-                <label style={s.label}>Bodega destino</label>
-                <select value={xfer.id_bodega_destino} onChange={e => setXfer(x => ({ ...x, id_bodega_destino: e.target.value }))} style={s.select}>
-                  <option value="">— Selecciona —</option>
-                  {bodegasSimple.map(b => <option key={b.id_bodega} value={b.id_bodega}>{b.nombre_bodega}</option>)}
-                </select>
-              </div>
-              <div style={s.field}>
-                <label style={s.label}>Producto</label>
-                <select value={xfer.id_producto} onChange={e => setXfer(x => ({ ...x, id_producto: e.target.value }))} style={s.select}>
-                  <option value="">— Selecciona —</option>
-                  {productos.map(p => <option key={p.id_producto} value={p.id_producto}>[{p.codigo_producto}] {p.nombre_producto}</option>)}
-                </select>
-              </div>
-              <div style={s.field}>
-                <label style={s.label}>Cantidad</label>
-                <input value={xfer.cantidad} onChange={e => setXfer(x => ({ ...x, cantidad: e.target.value }))} style={s.select} inputMode="decimal" />
-              </div>
-              <div style={s.field}>
-                <label style={s.label}>Descripción (opcional)</label>
-                <input value={xfer.descripcion} onChange={e => setXfer(x => ({ ...x, descripcion: e.target.value }))} style={s.select} placeholder="Ej: Reubicación por temporada" />
-              </div>
-              <button type="button" style={s.btnPrimary} onClick={() => void registrarTransferencia()} disabled={!xfer.id_bodega_origen || !xfer.id_bodega_destino || !xfer.id_producto || !xfer.cantidad}>
-                Registrar transferencia
-              </button>
-            </div>
-
-            {/* Ajuste */}
-            <div style={s.card}>
-              <h3 style={s.h3}>⚖️ Ajuste de inventario</h3>
-              <p style={s.help}>Define el <strong>stock real</strong> en una bodega. El delta se registra como <code style={s.code}>AJUSTE</code> en kardex.</p>
-              <div style={s.field}>
-                <label style={s.label}>Bodega</label>
-                <select value={adj.id_bodega} onChange={e => setAdj(a => ({ ...a, id_bodega: e.target.value }))} style={s.select}>
-                  <option value="">— Selecciona —</option>
-                  {bodegasSimple.map(b => <option key={b.id_bodega} value={b.id_bodega}>{b.nombre_bodega}</option>)}
-                </select>
-              </div>
-              <div style={s.field}>
-                <label style={s.label}>Producto</label>
-                <select value={adj.id_producto} onChange={e => setAdj(a => ({ ...a, id_producto: e.target.value }))} style={s.select}>
-                  <option value="">— Selecciona —</option>
-                  {productos.map(p => <option key={p.id_producto} value={p.id_producto}>[{p.codigo_producto}] {p.nombre_producto}</option>)}
-                </select>
-              </div>
-              <div style={s.field}>
-                <label style={s.label}>Nueva cantidad (stock físico)</label>
-                <input value={adj.nueva_cantidad} onChange={e => setAdj(a => ({ ...a, nueva_cantidad: e.target.value }))} style={s.select} inputMode="decimal" />
-              </div>
-              <div style={s.field}>
-                <label style={s.label}>Motivo / nota (opcional)</label>
-                <input value={adj.descripcion} onChange={e => setAdj(a => ({ ...a, descripcion: e.target.value }))} style={s.select} placeholder="Ej: Conteo físico, merma…" />
-              </div>
-              <button type="button" style={s.btnPrimary} onClick={() => void registrarAjuste()} disabled={!adj.id_bodega || !adj.id_producto || !adj.nueva_cantidad}>
-                Aplicar ajuste
-              </button>
-            </div>
-
-          </div>
-        )}
-
-        {/* ══════════════════════════════════════════════════════════════════
-            TAB: KARDEX
-        ══════════════════════════════════════════════════════════════════ */}
-        {tab === "kardex" && (
-          <div style={{ ...s.card, padding: 0, overflow: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 900 }}>
-              <thead>
-                <tr style={{ background: "var(--surface2)" }}>
-                  <th style={s.th}>Fecha</th>
-                  <th style={s.th}>Tipo</th>
-                  <th style={s.th}>Bodega</th>
-                  <th style={s.th}>Producto</th>
-                  <th style={{ ...s.th, textAlign: "right" }}>Cantidad</th>
-                  <th style={s.th}>Descripción</th>
-                </tr>
-              </thead>
-              <tbody>
-                {kardex.length === 0 ? (
-                  <tr><td colSpan={6} style={{ ...s.td, textAlign: "center", padding: "2rem", color: "var(--muted)" }}>No hay movimientos para estos filtros.</td></tr>
-                ) : kardex.map(m => (
-                  <tr key={m.id_kardex} style={{ borderTop: "1px solid var(--border)" }}>
-                    <td style={{ ...s.td, fontSize: "0.82rem", color: "var(--muted)", whiteSpace: "nowrap" }}>{new Date(m.fecha_movimiento).toLocaleString("es-GT")}</td>
-                    <td style={s.td}><span style={tipoBadge(m.tipo_movimiento)}>{m.tipo_movimiento}</span></td>
-                    <td style={s.td}><div style={{ fontWeight: 600 }}>{m.nombre_bodega}</div></td>
-                    <td style={s.td}><div style={{ fontWeight: 600 }}><code style={s.code}>{m.codigo_producto}</code> {m.nombre_producto}</div><div style={{ fontSize: "0.78rem", color: "var(--muted)" }}>{m.unidad_medida}</div></td>
-                    <td style={{ ...s.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{Number(m.cantidad).toFixed(3)}</td>
-                    <td style={{ ...s.td, color: "var(--muted)", fontSize: "0.88rem" }}>{m.descripcion || "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* ══════════════════════════════════════════════════════════════════
-            TAB: BODEGAS
-        ══════════════════════════════════════════════════════════════════ */}
-        {tab === "bodegas" && (
-          <>
-            <div style={{ display: "flex", gap: "0.75rem", marginBottom: "0.25rem" }}>
-              <button type="button" onClick={abrirCrearBodega} style={s.btnPrimary}>+ Nueva bodega</button>
-              <button type="button" onClick={() => cargarBodegas()} style={s.btnGhost}>Actualizar</button>
-            </div>
-            <div style={{ ...s.card, padding: 0, overflow: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead>
-                  <tr style={{ background: "var(--surface2)" }}>
-                    <th style={s.th}>ID</th>
-                    <th style={s.th}>Nombre</th>
-                    <th style={s.th}>Ubicación</th>
-                    <th style={{ ...s.th, textAlign: "right" }}>Productos</th>
-                    <th style={{ ...s.th, textAlign: "right" }}>Stock total</th>
-                    <th style={{ ...s.th, textAlign: "center" }}>Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {bodegas.length === 0 ? (
-                    <tr><td colSpan={6} style={{ ...s.td, textAlign: "center", padding: "2rem", color: "var(--muted)" }}>No hay bodegas registradas.</td></tr>
-                  ) : bodegas.map((b, i) => (
-                    <tr key={b.id_bodega} style={{ background: i % 2 === 0 ? "var(--surface2)" : "var(--surface)" }}>
-                      <td style={{ ...s.td, color: "var(--muted)", fontFamily: "monospace" }}>#{b.id_bodega}</td>
-                      <td style={{ ...s.td, fontWeight: 600 }}>{b.nombre_bodega}</td>
-                      <td style={{ ...s.td, color: "var(--muted)" }}>{b.ubicacion || "—"}</td>
-                      <td style={{ ...s.td, textAlign: "right" }}>{b.total_productos}</td>
-                      <td style={{ ...s.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{Number(b.stock_total).toLocaleString("es-GT", { maximumFractionDigits: 3 })}</td>
-                      <td style={{ ...s.td, textAlign: "center" }}>
-                        <div style={{ display: "flex", gap: "0.4rem", justifyContent: "center" }}>
-                          <button type="button" onClick={() => abrirEditarBodega(b)} style={s.btnEdit} title="Editar">✏️</button>
-                          <button type="button" onClick={() => setConfirmDeleteBodega(b.id_bodega)} style={s.btnDel} title="Eliminar">🗑️</button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
-
-      </div>
-
-      {/* ── Modal Bodega ── */}
-      {modalBodegaOpen && (
-        <div style={s.overlay} onClick={e => { if (e.target === e.currentTarget) cerrarModalBodega(); }}>
-          <div style={{ ...s.modal, maxWidth: 480 }}>
+      {/* ── Modal Crear / Editar producto ── */}
+      {modalOpen && (
+        <div style={s.overlay} onClick={(e) => { if (e.target === e.currentTarget) cerrarModal(); }}>
+          <div style={s.modal}>
             <div style={s.modalHeader}>
-              <h2 style={s.modalTitle}>{editandoBodega ? "Editar bodega" : "Nueva bodega"}</h2>
-              <button type="button" onClick={cerrarModalBodega} style={s.closeBtn}>✕</button>
+              <h2 style={s.modalTitle}>{editando ? "Editar producto" : "Nuevo producto"}</h2>
+              <button type="button" onClick={cerrarModal} style={s.closeBtn}>✕</button>
             </div>
             <div style={s.modalBody}>
-              <div style={s.field}>
-                <label style={s.label}>Nombre *</label>
-                <input style={s.inputModal} value={bodegaForm.nombre_bodega} onChange={e => setBodegaForm(f => ({ ...f, nombre_bodega: e.target.value }))} placeholder="Bodega Principal" autoFocus />
+              <div style={s.fila}>
+                <Field label="Código *" style={{ flex: "0 0 140px" }}>
+                  <input style={s.input} value={form.codigo_producto} onChange={(e) => setForm(f => ({ ...f, codigo_producto: e.target.value }))} placeholder="ARR-001" autoFocus />
+                </Field>
+                <Field label="Nombre del producto *" style={{ flex: 1 }}>
+                  <input style={s.input} value={form.nombre_producto} onChange={(e) => setForm(f => ({ ...f, nombre_producto: e.target.value }))} placeholder="Arroz 1 libra" />
+                </Field>
               </div>
-              <div style={s.field}>
-                <label style={s.label}>Ubicación</label>
-                <input style={s.inputModal} value={bodegaForm.ubicacion} onChange={e => setBodegaForm(f => ({ ...f, ubicacion: e.target.value }))} placeholder="Zona 1, Guatemala" />
+              <div style={s.fila}>
+                <Field label="Categoría *" style={{ flex: 1 }}>
+                  <select style={s.input} value={form.id_categoria} onChange={(e) => setForm(f => ({ ...f, id_categoria: e.target.value }))}>
+                    <option value="">— Selecciona —</option>
+                    {categorias.map((c) => <option key={c.id_categoria} value={c.id_categoria}>{c.nombre_categoria}</option>)}
+                  </select>
+                </Field>
+                <Field label="Marca *" style={{ flex: 1 }}>
+                  <select style={s.input} value={form.id_marca} onChange={(e) => setForm(f => ({ ...f, id_marca: e.target.value }))}>
+                    <option value="">— Selecciona —</option>
+                    {marcas.map((m) => <option key={m.id_marca} value={m.id_marca}>{m.nombre_marca}</option>)}
+                  </select>
+                </Field>
               </div>
-              {bodegaFormError && <p style={{ color: "var(--red)", fontSize: "0.85rem", margin: 0 }}>{bodegaFormError}</p>}
+              <div style={s.fila}>
+                <Field label="Precio unitario" style={{ flex: 1 }}>
+                  <input style={s.input} type="number" step="0.01" min="0" value={form.precio_unitario} onChange={(e) => setForm(f => ({ ...f, precio_unitario: e.target.value }))} placeholder="0.00" />
+                </Field>
+                <Field label="Precio mayoreo" style={{ flex: 1 }}>
+                  <input style={s.input} type="number" step="0.01" min="0" value={form.precio_mayoreo} onChange={(e) => setForm(f => ({ ...f, precio_mayoreo: e.target.value }))} placeholder="0.00" />
+                </Field>
+                <Field label="Unidad de medida *" style={{ flex: 1 }}>
+                  <input style={s.input} value={form.unidad_medida} onChange={(e) => setForm(f => ({ ...f, unidad_medida: e.target.value }))} placeholder="libra, litro, unidad…" />
+                </Field>
+              </div>
+              <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap", marginTop: "0.25rem" }}>
+                <CheckField label="Producto con fecha de caducidad" checked={form.caducidad} onChange={(v) => setForm(f => ({ ...f, caducidad: v }))} />
+                <CheckField label="Exento de IVA" checked={form.exento_iva} onChange={(v) => setForm(f => ({ ...f, exento_iva: v }))} />
+                <CheckField label="Producto activo" checked={form.estado_producto} onChange={(v) => setForm(f => ({ ...f, estado_producto: v }))} />
+              </div>
+              {formError && <p style={s.formError}>{formError}</p>}
             </div>
             <div style={s.modalFooter}>
-              <button type="button" onClick={cerrarModalBodega} style={s.btnSecondary} disabled={savingBodega}>Cancelar</button>
-              <button type="button" onClick={handleGuardarBodega} style={s.btnPrimary} disabled={savingBodega}>{savingBodega ? "Guardando…" : editandoBodega ? "Guardar cambios" : "Crear bodega"}</button>
+              <button type="button" onClick={cerrarModal} style={s.btnSecondary} disabled={saving}>Cancelar</button>
+              <button type="button" onClick={handleGuardar} style={s.btnPrimary} disabled={saving}>{saving ? "Guardando…" : editando ? "Guardar cambios" : "Crear producto"}</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── Confirm delete bodega ── */}
-      {confirmDeleteBodega !== null && (
+      {/* ── Confirm delete ── */}
+      {confirmId !== null && (
         <div style={s.overlay}>
-          <div style={{ ...s.modal, maxWidth: 420 }}>
-            <div style={s.modalHeader}><h2 style={s.modalTitle}>¿Eliminar bodega?</h2></div>
+          <div style={{ ...s.modal, maxWidth: 400 }}>
+            <div style={s.modalHeader}><h2 style={s.modalTitle}>¿Eliminar producto?</h2></div>
             <div style={s.modalBody}>
-              <p style={{ color: "var(--muted)", lineHeight: 1.6 }}>Solo se puede eliminar si la bodega <strong style={{ color: "var(--text)" }}>no tiene stock activo</strong>. Si tiene productos, transfiere o ajusta el inventario primero.</p>
+              <p style={{ color: "var(--muted)", lineHeight: 1.6 }}>Si el producto tiene historial, será <strong style={{ color: "var(--text)" }}>desactivado</strong> en lugar de eliminado para conservar el registro.</p>
             </div>
             <div style={s.modalFooter}>
-              <button type="button" onClick={() => setConfirmDeleteBodega(null)} style={s.btnSecondary} disabled={deletingBodega}>Cancelar</button>
-              <button type="button" onClick={() => handleEliminarBodega(confirmDeleteBodega)} style={{ ...s.btnPrimary, background: "var(--red)" }} disabled={deletingBodega}>{deletingBodega ? "Eliminando…" : "Sí, eliminar"}</button>
+              <button type="button" onClick={() => setConfirmId(null)} style={s.btnSecondary} disabled={deleting}>Cancelar</button>
+              <button type="button" onClick={() => handleEliminar(confirmId)} style={{ ...s.btnPrimary, background: "var(--red)" }} disabled={deleting}>{deleting ? "Eliminando…" : "Sí, eliminar"}</button>
             </div>
           </div>
         </div>
@@ -661,46 +432,54 @@ export default function InventarioPage() {
   );
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function tipoBadge(tipo: KardexRow["tipo_movimiento"]): CSSProperties {
-  if (tipo === "ENTRADA") return { ...pill, background: "rgba(63,185,80,.12)", borderColor: "rgba(63,185,80,.35)", color: "var(--green)" };
-  if (tipo === "SALIDA")  return { ...pill, background: "rgba(248,81,73,.10)", borderColor: "rgba(248,81,73,.30)", color: "var(--red)" };
-  return { ...pill, background: "rgba(88,166,255,.12)", borderColor: "rgba(88,166,255,.30)", color: "var(--blue)" };
+function Field({ label, children, style }: { label: string; children: ReactNode; style?: CSSProperties }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", ...style }}>
+      <label style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)", letterSpacing: "0.04em", textTransform: "uppercase" }}>{label}</label>
+      {children}
+    </div>
+  );
 }
 
-const pill: CSSProperties = { display: "inline-block", padding: "0.15rem 0.55rem", borderRadius: 999, border: "1px solid var(--border)", fontSize: "0.78rem", fontWeight: 800, letterSpacing: "0.04em" };
-
-// ── Estilos ───────────────────────────────────────────────────────────────────
+function CheckField({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", color: "var(--text)", fontSize: "0.88rem" }}>
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} style={{ accentColor: "var(--accent)", width: 15, height: 15 }} />
+      {label}
+    </label>
+  );
+}
 
 const s: Record<string, CSSProperties> = {
-  card: { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "1rem" },
+  tabRow: { display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "1.25rem" },
   tabBtn: { border: "1px solid var(--border)", background: "transparent", color: "var(--muted)", borderRadius: 999, padding: "0.45rem 0.85rem", cursor: "pointer", fontSize: "0.85rem" },
-  select: { background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "0.55rem 0.75rem", color: "var(--text)", fontSize: "0.9rem", outline: "none", width: "100%" },
-  check: { display: "flex", alignItems: "center", gap: "0.45rem", color: "var(--muted)", fontSize: "0.85rem", userSelect: "none" } as CSSProperties,
-  btnGhost: { border: "1px solid var(--border)", background: "transparent", color: "var(--text)", borderRadius: 10, padding: "0.55rem 0.85rem", cursor: "pointer", fontSize: "0.85rem" },
-  btnPrimary: { background: "var(--accent)", color: "#0d1117", border: "none", borderRadius: 10, padding: "0.65rem 0.9rem", fontWeight: 700, cursor: "pointer", fontSize: "0.88rem", whiteSpace: "nowrap" } as CSSProperties,
+  toolbar: { display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap", marginBottom: "1.5rem" },
+  searchInput: { flex: 1, minWidth: 220, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "0.6rem 1rem", color: "var(--text)", fontSize: "0.88rem", outline: "none" },
+  checkLabel: { display: "flex", alignItems: "center", gap: "0.4rem", color: "var(--muted)", fontSize: "0.85rem", cursor: "pointer", userSelect: "none" } as CSSProperties,
+  btnPrimary: { background: "var(--accent)", color: "#eff5ff", border: "none", borderRadius: "var(--radius)", padding: "0.6rem 1.2rem", fontFamily: "var(--font-head)", fontSize: "0.88rem", fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" } as CSSProperties,
   btnSecondary: { background: "transparent", color: "var(--muted)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "0.6rem 1.2rem", fontSize: "0.88rem", cursor: "pointer" },
+  tableWrapper: { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", overflow: "auto" },
+  table: { width: "100%", borderCollapse: "collapse" },
+  th: { background: "var(--surface2)", color: "var(--muted)", fontSize: "0.72rem", fontWeight: 600, letterSpacing: "0.07em", textTransform: "uppercase", padding: "0.75rem 1rem", textAlign: "left", borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" } as CSSProperties,
+  tr: { borderBottom: "1px solid var(--border)" },
+  td: { padding: "0.75rem 1rem", color: "var(--text)", fontSize: "0.88rem", verticalAlign: "middle" },
+  code: { background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 4, padding: "0.1rem 0.4rem", fontSize: "0.75rem", color: "var(--accent)", fontFamily: "monospace" },
+  badge: { fontSize: "0.65rem", padding: "0.05rem 0.4rem", borderRadius: 99, background: "rgba(232,160,69,.12)", color: "var(--accent)", border: "1px solid rgba(232,160,69,.25)", fontWeight: 600 } as CSSProperties,
+  statusBadge: { display: "inline-block", fontSize: "0.72rem", padding: "0.15rem 0.6rem", borderRadius: 99, border: "1px solid", fontWeight: 600, letterSpacing: "0.04em" } as CSSProperties,
   btnEdit: { background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "0.3rem 0.5rem", cursor: "pointer", fontSize: "0.85rem" },
   btnDel: { background: "rgba(248,81,73,.1)", border: "1px solid rgba(248,81,73,.25)", borderRadius: 6, padding: "0.3rem 0.5rem", cursor: "pointer", fontSize: "0.85rem" },
-  th: { textAlign: "left", padding: "0.75rem 0.85rem", fontSize: "0.72rem", letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--muted)", borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" } as CSSProperties,
-  td: { padding: "0.75rem 0.85rem", verticalAlign: "top" },
-  code: { fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: "0.78rem", padding: "0.1rem 0.35rem", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--accent)" },
-  badgeOk: { display: "inline-block", padding: "0.15rem 0.55rem", borderRadius: 999, border: "1px solid rgba(63,185,80,.35)", background: "rgba(63,185,80,.10)", color: "var(--green)", fontSize: "0.78rem", fontWeight: 700 },
-  badgeWarn: { display: "inline-block", padding: "0.15rem 0.55rem", borderRadius: 999, border: "1px solid rgba(232,160,69,.35)", background: "rgba(232,160,69,.10)", color: "var(--accent)", fontSize: "0.78rem", fontWeight: 700 },
-  h3: { margin: "0 0 0.35rem", fontFamily: "var(--font-head)", fontSize: "1.05rem" },
-  help: { margin: "0 0 1rem", color: "var(--muted)", fontSize: "0.88rem", lineHeight: 1.55 },
-  field: { display: "flex", flexDirection: "column", gap: "0.35rem", marginBottom: "0.85rem" },
-  label: { fontSize: "0.82rem", fontWeight: 700, color: "var(--muted)" },
-  alertErr: { marginTop: "0.75rem", background: "rgba(248,81,73,.12)", border: "1px solid rgba(248,81,73,.3)", borderRadius: 8, padding: "0.65rem 0.85rem", color: "var(--red)", fontSize: "0.85rem" },
-  alertOk: { marginTop: "0.75rem", background: "rgba(63,185,80,.12)", border: "1px solid rgba(63,185,80,.35)", borderRadius: 8, padding: "0.75rem 0.85rem", color: "var(--green)", fontSize: "0.85rem" },
+  btnSave: { background: "var(--accent)", color: "#0d1117", border: "none", borderRadius: 6, padding: "0.3rem 0.75rem", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer" },
+  btnCancel: { background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "0.3rem 0.75rem", fontSize: "0.82rem", cursor: "pointer", color: "var(--muted)" },
+  priceInput: { width: 90, padding: "0.3rem 0.5rem", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)", fontSize: "0.88rem", outline: "none", textAlign: "right" } as CSSProperties,
   overlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,.65)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: "1rem" } as CSSProperties,
-  modal: { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, width: "100%", maxWidth: 480, boxShadow: "var(--shadow)", overflow: "hidden" },
+  modal: { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, width: "100%", maxWidth: 620, boxShadow: "var(--shadow)", overflow: "hidden" },
   modalHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "1.25rem 1.5rem", borderBottom: "1px solid var(--border)" },
   modalTitle: { fontFamily: "var(--font-head)", fontSize: "1.1rem", fontWeight: 700, color: "var(--text)", margin: 0 },
   closeBtn: { background: "transparent", border: "none", color: "var(--muted)", fontSize: "1rem", cursor: "pointer", padding: "0.2rem 0.4rem" },
   modalBody: { padding: "1.5rem", display: "flex", flexDirection: "column", gap: "1rem" } as CSSProperties,
   modalFooter: { display: "flex", justifyContent: "flex-end", gap: "0.75rem", padding: "1rem 1.5rem", borderTop: "1px solid var(--border)" },
-  inputModal: { background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "0.65rem 0.85rem", color: "var(--text)", fontSize: "0.92rem", outline: "none", width: "100%" },
+  fila: { display: "flex", gap: "1rem", flexWrap: "wrap" },
+  input: { background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "0.6rem 0.85rem", color: "var(--text)", fontSize: "0.9rem", outline: "none", width: "100%" },
+  formError: { color: "var(--red)", fontSize: "0.85rem", margin: "0.25rem 0 0" },
   toast: { position: "fixed", bottom: "2rem", right: "2rem", padding: "0.85rem 1.25rem", borderRadius: "var(--radius)", border: "1px solid", fontSize: "0.88rem", fontWeight: 500, zIndex: 300, backdropFilter: "blur(8px)", boxShadow: "var(--shadow)" } as CSSProperties,
 };

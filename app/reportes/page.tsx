@@ -1337,7 +1337,7 @@ const s: Record<string, CSSProperties> = {
   },
   btnPrimary: {
     background: "var(--accent)",
-    color: "#0d1117",
+    color: "#eff5ff",
     border: "none",
     borderRadius: 8,
     padding: "0.55rem 1.1rem",
