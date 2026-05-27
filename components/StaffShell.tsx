@@ -13,6 +13,7 @@ export type StaffUsuario = {
 
 const NAV = [
   { href: "/dashboard",        icon: "◈",  label: "Dashboard" },
+  { href: "/cobranza",         icon: "💰", label: "Cobranza" },
   { href: "/inventario",       icon: "📦", label: "Inventario" },
   { href: "/catalogo",         icon: "🌿", label: "Catálogo" },
   { href: "/ventas",           icon: "🧾", label: "Ventas" },

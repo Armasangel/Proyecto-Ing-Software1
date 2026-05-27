@@ -6,6 +6,7 @@ import { AUTH_COOKIE } from "./lib/auth";
 
 const PROTECTED_PREFIXES = [
   "/dashboard",
+  "/cobranza",
   "/inventario",
   "/gestion-inventario",
   "/bodegas",
@@ -105,6 +106,7 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     "/dashboard/:path*",
+    "/cobranza/:path*",
     "/inventario/:path*",
     "/gestion-inventario/:path*",
     "/bodegas/:path*",
