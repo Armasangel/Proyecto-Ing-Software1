@@ -5,6 +5,7 @@ import Link from "next/link";
 import { StaffShell } from "@/components/StaffShell";
 import { useStaffSession } from "@/hooks/useStaffSession";
 import { isDuenoTipo } from "@/lib/roles";
+import { CobranzaResumenCards } from "@/components/cobranza/CobranzaResumenCards";
 
 export default function DashboardPage() {
   const usuario = useStaffSession();
@@ -35,6 +36,7 @@ export default function DashboardPage() {
     const dueno = isDuenoTipo(usuario.tipo_usuario);
 
     const base = [
+      { href: "/cobranza", icon: "💰", label: "Cobranza" },
       { href: "/productos", icon: "🌿", label: "Productos" },
       { href: "/ventas", icon: "🧾", label: "Ventas" },
       { href: "/reportes", icon: "📊", label: "Reportes" },
@@ -84,6 +86,8 @@ export default function DashboardPage() {
         month: "long",
       })}`}
     >
+      <CobranzaResumenCards />
+
       <div style={s.statsGrid}>
         {[
           {
