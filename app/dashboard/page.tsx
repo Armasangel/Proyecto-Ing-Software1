@@ -5,6 +5,7 @@ import Link from "next/link";
 import { StaffShell } from "@/components/StaffShell";
 import { useStaffSession } from "@/hooks/useStaffSession";
 import { isDuenoTipo } from "@/lib/roles";
+import { Icon, type IconName } from "@/components/Icon";
 
 export default function DashboardPage() {
   const usuario = useStaffSession();
@@ -24,25 +25,6 @@ export default function DashboardPage() {
         if (d.stats) setStats(d.stats);
       })
       .catch(() => {});
-  }, [usuario]);
-
-  const quickActions = useMemo(() => {
-    if (!usuario) return [];
-    const dueno = isDuenoTipo(usuario.tipo_usuario);
-    const base = [
-      { href: "/productos",  icon: "🌿", label: "Productos" },
-      { href: "/ventas",     icon: "🧾", label: "Ventas" },
-      { href: "/reportes",   icon: "📊", label: "Reportes" },
-    ];
-    if (dueno) {
-      return [
-        { href: "/gestion-inventario", icon: "🏭", label: "Gestión inventario" },
-        { href: "/inventario",          icon: "📦", label: "Inventario" },
-        { href: "/inventario/entrada",  icon: "⬇",  label: "Entrada stock" },
-        ...base,
-      ];
-    }
-    return base;
   }, [usuario]);
 
   if (!usuario) {
