@@ -5,7 +5,6 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
 import { isColaboradorTipo, isDuenoTipo, labelRol, staffVariantFromTipo } from "@/lib/roles";
 import { Icon, type IconName } from "@/components/Icon";
 
@@ -78,37 +77,10 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
   const pathname = usePathname();
   const variant = staffVariantFromTipo(usuario.tipo_usuario);
   const t = THEMES[variant];
-  const [modoClaro, setModoClaro] = useState(false);
-
-  useEffect(() => {
-    const guardado = localStorage.getItem("tema");
-    if (guardado === "light") {
-      setModoClaro(true);
-      document.documentElement.setAttribute("data-theme", "light");
-    }
-  }, []);
-
-  function toggleTema() {
-    const nuevoModo = !modoClaro;
-    setModoClaro(nuevoModo);
-    if (nuevoModo) {
-      document.documentElement.setAttribute("data-theme", "light");
-      localStorage.setItem("tema", "light");
-    } else {
-      document.documentElement.removeAttribute("data-theme");
-      localStorage.setItem("tema", "dark");
-    }
-  }
 
   const navVisible = NAV.filter((item) => {
     if (item.href === "/ventas") return isColaboradorTipo(usuario.tipo_usuario);
-    if (
-      item.href === "/gestion-inventario" ||
-      item.href === "/inventario" ||
-      item.href === "/inventario/entrada" ||
-      item.href === "/bodegas" ||
-      item.href === "/historial-ventas"
-    ) {
+    if (["/inventario", "/catalogo", "/historial-ventas", "/proveedores"].includes(item.href)) {
       return isDuenoTipo(usuario.tipo_usuario);
     }
     return true;
@@ -123,7 +95,7 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
 
   return (
     <div style={s.shell}>
-      <aside style={{ ...s.sidebar, backgroundImage: t.sidebarWash }}>
+      <aside style={s.sidebar}>
         <div style={s.sidebarTop}>
 
           {/* Logo */}
@@ -135,8 +107,11 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
               </div>
             </div>
           </Link>
-          <div style={{ fontSize: "0.72rem", color: "var(--muted)", marginTop: "-1rem", marginBottom: "1.25rem", paddingLeft: "0.15rem" }}>
-            {variant === "dueno" ? "Panel del dueño" : "Panel del colaborador"}
+
+          {/* Rol */}
+          <div style={{ ...s.rolBadge, color: t.rolColor }}>
+            <Icon name={t.rolIcon} size={14} variant="light" />
+            {variant === "dueno" ? "Panel del dueño" : "Colaborador"}
           </div>
 
           {/* Navegación */}
@@ -147,10 +122,7 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
                 <Link
                   key={item.href}
                   href={item.href}
-                  style={{
-                    ...s.navLink,
-                    ...(active ? { background: t.accentSoft, color: t.logoTint, fontWeight: 500 } : {}),
-                  }}
+                  style={{ ...s.navLink, ...(active ? s.navLinkActive : {}) }}
                 >
                   <Icon
                     name={item.icon}
@@ -168,21 +140,19 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
 
         {/* Usuario y logout */}
         <div style={s.sidebarBottom}>
-          <div style={s.userBadge}>
-            <div style={{ ...s.userAvatar, background: t.accent, color: "#fff" }}>
-              {usuario.nombre[0]}
+          <div style={s.userCard}>
+            <div style={{ ...s.userAvatar, background: t.avatarBg }}>
+              {usuario.nombre[0].toUpperCase()}
             </div>
-            <div>
-              <div style={{ fontSize: "0.82rem", fontWeight: 500, color: "var(--text)" }}>
-                {usuario.nombre}
-              </div>
-              <div style={{ fontSize: "0.72rem", color: t.logoTint }}>
+            <div style={s.userInfo}>
+              <div style={s.userName}>{usuario.nombre.split(" ")[0]}</div>
+              <div style={{ ...s.userRole, color: t.rolColor }}>
                 {labelRol(usuario.tipo_usuario)}
               </div>
             </div>
           </div>
           <button type="button" onClick={handleLogout} style={s.logoutBtn}>
-            <Icon name="lockout" size={14} variant="light" />
+            <Icon name="logout" size={14} variant="light" />
             Cerrar sesión
           </button>
         </div>
@@ -191,28 +161,8 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
       {/* Contenido principal */}
       <main style={s.main}>
         <div style={s.topbar}>
-          <div>
-            <h1 style={{ ...s.pageTitle, color: t.logoTint }}>{title}</h1>
-            {subtitle && (
-              <p style={{ color: "var(--muted)", fontSize: "0.88rem" }}>{subtitle}</p>
-            )}
-          </div>
-          <button
-            onClick={toggleTema}
-            title={modoClaro ? "Cambiar a modo oscuro" : "Cambiar a modo claro"}
-            style={{
-              background: "var(--surface2)",
-              border: "1px solid var(--border)",
-              borderRadius: 8,
-              padding: "0.45rem 0.75rem",
-              cursor: "pointer",
-              fontSize: "1.1rem",
-              color: "var(--text)",
-              flexShrink: 0,
-            }}
-          >
-            {modoClaro ? "🌙" : "☀️"}
-          </button>
+          <h1 style={{ ...s.pageTitle, color: t.pageAccent }}>{title}</h1>
+          {subtitle && <p style={s.pageSubtitle}>{subtitle}</p>}
         </div>
         {children}
       </main>
@@ -223,7 +173,15 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
 /* ─── Estilos ─────────────────────────────────────────────────────────────── */
 
 const s: Record<string, React.CSSProperties> = {
-  shell: { display: "flex", minHeight: "100vh", fontFamily: "var(--font-body)" },
+  /* Layout raíz */
+  shell: {
+    display: "flex",
+    minHeight: "100vh",
+    fontFamily: "var(--font-body)",
+    background: "var(--bg)",
+  },
+
+  /* Sidebar contenedor */
   sidebar: {
     width: 230,
     flexShrink: 0,
@@ -236,10 +194,61 @@ const s: Record<string, React.CSSProperties> = {
     height: "100vh",
     boxShadow: "4px 0 20px rgba(0, 0, 0, 0.3)",
   },
-  sidebarTop: { padding: "1.5rem 1rem" },
-  sidebarLogo: { display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "2rem" },
-  sidebarLogoText: { fontFamily: "var(--font-head)", fontSize: "1.05rem", fontWeight: 800, lineHeight: 1.2 },
-  nav: { display: "flex", flexDirection: "column", gap: "0.2rem" },
+
+  /* Zona superior del sidebar */
+  sidebarTop: {
+    padding: "1.5rem 1rem 1rem",
+  },
+
+  /* Bloque del logo */
+  sidebarLogo: {
+    display: "flex",
+    alignItems: "center",
+    gap: "0.65rem",
+    marginBottom: "1.25rem",
+    padding: "0.5rem",
+    borderRadius: 10,
+    background: "rgba(152, 171, 238, 0.08)",
+    border: "1px solid rgba(152, 171, 238, 0.12)",
+  },
+
+  logoTitle: {
+    fontFamily: "var(--font-head)",
+    fontWeight: 800,
+    fontSize: "1rem",
+    color: "var(--bg)",
+    lineHeight: 1.1,
+  },
+
+  logoSub: {
+    fontFamily: "var(--font-head)",
+    fontWeight: 600,
+    fontSize: "0.72rem",
+    color: "var(--accent-light)",
+    letterSpacing: "0.08em",
+    textTransform: "uppercase",
+  },
+
+  /* Badge de rol */
+  rolBadge: {
+    display: "flex",
+    alignItems: "center",
+    gap: "0.4rem",
+    fontSize: "0.72rem",
+    fontWeight: 700,
+    marginBottom: "1.25rem",
+    paddingLeft: "0.25rem",
+    opacity: 0.85,
+  },
+
+  /* Nav lista */
+  nav: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.1rem",
+  },
+
+  /* Nav link base */
   navLink: {
     display: "flex",
     alignItems: "center",
@@ -252,8 +261,43 @@ const s: Record<string, React.CSSProperties> = {
     textDecoration: "none",
     transition: "background .15s",
   },
-  sidebarBottom: { padding: "1rem", borderTop: "1px solid var(--border)" },
-  userBadge: { display: "flex", alignItems: "center", gap: "0.6rem", marginBottom: "0.8rem" },
+
+  /* Nav link activo */
+  navLinkActive: {
+    background: "rgba(152, 171, 238, 0.15)",
+    color: "var(--bg)",
+    fontWeight: 600,
+  },
+
+  /* Punto indicador de ruta activa */
+  navActiveDot: {
+    width: 5,
+    height: 5,
+    borderRadius: "50%",
+    background: "var(--bg)",
+    marginLeft: "auto",
+    flexShrink: 0,
+    opacity: 0.7,
+  },
+
+  /* Zona inferior del sidebar */
+  sidebarBottom: {
+    padding: "1rem",
+    borderTop: "1px solid rgba(152, 171, 238, 0.12)",
+  },
+
+  /* Card de usuario */
+  userCard: {
+    display: "flex",
+    alignItems: "center",
+    gap: "0.65rem",
+    marginBottom: "0.75rem",
+    padding: "0.5rem",
+    borderRadius: 8,
+    background: "rgba(152, 171, 238, 0.07)",
+  },
+
+  /* Avatar inicial */
   userAvatar: {
     width: 34,
     height: 34,
@@ -315,5 +359,16 @@ const s: Record<string, React.CSSProperties> = {
   topbar: {
     marginBottom: "2rem",
   },
-  pageTitle: { fontFamily: "var(--font-head)", fontSize: "1.6rem", fontWeight: 700, marginBottom: "0.2rem" },
+
+  pageTitle: {
+    fontFamily: "var(--font-head)",
+    fontSize: "1.7rem",
+    fontWeight: 800,
+    marginBottom: "0.2rem",
+  },
+
+  pageSubtitle: {
+    color: "var(--muted)",
+    fontSize: "0.88rem",
+  },
 };
