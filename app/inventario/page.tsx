@@ -4,7 +4,6 @@ import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { StaffShell } from "@/components/StaffShell";
 import { useDuenoSession } from "@/hooks/useDuenoSession";
-import { Icon } from "@/components/Icon";
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -407,12 +406,7 @@ export default function InventarioPage() {
 
             {/* Entrada de stock */}
             <div style={s.card}>
-              <div style={s.cardTitleRow}>
-                <div style={s.cardIconWrap}>
-                  <Icon name="box" variant="dark" size={20} />
-                </div>
-                <h3 style={s.h3}>Entrada de stock</h3>
-              </div>
+              <h3 style={s.h3}>📦 Entrada de stock</h3>
               <p style={s.help}>Registra el ingreso de mercancía. Queda trazado en kardex.</p>
               <div style={s.field}>
                 <label style={s.label}>Bodega *</label>
@@ -463,12 +457,7 @@ export default function InventarioPage() {
 
             {/* Transferencia */}
             <div style={s.card}>
-              <div style={s.cardTitleRow}>
-                <div style={s.cardIconWrap}>
-                  <Icon name="distribution" variant="dark" size={20} />
-                </div>
-                <h3 style={s.h3}>Transferencia entre bodegas</h3>
-              </div>
+              <h3 style={s.h3}>🔄 Transferencia entre bodegas</h3>
               <p style={s.help}>Descuenta en origen, suma en destino y genera 2 movimientos en kardex.</p>
               <div style={s.field}>
                 <label style={s.label}>Bodega origen</label>
@@ -506,12 +495,7 @@ export default function InventarioPage() {
 
             {/* Ajuste */}
             <div style={s.card}>
-              <div style={s.cardTitleRow}>
-                <div style={s.cardIconWrap}>
-                  <Icon name="increase" variant="dark" size={20} />
-                </div>
-                <h3 style={s.h3}>Ajuste de inventario</h3>
-              </div>
+              <h3 style={s.h3}>⚖️ Ajuste de inventario</h3>
               <p style={s.help}>Define el <strong>stock real</strong> en una bodega. El delta se registra como <code style={s.code}>AJUSTE</code> en kardex.</p>
               <div style={s.field}>
                 <label style={s.label}>Bodega</label>
@@ -610,12 +594,8 @@ export default function InventarioPage() {
                       <td style={{ ...s.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{Number(b.stock_total).toLocaleString("es-GT", { maximumFractionDigits: 3 })}</td>
                       <td style={{ ...s.td, textAlign: "center" }}>
                         <div style={{ display: "flex", gap: "0.4rem", justifyContent: "center" }}>
-                          <button type="button" onClick={() => abrirEditarBodega(b)} style={s.btnEdit} title="Editar">
-                            <Icon name="pencil" variant="dark" size={16} />
-                          </button>
-                          <button type="button" onClick={() => setConfirmDeleteBodega(b.id_bodega)} style={s.btnDel} title="Eliminar">
-                            <Icon name="trashs" variant="dark" size={16} />
-                          </button>
+                          <button type="button" onClick={() => abrirEditarBodega(b)} style={s.btnEdit} title="Editar">✏️</button>
+                          <button type="button" onClick={() => setConfirmDeleteBodega(b.id_bodega)} style={s.btnDel} title="Eliminar">🗑️</button>
                         </div>
                       </td>
                     </tr>
@@ -634,9 +614,7 @@ export default function InventarioPage() {
           <div style={{ ...s.modal, maxWidth: 480 }}>
             <div style={s.modalHeader}>
               <h2 style={s.modalTitle}>{editandoBodega ? "Editar bodega" : "Nueva bodega"}</h2>
-              <button type="button" onClick={cerrarModalBodega} style={s.closeBtn}>
-                <Icon name="close" variant="dark" size={16} />
-              </button>
+              <button type="button" onClick={cerrarModalBodega} style={s.closeBtn}>✕</button>
             </div>
             <div style={s.modalBody}>
               <div style={s.field}>
@@ -703,16 +681,14 @@ const s: Record<string, CSSProperties> = {
   btnGhost: { border: "1px solid var(--border)", background: "transparent", color: "var(--text)", borderRadius: 10, padding: "0.55rem 0.85rem", cursor: "pointer", fontSize: "0.85rem" },
   btnPrimary: { background: "var(--accent)", color: "#eff5ff", border: "none", borderRadius: 10, padding: "0.65rem 0.9rem", fontWeight: 700, cursor: "pointer", fontSize: "0.88rem", whiteSpace: "nowrap" } as CSSProperties,
   btnSecondary: { background: "transparent", color: "var(--muted)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "0.6rem 1.2rem", fontSize: "0.88rem", cursor: "pointer" },
-  btnEdit: { background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "0.3rem 0.5rem", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" },
-  btnDel: { background: "rgba(248,81,73,.1)", border: "1px solid rgba(248,81,73,.25)", borderRadius: 6, padding: "0.3rem 0.5rem", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" },
+  btnEdit: { background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "0.3rem 0.5rem", cursor: "pointer", fontSize: "0.85rem" },
+  btnDel: { background: "rgba(248,81,73,.1)", border: "1px solid rgba(248,81,73,.25)", borderRadius: 6, padding: "0.3rem 0.5rem", cursor: "pointer", fontSize: "0.85rem" },
   th: { textAlign: "left", padding: "0.75rem 0.85rem", fontSize: "0.72rem", letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--muted)", borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" } as CSSProperties,
   td: { padding: "0.75rem 0.85rem", verticalAlign: "top" },
   code: { fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: "0.78rem", padding: "0.1rem 0.35rem", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--accent)" },
   badgeOk: { display: "inline-block", padding: "0.15rem 0.55rem", borderRadius: 999, border: "1px solid rgba(63,185,80,.35)", background: "rgba(63,185,80,.10)", color: "var(--green)", fontSize: "0.78rem", fontWeight: 700 },
   badgeWarn: { display: "inline-block", padding: "0.15rem 0.55rem", borderRadius: 999, border: "1px solid rgba(232,160,69,.35)", background: "rgba(232,160,69,.10)", color: "var(--accent)", fontSize: "0.78rem", fontWeight: 700 },
-  cardTitleRow: { display: "flex", alignItems: "center", gap: "0.6rem", marginBottom: "0.35rem" },
-  cardIconWrap: { width: 32, height: 32, borderRadius: 8, background: "var(--surface2)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
-  h3: { margin: 0, fontFamily: "var(--font-head)", fontSize: "1.05rem" },
+  h3: { margin: "0 0 0.35rem", fontFamily: "var(--font-head)", fontSize: "1.05rem" },
   help: { margin: "0 0 1rem", color: "var(--muted)", fontSize: "0.88rem", lineHeight: 1.55 },
   field: { display: "flex", flexDirection: "column", gap: "0.35rem", marginBottom: "0.85rem" },
   label: { fontSize: "0.82rem", fontWeight: 700, color: "var(--muted)" },
@@ -722,7 +698,7 @@ const s: Record<string, CSSProperties> = {
   modal: { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, width: "100%", maxWidth: 480, boxShadow: "var(--shadow)", overflow: "hidden" },
   modalHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "1.25rem 1.5rem", borderBottom: "1px solid var(--border)" },
   modalTitle: { fontFamily: "var(--font-head)", fontSize: "1.1rem", fontWeight: 700, color: "var(--text)", margin: 0 },
-  closeBtn: { background: "transparent", border: "none", color: "var(--muted)", fontSize: "1rem", cursor: "pointer", padding: "0.2rem 0.4rem", display: "flex", alignItems: "center" },
+  closeBtn: { background: "transparent", border: "none", color: "var(--muted)", fontSize: "1rem", cursor: "pointer", padding: "0.2rem 0.4rem" },
   modalBody: { padding: "1.5rem", display: "flex", flexDirection: "column", gap: "1rem" } as CSSProperties,
   modalFooter: { display: "flex", justifyContent: "flex-end", gap: "0.75rem", padding: "1rem 1.5rem", borderTop: "1px solid var(--border)" },
   inputModal: { background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "0.65rem 0.85rem", color: "var(--text)", fontSize: "0.92rem", outline: "none", width: "100%" },
