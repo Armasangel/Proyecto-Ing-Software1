@@ -3,6 +3,11 @@ import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { isStaffTipo } from "@/lib/roles";
 import { apiError, unauthorizedError } from "@/lib/api-error";
+import {
+  buildDeudoresOrder,
+  buildDeudoresWhere,
+  parseDeudoresFilters,
+} from "@/lib/cobranza/deudores-query";
 
 export async function GET(req: NextRequest) {
   const usuario = getUsuarioFromRequest(req);
@@ -10,16 +15,23 @@ export async function GET(req: NextRequest) {
     return unauthorizedError();
   }
 
-  const { searchParams } = req.nextUrl;
-  const page = Math.max(1, Number(searchParams.get("page") ?? "1"));
-  const limit = Math.min(100, Math.max(1, Number(searchParams.get("limit") ?? "50")));
+  const filters = parseDeudoresFilters(req.nextUrl.searchParams);
+  const page = filters.page ?? 1;
+  const limit = filters.limit ?? 50;
   const offset = (page - 1) * limit;
+
+  const { where, values } = buildDeudoresWhere(filters);
+  const orderSql = buildDeudoresOrder(filters);
 
   try {
     const countResult = await pool.query(
-      `SELECT COUNT(*)::int AS total FROM v_deudores`
+      `SELECT COUNT(*)::int AS total FROM v_deudores WHERE ${where}`,
+      values
     );
     const total: number = countResult.rows[0]?.total ?? 0;
+
+    const limIdx = values.length + 1;
+    const offIdx = values.length + 2;
 
     const result = await pool.query(
       `SELECT
@@ -36,9 +48,10 @@ export async function GET(req: NextRequest) {
          dias_atraso,
          estado_cobro
        FROM v_deudores
-       ORDER BY fecha_limite_pago NULLS LAST, id_venta DESC
-       LIMIT $1 OFFSET $2`,
-      [limit, offset]
+       WHERE ${where}
+       ORDER BY ${orderSql}
+       LIMIT $${limIdx} OFFSET $${offIdx}`,
+      [...values, limit, offset]
     );
 
     return NextResponse.json({
