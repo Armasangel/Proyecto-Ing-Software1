@@ -152,7 +152,7 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
             </div>
           </div>
           <button type="button" onClick={handleLogout} style={s.logoutBtn}>
-            <Icon name="lockout" size={14} variant="light" />
+            <Icon name="logout" size={14} variant="light" />
             Cerrar sesión
           </button>
         </div>
