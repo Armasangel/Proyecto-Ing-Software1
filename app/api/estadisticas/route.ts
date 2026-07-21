@@ -93,10 +93,6 @@ export async function GET(req: NextRequest) {
     fechaParams = [];
   }
 
-  // helper: siguiente índice de param ($1 si no hay fechaParams, $3 si hay 2, etc.)
-  const nextParam = (offset = 0) =>
-    fechaParams.length + offset + 1;
-
   try {
     // ── 4. Resumen general ────────────────────────────────────────────────────
     const resumenQ = await pool.query<{
