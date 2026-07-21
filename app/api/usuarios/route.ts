@@ -153,10 +153,12 @@ export async function POST(req: NextRequest) {
       ? tipo_usuario
       : TIPOS_USUARIO.COMPRADOR;
 
+    const correoFinal = String(correo).trim();
+
     // Verificar correo duplicado
     const existe = await pool.query(
       `SELECT id_usuario FROM usuario WHERE LOWER(correo) = LOWER($1)`,
-      [correo]
+      [correoFinal]
     );
     if (existe.rows.length > 0) {
       return NextResponse.json(
@@ -169,11 +171,13 @@ export async function POST(req: NextRequest) {
     const bcrypt = await import("bcryptjs");
     const hash = bcrypt.hashSync(contrasena, 10);
 
+    const telefonoFinal = typeof telefono === "string" ? telefono.trim() : null;
+
     const result = await pool.query(
       `INSERT INTO usuario (nombre, correo, telefono, contrasena_hash, tipo_usuario)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING id_usuario, nombre, correo, tipo_usuario, estado_usuario`,
-      [nombre.trim(), correo.trim(), telefono?.trim() || null, hash, tipoFinal]
+      [nombre.trim(), correoFinal, telefonoFinal, hash, tipoFinal]
     );
 
     return NextResponse.json({ usuario: result.rows[0] }, { status: 201 });
