@@ -15,6 +15,7 @@ const PROTECTED_PREFIXES = [
   "/reportes",
   "/tienda",
   "/mayoreo",
+  "/usuarios",
 ];
 
 /** Decodifica base64url a ArrayBuffer (compatible con Edge Runtime). */
@@ -115,5 +116,7 @@ export const config = {
     "/reportes/:path*",
     "/tienda/:path*",
     "/mayoreo/:path*",
+    "/usuarios",
+    "/usuarios/:path*",
   ],
 };
