@@ -35,18 +35,7 @@ const TIPO_META: Record<
     bg: "rgba(88,166,255,.12)",
     border: "rgba(88,166,255,.35)",
   },
-  COMPRADOR: {
-    label: "Comprador",
-    color: "var(--green)",
-    bg: "rgba(63,185,80,.12)",
-    border: "rgba(63,185,80,.35)",
-  },
-  COMPRADOR_MAYOR: {
-    label: "Comprador mayorista",
-    color: "#c084fc",
-    bg: "rgba(192,132,252,.12)",
-    border: "rgba(192,132,252,.35)",
-  },
+  // Roles de comprador eliminados (ecommerce removido)
 };
 
 const TIPOS_OPCIONES: { value: string; label: string }[] = [
@@ -60,7 +49,8 @@ const EMPTY_FORM = {
   correo: "",
   telefono: "",
   contrasena: "",
-  tipo_usuario: TIPOS_USUARIO.EMPLEADO,
+  tipo_usuario: TIPOS_USUARIO.EMPLEADO,
+
 };
 
 // ─── Componente principal ─────────────────────────────────────────────────────
