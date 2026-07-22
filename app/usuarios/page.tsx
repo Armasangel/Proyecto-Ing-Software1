@@ -35,7 +35,8 @@ const TIPO_META: Record<
     bg: "rgba(88,166,255,.12)",
     border: "rgba(88,166,255,.35)",
   },
-  // Roles de comprador eliminados (ecommerce removido)
+  // Roles de comprador eliminados (ecommerce removido)
+
 };
 
 const TIPOS_OPCIONES: { value: string; label: string }[] = [
@@ -324,7 +325,7 @@ export default function UsuariosPage() {
                 </td>
               </tr>
             ) : (
-              usuarios.map((u) => {
+                const meta = TIPO_META[u.tipo_usuario] ?? TIPO_META.EMPLEADO;
                 const meta = TIPO_META[u.tipo_usuario] ?? TIPO_META.COMPRADOR;
                 const esMismoUsuario = u.id_usuario === usuario.id_usuario;
                 return (
