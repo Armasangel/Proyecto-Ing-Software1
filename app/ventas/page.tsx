@@ -8,10 +8,10 @@ import { staffVariantFromTipo, TIPOS_USUARIO } from "@/lib/roles";
 import { Icon } from "@/components/Icon";
 
 type Cliente = {
-  id_usuario: number;
+  id_cliente: number;
   nombre: string;
   correo: string;
-  tipo_usuario: string;
+  tipo_cliente: string;
 };
 
 type Producto = {
@@ -45,7 +45,7 @@ type ProductoVentaRow = {
 
 type VentaListada = {
   id_venta: number;
-  id_usuario: number;
+  id_cliente: number;
   id_empleado: number | null;
   fecha_venta: string;
   estado_venta: string;
@@ -190,7 +190,7 @@ export default function VentasPage() {
         .map((ln) => ({ id_producto: Number(ln.id_producto), cantidad: Number(ln.cantidad), precio_unitario_venta: Number(ln.precio_unitario_venta) }));
       const res = await fetch("/api/ventas", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id_usuario: Number(idCliente), estado_pago: estadoPago, tipo_venta: tipoVenta, tipo_entrega: tipoEntrega, direccion_entrega: tipoEntrega === "DOMICILIO" ? direccionEntrega.trim() : undefined, fecha_limite_pago: fechaLimitePago || undefined, id_bodega: Number(idBodega), lineas: lineasPayload }),
+        body: JSON.stringify({ id_cliente: Number(idCliente), estado_pago: estadoPago, tipo_venta: tipoVenta, tipo_entrega: tipoEntrega, direccion_entrega: tipoEntrega === "DOMICILIO" ? direccionEntrega.trim() : undefined, fecha_limite_pago: fechaLimitePago || undefined, id_bodega: Number(idBodega), lineas: lineasPayload }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error || "No se pudo registrar la venta"); return; }
@@ -229,7 +229,7 @@ export default function VentasPage() {
               <label style={label}>Cliente *</label>
               <select value={idCliente} onChange={(e) => { setIdCliente(e.target.value); setError(null); setOkMsg(null); }} style={input}>
                 <option value="">— Selecciona un cliente —</option>
-                {clientes.map((c) => <option key={c.id_usuario} value={c.id_usuario}>{c.nombre} ({c.correo})</option>)}
+                {clientes.map((c) => <option key={c.id_cliente} value={c.id_cliente}>{c.nombre} ({c.correo})</option>)}
               </select>
             </div>
 

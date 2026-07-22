@@ -13,8 +13,6 @@ const PROTECTED_PREFIXES = [
   "/ventas",
   "/historial-ventas",
   "/reportes",
-  "/tienda",
-  "/mayoreo",
   "/usuarios",
 ];
 
@@ -114,8 +112,6 @@ export const config = {
     "/historial-ventas",
     "/historial-ventas/:path*",
     "/reportes/:path*",
-    "/tienda/:path*",
-    "/mayoreo/:path*",
     "/usuarios",
     "/usuarios/:path*",
   ],

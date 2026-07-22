@@ -51,7 +51,7 @@ export async function GET(req: NextRequest) {
     const result = await pool.query(`
       SELECT
         v.id_venta,
-        v.id_usuario,
+        v.id_cliente,
         v.id_empleado,
         v.fecha_venta,
         v.estado_venta,
@@ -79,12 +79,12 @@ export async function GET(req: NextRequest) {
           '[]'::json
         ) AS productos
       FROM venta v
-      JOIN usuario uc ON uc.id_usuario = v.id_usuario
+      JOIN cliente uc ON uc.id_cliente = v.id_cliente
       LEFT JOIN usuario ue ON ue.id_usuario = v.id_empleado
       LEFT JOIN detalle_venta dv ON dv.id_venta = v.id_venta
       LEFT JOIN producto p ON p.id_producto = dv.id_producto
       GROUP BY
-        v.id_venta, v.id_usuario, v.id_empleado, v.fecha_venta,
+        v.id_venta, v.id_cliente, v.id_empleado, v.fecha_venta,
         v.estado_venta, v.tipo_venta, v.tipo_entrega, v.direccion_entrega,
         v.total, v.fecha_limite_pago, uc.nombre, uc.correo, ue.nombre
       ORDER BY v.fecha_venta DESC
@@ -124,7 +124,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const {
-      id_usuario: idCliente,
+      id_cliente: idCliente,
       estado_pago,
       estado_venta: estadoVentaBody,
       tipo_venta,
@@ -197,7 +197,7 @@ export async function POST(request: NextRequest) {
       await client.query("BEGIN");
 
       const existeCliente = await client.query(
-        `SELECT 1 FROM usuario WHERE id_usuario = $1 AND estado_usuario = TRUE`, [idCliente]
+        `SELECT 1 FROM cliente WHERE id_cliente = $1 AND estado_cliente = TRUE`, [idCliente]
       );
       if (existeCliente.rowCount === 0) {
         await client.query("ROLLBACK");
@@ -234,7 +234,7 @@ export async function POST(request: NextRequest) {
       total = Number(totalQ.rows[0].t);
 
       const insVenta = await client.query(
-        `INSERT INTO venta (id_usuario, id_empleado, estado_venta, tipo_venta, tipo_entrega,
+        `INSERT INTO venta (id_cliente, id_empleado, estado_venta, tipo_venta, tipo_entrega,
           direccion_entrega, enlinea, total, fecha_limite_pago)
          VALUES ($1, $2, $3, $4, $5, $6, FALSE, $7, $8) RETURNING id_venta`,
         [idCliente, usuario.id_usuario, estado_venta, tipo_venta, tipo_entrega,
