@@ -53,8 +53,6 @@ const TIPOS_OPCIONES: { value: string; label: string }[] = [
   { value: "", label: "Todos los roles" },
   { value: TIPOS_USUARIO.DUENO, label: "Dueño" },
   { value: TIPOS_USUARIO.EMPLEADO, label: "Colaborador" },
-  { value: TIPOS_USUARIO.COMPRADOR, label: "Comprador" },
-  { value: TIPOS_USUARIO.COMPRADOR_MAYOR, label: "Comprador mayorista" },
 ];
 
 const EMPTY_FORM = {
