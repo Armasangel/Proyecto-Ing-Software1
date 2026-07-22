@@ -60,7 +60,7 @@ const EMPTY_FORM = {
   correo: "",
   telefono: "",
   contrasena: "",
-  tipo_usuario: TIPOS_USUARIO.COMPRADOR,
+  tipo_usuario: TIPOS_USUARIO.EMPLEADO,
 };
 
 // ─── Componente principal ─────────────────────────────────────────────────────
