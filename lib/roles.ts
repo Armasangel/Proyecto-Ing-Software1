@@ -1,9 +1,7 @@
 /** Valores de `usuario.tipo_usuario` en la base de datos */
 export const TIPOS_USUARIO = {
   DUENO: "DUENO",
-  EMPLEADO: "EMPLEADO",
-  COMPRADOR: "COMPRADOR",
-  COMPRADOR_MAYOR: "COMPRADOR_MAYOR",
+  EMPLEADO: "EMPLEADO"
 } as const;
 
 export type TipoUsuarioDb = (typeof TIPOS_USUARIO)[keyof typeof TIPOS_USUARIO];
@@ -27,18 +25,14 @@ export function labelRol(tipo: string): string {
       return "Dueño";
     case TIPOS_USUARIO.EMPLEADO:
       return "Colaborador";
-    case TIPOS_USUARIO.COMPRADOR:
-      return "Comprador";
-    case TIPOS_USUARIO.COMPRADOR_MAYOR:
-      return "Comprador mayorista";
     default:
       return tipo;
   }
 }
 
 export function postLoginPath(tipo: string): string {
-  if (tipo === TIPOS_USUARIO.COMPRADOR) return "/tienda";
-  if (tipo === TIPOS_USUARIO.COMPRADOR_MAYOR) return "/mayoreo";
+  if (tipo === TIPOS_USUARIO.DUENO) return "/dashboard";
+  if (tipo === TIPOS_USUARIO.EMPLEADO) return "/ventas";
   return "/dashboard";
 }
 

@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
         f.numero_factura,
         f.total_factura
       FROM venta v
-      JOIN usuario u ON u.id_usuario = v.id_usuario
+      JOIN cliente u ON u.id_cliente = v.id_cliente
       LEFT JOIN factura f ON f.id_venta = v.id_venta
       ORDER BY v.fecha_venta DESC
     `);

@@ -53,7 +53,7 @@ type EstadisticasData = {
     veces_vendido: number;
   } | null;
   top_clientes: {
-    id_usuario: number;
+    id_cliente: number;
     nombre: string;
     correo: string;
     tipo_usuario: string;
@@ -570,7 +570,7 @@ export default function EstadisticasPage() {
               {data.top_clientes.length === 0 ? <EmptyChart label="Sin datos en el periodo" /> : (
                 <div style={{ display: "flex", flexDirection: "column" }}>
                   {data.top_clientes.map((c, i) => (
-                    <div key={c.id_usuario} style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.65rem 0", borderBottom: "1px solid var(--border)" }}>
+                    <div key={c.id_cliente} style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.65rem 0", borderBottom: "1px solid var(--border)" }}>
                       <div style={{ width: 30, height: 30, borderRadius: "50%", flexShrink: 0, background: i === 0 ? "rgba(45,106,79,.25)" : "var(--surface2)", border: `1px solid ${i === 0 ? "rgba(45,106,79,.45)" : "var(--border)"}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.72rem", fontWeight: 700, color: i === 0 ? "var(--accent)" : "var(--muted)" }}>
                         {i === 0 ? <Icon name="increase" variant="dark" size={14} /> : i + 1}
                       </div>
