@@ -327,7 +327,7 @@ export default function UsuariosPage() {
             ) : (
                 const meta = TIPO_META[u.tipo_usuario] ?? TIPO_META.EMPLEADO;
 
-                const meta = TIPO_META[u.tipo_usuario] ?? TIPO_META.COMPRADOR;
+                const meta = TIPO_META[u.tipo_usuario] ?? TIPO_META.EMPLEADO;
                 const esMismoUsuario = u.id_usuario === usuario.id_usuario;
                 return (
                   <tr
@@ -832,7 +832,8 @@ function rolDescripcion(tipo: string): string {
     case "DUENO":
       return "Acceso total: inventario, reportes, estadísticas, usuarios";
     case "EMPLEADO":
-    // Roles de comprador eliminados (ecommerce removido)
+    // Roles de comprador eliminados (ecommerce removido)
+
       return "Portal mayorista: pedidos y catálogo mayoreo";
     default:
       return "";
