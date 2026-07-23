@@ -176,6 +176,7 @@ export async function POST(req: NextRequest) {
 
     const telefonoFinal = typeof telefono === "string" && telefono.trim() !== "" ? telefono.trim() : null;
 
+    
     const result = await pool.query(
       `INSERT INTO usuario (nombre, correo, telefono, contrasena_hash, tipo_usuario)
        VALUES ($1, $2, $3, $4, $5)
