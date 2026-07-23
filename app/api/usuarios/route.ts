@@ -149,16 +149,24 @@ export async function POST(req: NextRequest) {
       return validationError("La contraseña debe tener al menos 6 caracteres");
     }
 
-    const tipoFinal = tipo_usuario && TIPOS_VALIDOS.includes(tipo_usuario)
-      ? tipo_usuario
-      : TIPOS_USUARIO.COMPRADOR;
+    const tipoFinal =
+
+      tipo_usuario && TIPOS_VALIDOS.includes(tipo_usuario)
+
+        ? tipo_usuario
+
+        : TIPOS_USUARIO.EMPLEADO;
+
+
 
     const correoFinal = String(correo).trim();
 
 
 
+
     // Verificar correo duplicado
-    const existe = await pool.query(
+      [correoFinal]
+
       `SELECT id_usuario FROM usuario WHERE LOWER(correo) = LOWER($1)`,
       [correoFinal]
 
@@ -174,9 +182,10 @@ export async function POST(req: NextRequest) {
     const bcrypt = await import("bcryptjs");
     const hash = bcrypt.hashSync(contrasena, 10);
 
-    const telefonoFinal = typeof telefono === "string" && telefono.trim() !== "" ? telefono.trim() : null;
+    const telefonoFinal = typeof telefono === "string" ? telefono.trim() : null;
 
-    
+
+
     const result = await pool.query(
       `INSERT INTO usuario (nombre, correo, telefono, contrasena_hash, tipo_usuario)
        VALUES ($1, $2, $3, $4, $5)

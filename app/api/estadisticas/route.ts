@@ -427,14 +427,16 @@ export async function GET(req: NextRequest) {
           }
         : null,
 
-top_clientes: topClientesQ.rows.map((r) => ({
-  id_cliente:       Number(r.id_cliente),
-  nombre:           r.nombre,
-  correo:           r.correo,
-  tipo_cliente:     r.tipo_cliente,
-  total_compras:    Number(r.total_compras),
-  cantidad_pedidos: Number(r.cantidad_pedidos),
-})),
+      top_clientes: topClientesQ.rows.map((r) => ({
+        id_cliente:       Number(r.id_cliente),
+        id_usuario:       Number(r.id_cliente),
+        nombre:           r.nombre,
+        correo:           r.correo,
+        tipo_cliente:     r.tipo_cliente,
+        tipo_usuario:     r.tipo_cliente,
+        total_compras:    Number(r.total_compras),
+        cantidad_pedidos: Number(r.cantidad_pedidos),
+      })),
 
       ingresos_por_categoria: ingresosPorCategoriaQ.rows.map((r) => ({
         nombre_categoria: r.nombre_categoria,
