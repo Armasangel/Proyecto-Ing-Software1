@@ -15,7 +15,9 @@ export type IconName =
   | "increase"
   | "distribution"
   | "report"
-  | "bill";
+  | "bill"
+  | "transfer"
+  | "setting"
 
 type Props = {
   name: IconName;

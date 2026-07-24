@@ -4,6 +4,16 @@ import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { StaffShell } from "@/components/StaffShell";
 import { useDuenoSession } from "@/hooks/useDuenoSession";
+import { Icon, type IconName } from "@/components/Icon";
+
+const MIS_ITEMS = [
+  {label: "editar", icon: "pencil"},
+  {label: "borar", icon: "trash"},
+  {label: "stock", icon: "box"},
+  {label: "transferencia", icon: "transfer"},
+  {label: "ajuste", icon: "setting"}
+]
+
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -406,7 +416,7 @@ export default function InventarioPage() {
 
             {/* Entrada de stock */}
             <div style={s.card}>
-              <h3 style={s.h3}>📦 Entrada de stock</h3>
+              <h3 style={s.h3}><Icon name ="box" variant="dark" size={24}/> Entrada de stock</h3>
               <p style={s.help}>Registra el ingreso de mercancía. Queda trazado en kardex.</p>
               <div style={s.field}>
                 <label style={s.label}>Bodega *</label>
@@ -457,7 +467,7 @@ export default function InventarioPage() {
 
             {/* Transferencia */}
             <div style={s.card}>
-              <h3 style={s.h3}>🔄 Transferencia entre bodegas</h3>
+              <h3 style={s.h3}><Icon name ="transfer" variant="dark" size={24}/>Transferencia entre bodegas</h3>
               <p style={s.help}>Descuenta en origen, suma en destino y genera 2 movimientos en kardex.</p>
               <div style={s.field}>
                 <label style={s.label}>Bodega origen</label>
@@ -495,7 +505,7 @@ export default function InventarioPage() {
 
             {/* Ajuste */}
             <div style={s.card}>
-              <h3 style={s.h3}>⚖️ Ajuste de inventario</h3>
+              <h3 style={s.h3}><Icon name ="setting" variant="dark" size={24}/> Ajuste de inventario</h3>
               <p style={s.help}>Define el <strong>stock real</strong> en una bodega. El delta se registra como <code style={s.code}>AJUSTE</code> en kardex.</p>
               <div style={s.field}>
                 <label style={s.label}>Bodega</label>
