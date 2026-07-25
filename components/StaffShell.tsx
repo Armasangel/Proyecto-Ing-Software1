@@ -27,6 +27,7 @@ const NAV: NavItem[] = [
   { href: "/inventario",       label: "Inventario",      icon: "inventory"     },
   { href: "/catalogo",         label: "Catálogo",        icon: "catalogue"     },
   { href: "/ventas",           label: "Ventas",          icon: "shopping-cart" },
+  { href: "/ordenes",          label: "Ordenes",         icon: "bill"          },
   { href: "/facturacion",      label: "Facturación",     icon: "bill"          },
   { href: "/reportes",         label: "Reportes",        icon: "report"        },
   { href: "/proveedores",      label: "Proveedores",     icon: "hand-truck"    },
