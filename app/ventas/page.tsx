@@ -26,9 +26,16 @@ type Producto = {
 
 type Bodega = { id_bodega: number; nombre_bodega: string };
 
+type StockRow = {
+  id_bodega: number;
+  id_producto: number;
+  cantidad_disponible: string;
+};
+
 type LineaVenta = {
   key: string;
   id_producto: string;
+  id_bodega: string;
   cantidad: string;
   precio_unitario_venta: string;
 };
@@ -76,6 +83,7 @@ function nuevaLinea(): LineaVenta {
   return {
     key: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
     id_producto: "",
+    id_bodega: "",
     cantidad: "",
     precio_unitario_venta: "",
   };
@@ -87,6 +95,7 @@ export default function VentasPage() {
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
   const [bodegas, setBodegas] = useState<Bodega[]>([]);
+  const [stock, setStock] = useState<StockRow[]>([]);
   const [ventas, setVentas] = useState<VentaListada[]>([]);
   const [loadingLista, setLoadingLista] = useState(false);
   const [loadingSubmit, setLoadingSubmit] = useState(false);
@@ -99,7 +108,6 @@ export default function VentasPage() {
   const [tipoEntrega, setTipoEntrega] = useState<string>("EN_TIENDA");
   const [direccionEntrega, setDireccionEntrega] = useState("");
   const [fechaLimitePago, setFechaLimitePago] = useState("");
-  const [idBodega, setIdBodega] = useState("");
   const [lineas, setLineas] = useState<LineaVenta[]>([nuevaLinea()]);
 
   const cargarVentas = useCallback(async () => {
@@ -126,6 +134,13 @@ export default function VentasPage() {
     fetch("/api/clientes").then((r) => r.json()).then((d) => setClientes(d.clientes || []));
     fetch("/api/productos").then((r) => r.json()).then((d) => setProductos(d.productos || []));
     fetch("/api/bodegas").then((r) => r.json()).then((d) => setBodegas(d.bodegas || []));
+    fetch("/api/gestion-inventario").then((r) => r.json()).then((d) => {
+      setStock((d.stock || []).map((r: Record<string, unknown>) => ({
+        id_bodega: r.id_bodega as number,
+        id_producto: r.id_producto as number,
+        cantidad_disponible: String(r.cantidad_disponible ?? 0),
+      })));
+    });
     cargarVentas();
   }, [usuario, cargarVentas, router]);
 
@@ -134,6 +149,14 @@ export default function VentasPage() {
     productos.forEach((p) => m.set(p.id_producto, p));
     return m;
   }, [productos]);
+
+  const stockDisponible = useCallback((idProducto: string, idBodega: string): number => {
+    const idP = Number(idProducto);
+    const idB = Number(idBodega);
+    if (!idP || !idB) return 0;
+    const row = stock.find((s) => s.id_producto === idP && s.id_bodega === idB);
+    return row ? Number(row.cantidad_disponible) : 0;
+  }, [stock]);
 
   const totalBorrador = useMemo(() => {
     let t = 0;
@@ -186,11 +209,11 @@ export default function VentasPage() {
     setLoadingSubmit(true); setError(null); setOkMsg(null);
     try {
       const lineasPayload = lineas
-        .filter((ln) => ln.id_producto && ln.cantidad && ln.precio_unitario_venta)
-        .map((ln) => ({ id_producto: Number(ln.id_producto), cantidad: Number(ln.cantidad), precio_unitario_venta: Number(ln.precio_unitario_venta) }));
+        .filter((ln) => ln.id_producto && ln.id_bodega && ln.cantidad && ln.precio_unitario_venta)
+        .map((ln) => ({ id_producto: Number(ln.id_producto), id_bodega: Number(ln.id_bodega), cantidad: Number(ln.cantidad), precio_unitario_venta: Number(ln.precio_unitario_venta) }));
       const res = await fetch("/api/ventas", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id_cliente: Number(idCliente), estado_pago: estadoPago, tipo_venta: tipoVenta, tipo_entrega: tipoEntrega, direccion_entrega: tipoEntrega === "DOMICILIO" ? direccionEntrega.trim() : undefined, fecha_limite_pago: fechaLimitePago || undefined, id_bodega: Number(idBodega), lineas: lineasPayload }),
+        body: JSON.stringify({ id_cliente: Number(idCliente), estado_pago: estadoPago, tipo_venta: tipoVenta, tipo_entrega: tipoEntrega, direccion_entrega: tipoEntrega === "DOMICILIO" ? direccionEntrega.trim() : undefined, fecha_limite_pago: fechaLimitePago || undefined, lineas: lineasPayload }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error || "No se pudo registrar la venta"); return; }
@@ -202,7 +225,7 @@ export default function VentasPage() {
     finally { setLoadingSubmit(false); }
   }
 
-  const puedeEnviar = idCliente && idBodega && lineas.some((ln) => ln.id_producto && ln.cantidad && Number(ln.cantidad) > 0) && (tipoEntrega === "EN_TIENDA" || direccionEntrega.trim().length > 0);
+  const puedeEnviar = idCliente && lineas.some((ln) => ln.id_producto && ln.id_bodega && ln.cantidad && Number(ln.cantidad) > 0) && (tipoEntrega === "EN_TIENDA" || direccionEntrega.trim().length > 0);
 
   const th = { padding: "0.65rem 0.85rem", textAlign: "left" as const, fontSize: "0.82rem", fontWeight: 600 };
   const td = { padding: "0.6rem 0.85rem", fontSize: "0.88rem", borderBottom: "1px solid var(--border)" };
@@ -219,7 +242,7 @@ export default function VentasPage() {
             </div>
             <div>
               <p style={{ margin: 0, color: "var(--muted)", fontSize: "0.88rem" }}>
-                Cada venta guarda la transacción (<code>venta</code>) y los productos (<code>detalle_venta</code>). El inventario de la bodega seleccionada se descuenta y queda trazado en kardex.
+                Cada venta guarda la transacción (<code>venta</code>) y los productos (<code>detalle_venta</code>). Cada producto puede salir de una bodega distinta; el inventario se descuenta por bodega y queda trazado en kardex.
               </p>
             </div>
           </div>
@@ -258,13 +281,6 @@ export default function VentasPage() {
                   <option value="DOMICILIO">Domicilio</option>
                 </select>
               </div>
-              <div style={{ ...field, flex: "1 1 200px" }}>
-                <label style={label}>Bodega (salida de stock) *</label>
-                <select value={idBodega} onChange={(e) => { setIdBodega(e.target.value); setError(null); }} style={input}>
-                  <option value="">— Bodega —</option>
-                  {bodegas.map((b) => <option key={b.id_bodega} value={b.id_bodega}>{b.nombre_bodega}</option>)}
-                </select>
-              </div>
             </div>
 
             {tipoEntrega === "DOMICILIO" && (
@@ -284,13 +300,21 @@ export default function VentasPage() {
               <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
                 {lineas.map((ln) => {
                   const pSel = ln.id_producto ? productoPorId.get(Number(ln.id_producto)) : undefined;
+                  const disponible = stockDisponible(ln.id_producto, ln.id_bodega);
                   return (
-                    <div key={ln.key} style={{ display: "grid", gridTemplateColumns: "1fr 100px 120px auto", gap: "0.5rem", alignItems: "end" }}>
+                    <div key={ln.key} style={{ display: "grid", gridTemplateColumns: "1fr 140px 100px 120px auto", gap: "0.5rem", alignItems: "end" }}>
                       <div style={field}>
                         <label style={label}>Producto</label>
                         <select value={ln.id_producto} onChange={(e) => onProductoChange(ln.key, e.target.value)} style={input}>
                           <option value="">— Producto —</option>
                           {productos.filter((p) => p.estado_producto).map((p) => <option key={p.id_producto} value={p.id_producto}>[{p.codigo_producto}] {p.nombre_producto}</option>)}
+                        </select>
+                      </div>
+                      <div style={field}>
+                        <label style={label}>Bodega *</label>
+                        <select value={ln.id_bodega} onChange={(e) => { actualizarLinea(ln.key, { id_bodega: e.target.value }); setError(null); setOkMsg(null); }} style={input}>
+                          <option value="">— Bodega —</option>
+                          {bodegas.map((b) => <option key={b.id_bodega} value={b.id_bodega}>{b.nombre_bodega}</option>)}
                         </select>
                       </div>
                       <div style={field}>
@@ -304,7 +328,14 @@ export default function VentasPage() {
                       <button type="button" onClick={() => setLineas((prev) => prev.length <= 1 ? prev : prev.filter((x) => x.key !== ln.key))} disabled={lineas.length <= 1} style={{ padding: "0.55rem 0.65rem", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--muted)", cursor: lineas.length <= 1 ? "not-allowed" : "pointer", height: 40, display: "flex", alignItems: "center", justifyContent: "center" }} title="Quitar línea">
                         <Icon name="close" variant="dark" size={14} />
                       </button>
-                      {pSel && <span style={{ gridColumn: "1 / -1", fontSize: "0.78rem", color: "var(--muted)" }}>Unidad: {pSel.unidad_medida}</span>}
+                      {pSel && (
+                        <span style={{ gridColumn: "1 / -1", fontSize: "0.78rem", color: "var(--muted)" }}>
+                          Unidad: {pSel.unidad_medida}
+                          {ln.id_bodega && (
+                            <> · Disponible en bodega: <strong style={{ color: disponible > 0 ? "var(--green)" : "var(--red)" }}>{disponible}</strong></>
+                          )}
+                        </span>
+                      )}
                     </div>
                   );
                 })}
