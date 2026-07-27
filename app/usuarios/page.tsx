@@ -722,8 +722,7 @@ export default function UsuariosPage() {
                   style={s.input}
                   value={nuevoForm.tipo_usuario}
                   onChange={(e) =>
-                    setNuevoForm((f) => ({ ...f, tipo_usuario: e.target.value }))
-                  }
+                  setNuevoForm((f) => ({ ...f, tipo_usuario: e.target.value as typeof f.tipo_usuario }))                  }
                 >
                   {Object.entries(TIPO_META).map(([val, meta]) => (
                     <option key={val} value={val}>

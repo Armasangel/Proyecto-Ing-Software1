@@ -8,6 +8,7 @@ export type IconName =
   | "dashboard"
   | "inventory"
   | "lockout"
+  | "logout"
   | "hand-truck"
   | "shopping-cart"
   | "seller"
@@ -15,7 +16,15 @@ export type IconName =
   | "increase"
   | "distribution"
   | "report"
-  | "bill";
+  | "bill"
+  | "pencil"
+  | "trash"
+  | "close"
+  | "box"
+  | "hourglass"
+  | "money-bag"
+  | "ticket"
+  | "truck";
 
 type Props = {
   name: IconName;
