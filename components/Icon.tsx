@@ -8,6 +8,7 @@ export type IconName =
   | "dashboard"
   | "inventory"
   | "lockout"
+  | "logout"
   | "hand-truck"
   | "shopping-cart"
   | "seller"
