@@ -165,11 +165,9 @@ export async function POST(req: NextRequest) {
 
 
     // Verificar correo duplicado
-      [correoFinal]
-
+    const existe = await pool.query(
       `SELECT id_usuario FROM usuario WHERE LOWER(correo) = LOWER($1)`,
       [correoFinal]
-
     );
     if (existe.rows.length > 0) {
       return NextResponse.json(
