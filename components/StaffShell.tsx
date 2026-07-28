@@ -27,11 +27,11 @@ const NAV: NavItem[] = [
   { href: "/inventario",       label: "Inventario",      icon: "inventory"     },
   { href: "/catalogo",         label: "Catálogo",        icon: "catalogue"     },
   { href: "/ventas",           label: "Ventas",          icon: "shopping-cart" },
-  { href: "/ordenes",          label: "Ordenes",         icon: "bill"          },
   { href: "/facturacion",      label: "Facturación",     icon: "bill"          },
   { href: "/reportes",         label: "Reportes",        icon: "report"        },
   { href: "/proveedores",      label: "Proveedores",     icon: "hand-truck"    },
   { href: "/historial-ventas", label: "Historial ventas",icon: "distribution"  },
+  { href: "/deudas",           label: "Deudas",          icon: "money-bag"     },
 ];
 
 function isStaffNavActive(
@@ -81,7 +81,7 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
 
   const navVisible = NAV.filter((item) => {
     if (item.href === "/ventas") return isColaboradorTipo(usuario.tipo_usuario);
-    if (["/inventario", "/catalogo", "/historial-ventas", "/proveedores"].includes(item.href)) {
+    if (["/inventario", "/catalogo", "/historial-ventas", "/proveedores", "/deudas"].includes(item.href)) {
       return isDuenoTipo(usuario.tipo_usuario);
     }
     return true;

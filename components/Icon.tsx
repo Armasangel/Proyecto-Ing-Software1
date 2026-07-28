@@ -17,14 +17,7 @@ export type IconName =
   | "distribution"
   | "report"
   | "bill"
-  | "pencil"
-  | "trash"
-  | "close"
-  | "box"
-  | "hourglass"
-  | "money-bag"
-  | "ticket"
-  | "truck";
+  | "money-bag";
 
 type Props = {
   name: IconName;
