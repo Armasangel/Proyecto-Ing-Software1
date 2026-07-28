@@ -15,6 +15,8 @@ const config: Config = {
     "<rootDir>/node_modules/",
     "<rootDir>/.next/",
     "<rootDir>/__tests__/setup.ts",
+    "<rootDir>/__tests__/mocks/",
+    "<rootDir>/__tests__/utils/",
   ],
   collectCoverageFrom: [
     "lib/**/*.ts",
