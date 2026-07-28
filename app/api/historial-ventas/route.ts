@@ -33,14 +33,14 @@ export async function GET(req: NextRequest) {
 
   const baseFrom = `
       FROM venta v
-      JOIN usuario uc ON uc.id_usuario = v.id_usuario
+      JOIN cliente uc ON uc.id_cliente = v.id_cliente
       LEFT JOIN usuario ue ON ue.id_usuario = v.id_empleado
   `;
 
   const listSql = `
       SELECT
         v.id_venta,
-        v.id_usuario,
+        v.id_cliente,
         v.id_empleado,
         v.fecha_venta,
         v.estado_venta,
@@ -75,7 +75,7 @@ export async function GET(req: NextRequest) {
       WHERE (${whereSql})
       GROUP BY
         v.id_venta,
-        v.id_usuario,
+        v.id_cliente,
         v.id_empleado,
         v.fecha_venta,
         v.estado_venta,
