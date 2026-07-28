@@ -9,6 +9,16 @@ globalThis.Headers = nodeFetch.Headers;
 globalThis.Request = nodeFetch.Request;
 globalThis.Response = nodeFetch.Response;
 
+// Next.js NextResponse.json relies on Response.json static method
+if (typeof globalThis.Response.json !== "function") {
+  (globalThis.Response as any).json = (body: any, init?: any) => {
+    return new globalThis.Response(JSON.stringify(body), {
+      ...init,
+      headers: { "content-type": "application/json" },
+    });
+  };
+}
+
 afterEach(() => {
   cleanup();
 });
