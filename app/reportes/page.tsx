@@ -53,7 +53,7 @@ type EstadisticasData = {
     veces_vendido: number;
   } | null;
   top_clientes: {
-    id_usuario: number;
+    id_cliente: number;
     nombre: string;
     correo: string;
     tipo_usuario: string;
@@ -317,6 +317,7 @@ export default function EstadisticasPage() {
   const [data, setData] = useState<EstadisticasData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [exportando, setExportando] = useState<"periodo" | "todo" | null>(null);
 
   const fetchData = useCallback(async (p: PeriodoKey, d: string, h: string) => {
     setLoading(true); setError("");
@@ -337,6 +338,74 @@ export default function EstadisticasPage() {
     if (periodo === "custom" && (!desde || !hasta)) { setError("Selecciona fechas de inicio y fin."); return; }
     fetchData(periodo, desde, hasta);
   };
+
+  async function handleExportar(tipo: "periodo" | "todo") {
+    setExportando(tipo);
+    setError("");
+    try {
+      const sp = new URLSearchParams({ periodo: tipo === "todo" ? "year" : periodo });
+      if (tipo === "periodo" && periodo === "custom") {
+        if (!desde || !hasta) { setError("Selecciona fechas de inicio y fin."); setExportando(null); return; }
+        sp.set("desde", desde); sp.set("hasta", hasta);
+      }
+      const res = await fetch(`/api/estadisticas?${sp}`);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Error al exportar");
+      const exportData = json as EstadisticasData;
+
+      const rows: string[] = [];
+      const csvLine = (arr: (string | number)[]) => arr.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",");
+      const addSection = (titulo: string) => { rows.push(""); rows.push(titulo); };
+
+      rows.push(csvLine(["Reporte de estadísticas", tipo === "todo" ? "Todo el histórico" : `Periodo: ${exportData.periodo.tipo}`]));
+
+      addSection("Resumen");
+      rows.push(csvLine(["Ventas totales", exportData.resumen.total_ventas]));
+      rows.push(csvLine(["Ingresos totales", exportData.resumen.ingresos_totales]));
+      rows.push(csvLine(["Ticket promedio", exportData.resumen.ticket_promedio]));
+      rows.push(csvLine(["Ventas canceladas", exportData.resumen.ventas_canceladas]));
+
+      addSection("Resumen de ventas");
+      rows.push(csvLine(["Ticket promedio", exportData.estadisticas_descriptivas.media]));
+      rows.push(csvLine(["Ticket típico", exportData.estadisticas_descriptivas.mediana]));
+      rows.push(csvLine(["Monto más común", exportData.estadisticas_descriptivas.moda.join(" / ")]));
+      rows.push(csvLine(["Qué tanto varían tus ventas", exportData.estadisticas_descriptivas.desviacion_estandar]));
+      rows.push(csvLine(["Ticket mínimo", exportData.estadisticas_descriptivas.min_total]));
+      rows.push(csvLine(["Ticket máximo", exportData.estadisticas_descriptivas.max_total]));
+
+      addSection("Ventas por día");
+      rows.push(csvLine(["Fecha", "Total", "Cantidad"]));
+      exportData.ventas_por_dia.forEach((d) => rows.push(csvLine([d.fecha, d.total_dia, d.cantidad])));
+
+      addSection("Top productos");
+      rows.push(csvLine(["Producto", "Código", "Categoría", "Marca", "Unidades", "Ingresos", "Veces vendido"]));
+      exportData.top_productos.forEach((p) => rows.push(csvLine([p.nombre_producto, p.codigo_producto, p.nombre_categoria, p.nombre_marca, p.total_unidades, p.total_ingresos, p.veces_vendido])));
+
+      addSection("Top clientes");
+      rows.push(csvLine(["Nombre", "Correo", "Total compras", "Cantidad pedidos"]));
+      exportData.top_clientes.forEach((c) => rows.push(csvLine([c.nombre, c.correo, c.total_compras, c.cantidad_pedidos])));
+
+      addSection("Ingresos por categoría");
+      rows.push(csvLine(["Categoría", "Ingresos", "Unidades"]));
+      exportData.ingresos_por_categoria.forEach((c) => rows.push(csvLine([c.nombre_categoria, c.total_ingresos, c.total_unidades])));
+
+      const csvContent = "\uFEFF" + rows.join("\n");
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const fechaHoy = new Date().toISOString().slice(0, 10);
+      a.href = url;
+      a.download = `reporte-${tipo === "todo" ? "completo" : periodo}-${fechaHoy}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setExportando(null);
+    }
+  }
 
   if (!usuario) return <div style={{ padding: "2rem", color: "var(--muted)" }}>Cargando…</div>;
 
@@ -375,6 +444,11 @@ export default function EstadisticasPage() {
         )}
         <button type="button" onClick={handleAplicar} disabled={loading} style={s.btnPrimary}>
           {loading ? "Cargando…" : "Aplicar"}
+        </button>
+        <button type="button" onClick={() => handleExportar("periodo")} disabled={!data || exportando !== null} style={s.btnSecondary}>          {exportando === "periodo" ? "Exportando…" : "Exportar periodo actual"}
+        </button>
+        <button type="button" onClick={() => handleExportar("todo")} disabled={exportando !== null} style={s.btnSecondary}>
+          {exportando === "todo" ? "Exportando…" : "Exportar todo"}
         </button>
       </div>
 
@@ -454,18 +528,19 @@ export default function EstadisticasPage() {
           </div>
 
           {/* Fila 3 — Estadísticas descriptivas */}
-          <Card title="Estadísticas descriptivas de tickets (Q)">
+          <Card title="Resumen de tus ventas (Q)">
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "0 2.5rem" }}>
               <div>
-                <StatDescRow label="Media (promedio)" value={q(data.estadisticas_descriptivas.media)} hint="Suma de totales ÷ cantidad de ventas" />
-                <StatDescRow label="Mediana" value={q(data.estadisticas_descriptivas.mediana)} hint="Valor central del conjunto ordenado" />
-                <StatDescRow label="Moda" value={data.estadisticas_descriptivas.moda.length > 0 ? data.estadisticas_descriptivas.moda.map(q).join(", ") : "Sin moda (todos distintos)"} hint="Ticket(s) más repetidos" />
+                <StatDescRow label="Ticket promedio" value={q(data.estadisticas_descriptivas.media)} hint="Cuánto se vende en promedio por venta" />
+                <StatDescRow label="Ticket típico" value={q(data.estadisticas_descriptivas.mediana)} hint="La mitad de tus ventas fue menor a este monto, la otra mitad mayor" />
+                <StatDescRow label="Monto más común" value={data.estadisticas_descriptivas.moda.length > 0 ? data.estadisticas_descriptivas.moda.map(q).join(", ") : "Sin un monto repetido"} hint="El valor que más se repitió en tus ventas" />
               </div>
               <div>
-                <StatDescRow label="Desviación estándar" value={q(data.estadisticas_descriptivas.desviacion_estandar)} hint="Dispersión respecto a la media (poblacional)" />
+                <StatDescRow label="Qué tanto varían tus ventas" value={q(data.estadisticas_descriptivas.desviacion_estandar)} hint="Entre más alto, más distintos son los montos entre sí" />
                 <StatDescRow label="Ticket mínimo" value={q(data.estadisticas_descriptivas.min_total)} />
                 <StatDescRow label="Ticket máximo" value={q(data.estadisticas_descriptivas.max_total)} />
               </div>
+
               <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem 0" }}>
                 <div style={s.nBox}>
                   <span style={s.nVal}>{data.estadisticas_descriptivas.n}</span>
@@ -570,7 +645,7 @@ export default function EstadisticasPage() {
               {data.top_clientes.length === 0 ? <EmptyChart label="Sin datos en el periodo" /> : (
                 <div style={{ display: "flex", flexDirection: "column" }}>
                   {data.top_clientes.map((c, i) => (
-                    <div key={c.id_usuario} style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.65rem 0", borderBottom: "1px solid var(--border)" }}>
+                    <div key={c.id_cliente} style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.65rem 0", borderBottom: "1px solid var(--border)" }}>
                       <div style={{ width: 30, height: 30, borderRadius: "50%", flexShrink: 0, background: i === 0 ? "rgba(45,106,79,.25)" : "var(--surface2)", border: `1px solid ${i === 0 ? "rgba(45,106,79,.45)" : "var(--border)"}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.72rem", fontWeight: 700, color: i === 0 ? "var(--accent)" : "var(--muted)" }}>
                         {i === 0 ? <Icon name="increase" variant="dark" size={14} /> : i + 1}
                       </div>
@@ -603,6 +678,7 @@ const s: Record<string, CSSProperties> = {
   dateInput: { background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "0.45rem 0.65rem", color: "var(--text)", fontSize: "0.85rem", outline: "none" },
   miniLabel: { fontSize: "0.7rem", fontWeight: 600, color: "var(--muted)", textTransform: "uppercase" as const, letterSpacing: "0.05em" },
   btnPrimary: { background: "var(--accent)", color: "#eff5ff", border: "none", borderRadius: 8, padding: "0.55rem 1.1rem", fontFamily: "var(--font-head)", fontSize: "0.85rem", fontWeight: 700, cursor: "pointer" },
+  btnSecondary: { background: "transparent", color: "var(--accent)", border: "1px solid var(--accent)", borderRadius: 8, padding: "0.55rem 1.1rem", fontFamily: "var(--font-head)", fontSize: "0.85rem", fontWeight: 700, cursor: "pointer" },
   errorBox: { background: "rgba(248,81,73,.12)", border: "1px solid rgba(248,81,73,.3)", borderRadius: 8, padding: "0.75rem 1rem", color: "var(--red)", fontSize: "0.88rem", marginBottom: "1rem" },
   emptyState: { display: "flex", flexDirection: "column" as const, alignItems: "center", padding: "4rem 2rem", background: "var(--surface)", border: "1px dashed var(--border)", borderRadius: 14 },
   emptyIconWrap: { width: 72, height: 72, borderRadius: 16, background: "var(--surface2)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center" },

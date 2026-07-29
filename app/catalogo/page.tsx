@@ -337,7 +337,7 @@ export default function CatalogoPage() {
                             <button type="button" onClick={() => setPrecioEditando(null)} style={s.btnCancel}>Cancelar</button>
                           </div>
                         ) : (
-                          <button type="button" onClick={() => iniciarEditarPrecio(p)} style={s.btnEdit}><Icon name ="pencil" variant="dark" size={24}/> Editar</button>
+                          <button type="button" onClick={() => iniciarEditarPrecio(p)} style={s.btnEdit}><Icon name ="pencil" variant="dark" size={22}/> Editar</button>
                         )}
                       </td>
                     </tr>

@@ -54,6 +54,18 @@ CREATE TABLE producto_proveedor (
     CONSTRAINT fk_pp_producto   FOREIGN KEY (id_producto)  REFERENCES producto(id_producto),
     CONSTRAINT fk_pp_proveedor  FOREIGN KEY (id_proveedor) REFERENCES proveedor(id_proveedor)
 );
+-- CLIENTE (compradores minoristas y mayoristas) 
+CREATE TABLE cliente (
+    id_cliente      SERIAL          PRIMARY KEY,
+    nombre          VARCHAR(150)    NOT NULL,
+    correo          VARCHAR(200),
+    telefono        VARCHAR(20),
+    tipo_cliente    VARCHAR(20)     NOT NULL DEFAULT 'MINORISTA'
+                        CHECK (tipo_cliente IN ('MINORISTA', 'MAYORISTA')),
+    estado_cliente  BOOLEAN         NOT NULL DEFAULT TRUE,
+    nit_cliente     VARCHAR(20)     NOT NULL DEFAULT 'CF',
+    CONSTRAINT uq_cliente_correo UNIQUE (correo)
+);
 
 -- USUARIO
 CREATE TABLE usuario (
@@ -62,7 +74,7 @@ CREATE TABLE usuario (
     correo            VARCHAR(200)    NOT NULL,
     telefono          VARCHAR(20),
     contrasena_hash   VARCHAR(255)    NOT NULL,
-    tipo_usuario      VARCHAR(20)     NOT NULL CHECK (tipo_usuario IN ('DUENO', 'EMPLEADO', 'COMPRADOR', 'COMPRADOR_MAYOR')),
+    tipo_usuario      VARCHAR(20)     NOT NULL CHECK (tipo_usuario IN ('DUENO', 'EMPLEADO')),
     estado_usuario    BOOLEAN         NOT NULL DEFAULT TRUE,
     CONSTRAINT uq_usuario_correo    UNIQUE (correo),
     CONSTRAINT uq_usuario_telefono  UNIQUE (telefono)
@@ -103,7 +115,7 @@ CREATE TABLE kardex (
 -- VENTA
 CREATE TABLE venta (
     id_venta            SERIAL          PRIMARY KEY,
-    id_usuario          INT             NOT NULL,
+    id_cliente          INT             NOT NULL,
     id_empleado         INT,
     fecha_venta         TIMESTAMP       NOT NULL DEFAULT NOW(),
     estado_venta        VARCHAR(20)     NOT NULL DEFAULT 'PENDIENTE'
@@ -111,10 +123,10 @@ CREATE TABLE venta (
     tipo_venta          VARCHAR(20)     NOT NULL CHECK (tipo_venta IN ('MINORISTA', 'MAYORISTA')),
     tipo_entrega        VARCHAR(20)     NOT NULL CHECK (tipo_entrega IN ('EN_TIENDA', 'DOMICILIO')),
     direccion_entrega   VARCHAR(255),
-    enlinea             BOOLEAN         NOT NULL DEFAULT FALSE,
+    enlinea              BOOLEAN         NOT NULL DEFAULT FALSE,
     total               NUMERIC(12,2)   NOT NULL DEFAULT 0,
     fecha_limite_pago   DATE,
-    CONSTRAINT fk_venta_usuario   FOREIGN KEY (id_usuario)  REFERENCES usuario(id_usuario),
+    CONSTRAINT fk_venta_cliente   FOREIGN KEY (id_cliente)  REFERENCES cliente(id_cliente),
     CONSTRAINT fk_venta_empleado  FOREIGN KEY (id_empleado) REFERENCES usuario(id_usuario),
     CONSTRAINT chk_direccion      CHECK (tipo_entrega = 'EN_TIENDA' OR direccion_entrega IS NOT NULL)
 );
@@ -158,18 +170,18 @@ CREATE TABLE factura (
 CREATE VIEW v_deudores AS
 SELECT
     v.id_venta,
-    u.nombre                                AS nombre_cliente,
-    u.correo,
+    c.nombre                                AS nombre_cliente,
+    c.correo,
     v.fecha_venta,
     v.fecha_limite_pago,
     v.total                                 AS total_venta,
     COALESCE(SUM(p.monto), 0)              AS total_pagado,
     v.total - COALESCE(SUM(p.monto), 0)   AS deuda_pendiente
 FROM venta v
-JOIN usuario u ON u.id_usuario = v.id_usuario
+JOIN cliente c ON c.id_cliente = v.id_cliente
 LEFT JOIN pago p ON p.id_venta = v.id_venta
 WHERE v.estado_venta != 'PAGADO'
-GROUP BY v.id_venta, u.nombre, u.correo, v.fecha_venta, v.fecha_limite_pago, v.total
+GROUP BY v.id_venta, c.nombre, c.correo, v.fecha_venta, v.fecha_limite_pago, v.total
 HAVING v.total - COALESCE(SUM(p.monto), 0) > 0;
 
 --  DATOS DE PRUEBA
@@ -180,9 +192,7 @@ INSERT INTO bodega (nombre_bodega, ubicacion) VALUES ('Bodega Principal', 'Zona 
 -- Contraseña de prueba (los tres usuarios): password123
 INSERT INTO usuario (nombre, correo, telefono, contrasena_hash, tipo_usuario) VALUES
   ('Admin Dueño',    'dueno@tienda.com',    '50201234567', '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm', 'DUENO'),
-  ('Carlos Empleado','empleado@tienda.com', '50207654321', '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm', 'EMPLEADO'),
-  ('Maria Comprador','maria@gmail.com',     '50209876543', '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm', 'COMPRADOR'),
-  ('Pedro Mayorista','pedro@gmail.com',     '50205555555', '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm', 'COMPRADOR_MAYOR');
+  ('Carlos Empleado','empleado@tienda.com', '50207654321', '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm', 'EMPLEADO');
 
 INSERT INTO producto (codigo_producto, nombre_producto, precio_unitario, precio_mayoreo, unidad_medida, id_categoria, id_marca)
 VALUES
@@ -192,3 +202,9 @@ VALUES
 
 INSERT INTO bodega_producto (id_bodega, id_producto, cantidad_disponible, stock_minimo)
 VALUES (1, 1, 150, 20), (1, 2, 80, 10), (1, 3, 45, 15);
+
+INSERT INTO cliente (nombre, correo, telefono, tipo_cliente) VALUES
+  ('Maria Comprador', 'maria@gmail.com', '50209876543', 'MINORISTA'),
+  ('Pedro Mayorista', 'pedro@gmail.com', '50205555555', 'MAYORISTA');
+  
+  

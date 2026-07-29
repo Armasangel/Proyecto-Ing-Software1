@@ -190,7 +190,7 @@ export function buildHistorialVentasWhere(
   if (rawIdCliente !== null && rawIdCliente !== "") {
     const id = Number.parseInt(rawIdCliente, 10);
     if (Number.isFinite(id) && id >= 1) {
-      parts.push(`v.id_usuario = $${values.length + 1}`);
+      parts.push(`v.id_cliente = $${values.length + 1}`);
       values.push(id);
     }
   }

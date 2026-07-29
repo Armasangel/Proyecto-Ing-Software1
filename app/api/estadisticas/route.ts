@@ -224,29 +224,29 @@ export async function GET(req: NextRequest) {
 
     // ── 10. Top 5 clientes por ingresos ──────────────────────────────────────
     const topClientesQ = await pool.query<{
-      id_usuario: string;
-      nombre: string;
-      correo: string;
-      tipo_usuario: string;
-      total_compras: string;
-      cantidad_pedidos: string;
-    }>(
-      `SELECT
-         u.id_usuario::text,
-         u.nombre,
-         u.correo,
-         u.tipo_usuario,
-         SUM(v.total)::numeric          AS total_compras,
-         COUNT(v.id_venta)::int         AS cantidad_pedidos
-       FROM venta v
-       JOIN usuario u ON u.id_usuario = v.id_usuario
-       WHERE ${fechaWhere}
-         AND v.estado_venta != 'CANCELADO'
-       GROUP BY u.id_usuario, u.nombre, u.correo, u.tipo_usuario
-       ORDER BY total_compras DESC
-       LIMIT 5`,
-      fechaParams
-    );
+  id_cliente: string;
+  nombre: string;
+  correo: string;
+  tipo_cliente: string;
+  total_compras: string;
+  cantidad_pedidos: string;
+}>(
+  `SELECT
+     c.id_cliente::text,
+     c.nombre,
+     c.correo,
+     c.tipo_cliente,
+     SUM(v.total)::numeric          AS total_compras,
+     COUNT(v.id_venta)::int         AS cantidad_pedidos
+   FROM venta v
+   JOIN cliente c ON c.id_cliente = v.id_cliente
+   WHERE ${fechaWhere}
+     AND v.estado_venta != 'CANCELADO'
+   GROUP BY c.id_cliente, c.nombre, c.correo, c.tipo_cliente
+   ORDER BY total_compras DESC
+   LIMIT 5`,
+  fechaParams
+);
 
     // ── 11. Ingresos por categoría ────────────────────────────────────────────
     const ingresosPorCategoriaQ = await pool.query<{
@@ -427,14 +427,16 @@ export async function GET(req: NextRequest) {
           }
         : null,
 
-      top_clientes: topClientesQ.rows.map((r) => ({
-        id_usuario:       Number(r.id_usuario),
-        nombre:           r.nombre,
-        correo:           r.correo,
-        tipo_usuario:     r.tipo_usuario,
-        total_compras:    Number(r.total_compras),
-        cantidad_pedidos: Number(r.cantidad_pedidos),
-      })),
+      top_clientes: topClientesQ.rows.map((r) => ({
+        id_cliente:       Number(r.id_cliente),
+        id_usuario:       Number(r.id_cliente),
+        nombre:           r.nombre,
+        correo:           r.correo,
+        tipo_cliente:     r.tipo_cliente,
+        tipo_usuario:     r.tipo_cliente,
+        total_compras:    Number(r.total_compras),
+        cantidad_pedidos: Number(r.cantidad_pedidos),
+      })),
 
       ingresos_por_categoria: ingresosPorCategoriaQ.rows.map((r) => ({
         nombre_categoria: r.nombre_categoria,

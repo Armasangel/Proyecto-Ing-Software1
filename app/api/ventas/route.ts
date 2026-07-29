@@ -51,7 +51,7 @@ export async function GET(req: NextRequest) {
     const result = await pool.query(`
       SELECT
         v.id_venta,
-        v.id_usuario,
+        v.id_cliente,
         v.id_empleado,
         v.fecha_venta,
         v.estado_venta,
@@ -79,12 +79,12 @@ export async function GET(req: NextRequest) {
           '[]'::json
         ) AS productos
       FROM venta v
-      JOIN usuario uc ON uc.id_usuario = v.id_usuario
+      JOIN cliente uc ON uc.id_cliente = v.id_cliente
       LEFT JOIN usuario ue ON ue.id_usuario = v.id_empleado
       LEFT JOIN detalle_venta dv ON dv.id_venta = v.id_venta
       LEFT JOIN producto p ON p.id_producto = dv.id_producto
       GROUP BY
-        v.id_venta, v.id_usuario, v.id_empleado, v.fecha_venta,
+        v.id_venta, v.id_cliente, v.id_empleado, v.fecha_venta,
         v.estado_venta, v.tipo_venta, v.tipo_entrega, v.direccion_entrega,
         v.total, v.fecha_limite_pago, uc.nombre, uc.correo, ue.nombre
       ORDER BY v.fecha_venta DESC
@@ -111,6 +111,7 @@ export async function GET(req: NextRequest) {
 
 type LineaInput = {
   id_producto: number;
+  id_bodega: number;
   cantidad: number;
   precio_unitario_venta: number;
 };
@@ -124,14 +125,13 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const {
-      id_usuario: idCliente,
+      id_cliente: idCliente,
       estado_pago,
       estado_venta: estadoVentaBody,
       tipo_venta,
       tipo_entrega,
       direccion_entrega,
       fecha_limite_pago,
-      id_bodega,
       lineas,
     } = body;
 
@@ -156,10 +156,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "La dirección de entrega es obligatoria para domicilio" }, { status: 400 });
     }
 
-    const idBodega = Number(id_bodega);
-    if (!idBodega || idBodega < 1) {
-      return NextResponse.json({ error: "id_bodega inválido" }, { status: 400 });
-    }
     if (!idCliente || Number(idCliente) < 1) {
       return NextResponse.json({ error: "Debe seleccionar un cliente" }, { status: 400 });
     }
@@ -172,15 +168,16 @@ export async function POST(request: NextRequest) {
       if (!L || typeof L !== "object") continue;
       const o = L as Record<string, unknown>;
       const id_producto = Number(o.id_producto);
+      const id_bodega = Number(o.id_bodega);
       const cantidad = Number(o.cantidad);
       const precio_unitario_venta = Number(o.precio_unitario_venta);
-      if (!id_producto || cantidad <= 0 || precio_unitario_venta < 0) {
+      if (!id_producto || !id_bodega || cantidad <= 0 || precio_unitario_venta < 0) {
         return NextResponse.json(
-          { error: "Cada línea requiere id_producto, cantidad > 0 y precio válido" },
+          { error: "Cada línea requiere id_producto, id_bodega, cantidad > 0 y precio válido" },
           { status: 400 }
         );
       }
-      lineasNorm.push({ id_producto, cantidad, precio_unitario_venta });
+      lineasNorm.push({ id_producto, id_bodega, cantidad, precio_unitario_venta });
     }
 
     if (lineasNorm.length === 0) {
@@ -197,21 +194,25 @@ export async function POST(request: NextRequest) {
       await client.query("BEGIN");
 
       const existeCliente = await client.query(
-        `SELECT 1 FROM usuario WHERE id_usuario = $1 AND estado_usuario = TRUE`, [idCliente]
+        `SELECT 1 FROM cliente WHERE id_cliente = $1 AND estado_cliente = TRUE`, [idCliente]
       );
       if (existeCliente.rowCount === 0) {
         await client.query("ROLLBACK");
         return NextResponse.json({ error: "Cliente no encontrado" }, { status: 400 });
       }
 
-      const existeBodega = await client.query(`SELECT 1 FROM bodega WHERE id_bodega = $1`, [idBodega]);
-      if (existeBodega.rowCount === 0) {
+      const bodegasUnicas = [...new Set(lineasNorm.map((ln) => ln.id_bodega))];
+      const existeBodegas = await client.query(
+        `SELECT id_bodega FROM bodega WHERE id_bodega = ANY($1)`,
+        [bodegasUnicas]
+      );
+      if (existeBodegas.rowCount !== bodegasUnicas.length) {
         await client.query("ROLLBACK");
-        return NextResponse.json({ error: "Bodega no encontrada" }, { status: 400 });
+        return NextResponse.json({ error: "Una o más bodegas no fueron encontradas" }, { status: 400 });
       }
 
       let total = 0;
-      const prepared: Array<{ id_producto: number; cantidad: number; precio: number; subtotal: number }> = [];
+      const prepared: Array<{ id_producto: number; id_bodega: number; cantidad: number; precio: number; subtotal: number }> = [];
 
       for (const ln of lineasNorm) {
         const prod = await client.query(
@@ -227,14 +228,14 @@ export async function POST(request: NextRequest) {
         );
         const subtotal = Number(subQ.rows[0].sub);
         total += subtotal;
-        prepared.push({ id_producto: ln.id_producto, cantidad: ln.cantidad, precio: ln.precio_unitario_venta, subtotal });
+        prepared.push({ id_producto: ln.id_producto, id_bodega: ln.id_bodega, cantidad: ln.cantidad, precio: ln.precio_unitario_venta, subtotal });
       }
 
       const totalQ = await client.query(`SELECT ROUND($1::numeric, 2) AS t`, [total]);
       total = Number(totalQ.rows[0].t);
 
       const insVenta = await client.query(
-        `INSERT INTO venta (id_usuario, id_empleado, estado_venta, tipo_venta, tipo_entrega,
+        `INSERT INTO venta (id_cliente, id_empleado, estado_venta, tipo_venta, tipo_entrega,
           direccion_entrega, enlinea, total, fecha_limite_pago)
          VALUES ($1, $2, $3, $4, $5, $6, FALSE, $7, $8) RETURNING id_venta`,
         [idCliente, usuario.id_usuario, estado_venta, tipo_venta, tipo_entrega,
@@ -246,13 +247,13 @@ export async function POST(request: NextRequest) {
       for (const p of prepared) {
         const stock = await client.query(
           `SELECT cantidad_disponible FROM bodega_producto WHERE id_bodega = $1 AND id_producto = $2`,
-          [idBodega, p.id_producto]
+          [p.id_bodega, p.id_producto]
         );
         const disponible = stock.rowCount && stock.rows[0] ? Number(stock.rows[0].cantidad_disponible) : 0;
         if (disponible < p.cantidad) {
           await client.query("ROLLBACK");
           return NextResponse.json(
-            { error: `Stock insuficiente para el producto id ${p.id_producto} (disponible: ${disponible})` },
+            { error: `Stock insuficiente para el producto id ${p.id_producto} en la bodega id ${p.id_bodega} (disponible: ${disponible})` },
             { status: 400 }
           );
         }
@@ -264,11 +265,11 @@ export async function POST(request: NextRequest) {
         await client.query(
           `UPDATE bodega_producto SET cantidad_disponible = cantidad_disponible - $1, ultima_actualizacion = NOW()
            WHERE id_bodega = $2 AND id_producto = $3`,
-          [p.cantidad, idBodega, p.id_producto]
+          [p.cantidad, p.id_bodega, p.id_producto]
         );
         await client.query(
           `INSERT INTO kardex (id_bodega, id_producto, tipo_movimiento, cantidad, descripcion) VALUES ($1,$2,'SALIDA',$3,$4)`,
-          [idBodega, p.id_producto, p.cantidad, `Venta #${idVenta} (panel colaborador)`]
+          [p.id_bodega, p.id_producto, p.cantidad, `Venta #${idVenta} (panel colaborador)`]
         );
       }
 

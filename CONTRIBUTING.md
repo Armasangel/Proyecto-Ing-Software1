@@ -128,6 +128,51 @@ El responsable del repo debe activar estas reglas en **Settings → Branches**:
 
 ---
 
+## Testing
+
+### Comandos
+
+```bash
+# Ejecutar toda la suite
+npm test
+
+# Modo watch (re-ejecuta al cambiar archivos)
+npm run test:watch
+
+# Reporte de cobertura
+npm run test:coverage
+```
+
+### Convenciones
+
+- Todo el código nuevo debe incluir tests unitarios
+- Los tests viven en `__tests__/`, reflejando la estructura de `app/`, `lib/`, `hooks/` y `components/`
+- Usamos **Jest 29** + **React Testing Library** + **MSW v1** para mocking de API
+- Los tests de hooks y páginas que usen `fetch()` deben usar MSW para mockear las respuestas:
+
+```ts
+server.use(
+  rest.get("/api/sesion", (_req, res, ctx) =>
+    res(ctx.json({ usuario: { id_usuario: 1, tipo_usuario: "DUENO" } }))
+  )
+);
+```
+
+- Para navegación mockear `next/navigation`:
+```ts
+jest.mock("next/navigation", () => ({
+  useRouter: jest.fn(),
+  usePathname: jest.fn(),
+}));
+```
+
+- Los `<label>` sin `htmlFor` no se pueden consultar con `getByLabelText`; usar `getByPlaceholderText` o `getByText`
+- `<img alt="">` tiene rol `presentation`; usar `document.querySelector("img")` en lugar de `getByRole("img")`
+- Linter: `npm run lint` (Next.js ESLint config)
+- **Cobertura objetivo**: ≥60% global (branches, functions, lines, statements)
+
+---
+
 ## Ambiente de desarrollo
 
 ```bash
