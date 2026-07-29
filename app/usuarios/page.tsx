@@ -677,7 +677,7 @@ export default function UsuariosPage() {
                     alignItems: "center",
                     gap: "0.3rem",
                   }}>
-                    ⚠ El correo debe incluir "@" y un dominio válido
+                    ⚠ El correo debe incluir &ldquo;@&rdquo; y un dominio válido
                   </span>
                 )}
                 {nuevoForm.correo.trim() && correoNuevoCompleto && (

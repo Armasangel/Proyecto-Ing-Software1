@@ -1,0 +1,39 @@
+import type { Config } from "jest";
+import nextJest from "next/jest";
+
+const createJestConfig = nextJest({
+  dir: "./",
+});
+
+const config: Config = {
+  testEnvironment: "jsdom",
+  setupFilesAfterEnv: ["<rootDir>/__tests__/setup.ts"],
+  moduleNameMapper: {
+    "^@/(.*)$": "<rootDir>/$1",
+  },
+  testPathIgnorePatterns: [
+    "<rootDir>/node_modules/",
+    "<rootDir>/.next/",
+    "<rootDir>/__tests__/setup.ts",
+    "<rootDir>/__tests__/mocks/",
+    "<rootDir>/__tests__/utils/",
+  ],
+  collectCoverageFrom: [
+    "lib/**/*.ts",
+    "hooks/**/*.ts",
+    "components/**/*.tsx",
+    "app/api/**/*.ts",
+    "!**/*.d.ts",
+    "!**/node_modules/**",
+  ],
+  coverageThreshold: {
+    global: {
+      branches: 60,
+      functions: 60,
+      lines: 60,
+      statements: 60,
+    },
+  },
+};
+
+export default createJestConfig(config);
