@@ -31,7 +31,7 @@ const NAV: NavItem[] = [
   { href: "/reportes",         label: "Reportes",        icon: "report"        },
   { href: "/proveedores",      label: "Proveedores",     icon: "hand-truck"    },
   { href: "/historial-ventas", label: "Historial ventas",icon: "distribution"  },
-  { href: "/deudas",           label: "Deudas",          icon: "money-bag"     },
+  { href: "/deudas",           label: "Deudas",          icon: "debt"     },
 ];
 
 function isStaffNavActive(
