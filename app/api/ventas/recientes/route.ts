@@ -1,53 +1,86 @@
-// app/api/ventas/recientes/route.ts
-//
-// GET /api/ventas/recientes?desde=<id_venta>
-//
-// Usado por el dueño para el toast de "venta realizada": el cliente
-// pregunta cada pocos segundos "¿hay ventas con id mayor a X?" y si las
-// hay, las devuelve para mostrar el toast. Solo el dueño puede pedir esto.
-
+// app/api/facturacion/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
-import { isDuenoTipo } from "@/lib/roles";
+import { isStaffTipo } from "@/lib/roles";
+import { apiError, unauthorizedError, validationError } from "@/lib/api-error";
 
 export async function GET(req: NextRequest) {
   const usuario = getUsuarioFromRequest(req);
-  if (!usuario || !isDuenoTipo(usuario.tipo_usuario)) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+  if (!usuario || !isStaffTipo(usuario.tipo_usuario)) {
+    return unauthorizedError();
   }
 
-  const { searchParams } = req.nextUrl;
-  const desde = Number(searchParams.get("desde") ?? "0");
+  try {
+    const result = await pool.query(`
+      SELECT
+        v.id_venta,
+        v.fecha_venta,
+        v.total,
+        v.estado_venta,
+        u.nombre,
+        u.correo,
+        f.id_factura,
+        f.numero_factura,
+        f.total_factura
+      FROM venta v
+      JOIN cliente u ON u.id_cliente = v.id_cliente
+      LEFT JOIN factura f ON f.id_venta = v.id_venta
+      ORDER BY v.fecha_venta DESC
+    `);
+    return NextResponse.json({ ventas: result.rows });
+  } catch (error) {
+    return apiError("FACTURACION GET", error);
+  }
+}
+
+export async function POST(req: NextRequest) {
+  const usuario = getUsuarioFromRequest(req);
+  if (!usuario) {
+    return unauthorizedError();
+  }
 
   try {
-    // Si no viene "desde" (primera carga del cliente), no devolvemos ventas
-    // viejas como si fueran nuevas — solo el id más alto actual, para que el
-    // cliente arranque desde ahí y no dispare un toast por cada venta histórica.
-    if (!desde || desde <= 0) {
-      const ultimo = await pool.query(`SELECT COALESCE(MAX(id_venta), 0) AS max_id FROM venta`);
-      return NextResponse.json({ ventas: [], ultimo_id: ultimo.rows[0].max_id });
+    const { id_venta, nombre_cliente, nit_cliente } = await req.json();
+
+    if (!id_venta) {
+      return validationError("id_venta es requerido");
     }
 
-    const result = await pool.query(
-      `SELECT
-         v.id_venta,
-         v.total,
-         v.fecha_venta,
-         u.nombre AS nombre_empleado
-       FROM venta v
-       LEFT JOIN usuario u ON u.id_usuario = v.id_empleado
-       WHERE v.id_venta > $1
-       ORDER BY v.id_venta ASC
-       LIMIT 20`,
-      [desde]
+    const venta = await pool.query(
+      `SELECT total FROM venta WHERE id_venta = $1`,
+      [id_venta]
     );
 
-    const maxId = result.rows.length > 0 ? result.rows[result.rows.length - 1].id_venta : desde;
+    if (venta.rows.length === 0) {
+      return NextResponse.json({ error: "Venta no encontrada" }, { status: 404 });
+    }
 
-    return NextResponse.json({ ventas: result.rows, ultimo_id: maxId });
-  } catch (err) {
-    console.error("Error en GET /api/ventas/recientes:", err);
-    return NextResponse.json({ error: "Error al buscar ventas recientes" }, { status: 500 });
+    const total = venta.rows[0].total;
+
+    // FIX: el número de factura ahora lo genera Postgres con nextval() de
+    // una secuencia, DENTRO del mismo INSERT — así es atómico (Postgres
+    // garantiza que nextval() nunca repite un valor, aunque dos facturas
+    // se estén creando al mismo tiempo) y queda como correlativo real
+    // (FACT-000001, FACT-000002, ...) en vez de un timestamp.
+    const facturaResult = await pool.query(
+      `INSERT INTO factura (id_venta, numero_factura, nombre_cliente, nit_cliente, total_factura)
+       VALUES ($1, 'FACT-' || LPAD(nextval('factura_numero_seq')::text, 6, '0'), $2, $3, $4)
+       RETURNING id_factura, numero_factura`,
+      [id_venta, nombre_cliente || "Consumidor Final", nit_cliente || "CF", total]
+    );
+
+    await pool.query(
+      `UPDATE venta SET estado_venta = 'CONFIRMADO' WHERE id_venta = $1`,
+      [id_venta]
+    );
+
+    return NextResponse.json({
+      ok: true,
+      id_factura: facturaResult.rows[0].id_factura,
+      numero_factura: facturaResult.rows[0].numero_factura,
+    });
+  } catch (error) {
+    return apiError("FACTURACION POST", error);
   }
 }
