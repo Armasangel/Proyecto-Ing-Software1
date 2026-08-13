@@ -139,7 +139,7 @@ CREATE TABLE detalle_venta (
     cantidad            NUMERIC(12,3)   NOT NULL,
     precio_unitario     NUMERIC(10,2)   NOT NULL,
     subtotal            NUMERIC(12,2)   NOT NULL,
-    CONSTRAINT fk_dv_venta    FOREIGN KEY (id_venta)    REFERENCES venta(id_venta),
+    CONSTRAINT fk_dv_venta    FOREIGN KEY (id_venta)    REFERENCES venta(id_venta) ON DELETE CASCADE,
     CONSTRAINT fk_dv_producto FOREIGN KEY (id_producto) REFERENCES producto(id_producto)
 );
 
@@ -206,5 +206,5 @@ VALUES (1, 1, 150, 20), (1, 2, 80, 10), (1, 3, 45, 15);
 INSERT INTO cliente (nombre, correo, telefono, tipo_cliente) VALUES
   ('Maria Comprador', 'maria@gmail.com', '50209876543', 'MINORISTA'),
   ('Pedro Mayorista', 'pedro@gmail.com', '50205555555', 'MAYORISTA');
-  
+
   
