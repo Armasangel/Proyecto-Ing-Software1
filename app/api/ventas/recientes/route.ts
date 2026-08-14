@@ -1,86 +1,87 @@
-// app/api/facturacion/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
-import { getUsuarioFromRequest } from "@/lib/server-auth";
-import { isStaffTipo } from "@/lib/roles";
-import { apiError, unauthorizedError, validationError } from "@/lib/api-error";
-
-export async function GET(req: NextRequest) {
-  const usuario = getUsuarioFromRequest(req);
-  if (!usuario || !isStaffTipo(usuario.tipo_usuario)) {
-    return unauthorizedError();
-  }
-
-  try {
-    const result = await pool.query(`
-      SELECT
-        v.id_venta,
-        v.fecha_venta,
-        v.total,
-        v.estado_venta,
-        u.nombre,
-        u.correo,
-        f.id_factura,
-        f.numero_factura,
-        f.total_factura
-      FROM venta v
-      JOIN cliente u ON u.id_cliente = v.id_cliente
-      LEFT JOIN factura f ON f.id_venta = v.id_venta
-      ORDER BY v.fecha_venta DESC
-    `);
-    return NextResponse.json({ ventas: result.rows });
-  } catch (error) {
-    return apiError("FACTURACION GET", error);
-  }
-}
+import { verifyPassword } from "@/lib/auth";
+import { apiError } from "@/lib/api-error";
+import { enviarCodigoVerificacion } from "@/lib/mailer";
+import { fechaExpiracion, generarCodigo, hashCodigo, signPreToken } from "@/lib/verificacion";
 
 export async function POST(req: NextRequest) {
-  const usuario = getUsuarioFromRequest(req);
-  if (!usuario) {
-    return unauthorizedError();
-  }
-
   try {
-    const { id_venta, nombre_cliente, nit_cliente } = await req.json();
+    const body = await req.json();
+    const username = typeof body.username === "string" ? body.username.trim() : "";
+    const password = typeof body.password === "string" ? body.password : "";
 
-    if (!id_venta) {
-      return validationError("id_venta es requerido");
+    if (!username || !password) {
+      return NextResponse.json(
+        { error: "Usuario y contraseña son obligatorios" },
+        { status: 400 }
+      );
     }
 
-    const venta = await pool.query(
-      `SELECT total FROM venta WHERE id_venta = $1`,
-      [id_venta]
+    const result = await pool.query<{
+      id_usuario: number;
+      nombre: string;
+      correo: string;
+      tipo_usuario: string;
+      contrasena_hash: string;
+    }>(
+      `SELECT id_usuario, nombre, correo, tipo_usuario, contrasena_hash
+       FROM usuario
+       WHERE LOWER(correo) = LOWER($1) AND estado_usuario = TRUE`,
+      [username]
     );
 
-    if (venta.rows.length === 0) {
-      return NextResponse.json({ error: "Venta no encontrada" }, { status: 404 });
+    if (result.rows.length === 0) {
+      return NextResponse.json({ error: "Credenciales incorrectas" }, { status: 401 });
     }
 
-    const total = venta.rows[0].total;
+    const row = result.rows[0];
 
-    // FIX: el número de factura ahora lo genera Postgres con nextval() de
-    // una secuencia, DENTRO del mismo INSERT — así es atómico (Postgres
-    // garantiza que nextval() nunca repite un valor, aunque dos facturas
-    // se estén creando al mismo tiempo) y queda como correlativo real
-    // (FACT-000001, FACT-000002, ...) en vez de un timestamp.
-    const facturaResult = await pool.query(
-      `INSERT INTO factura (id_venta, numero_factura, nombre_cliente, nit_cliente, total_factura)
-       VALUES ($1, 'FACT-' || LPAD(nextval('factura_numero_seq')::text, 6, '0'), $2, $3, $4)
-       RETURNING id_factura, numero_factura`,
-      [id_venta, nombre_cliente || "Consumidor Final", nit_cliente || "CF", total]
-    );
+    if (!verifyPassword(password, row.contrasena_hash)) {
+      return NextResponse.json({ error: "Credenciales incorrectas" }, { status: 401 });
+    }
+
+    // Usuario y contraseña correctos: paso 1 completo. En vez de dar el
+    // AUTH_COOKIE de una vez, generamos el código de verificación en 2 pasos,
+    // lo guardamos hasheado con vencimiento corto, y se lo mandamos por correo.
+    const codigo = generarCodigo();
+    const codigoHash = hashCodigo(codigo);
+    const expiraEn = fechaExpiracion();
 
     await pool.query(
-      `UPDATE venta SET estado_venta = 'CONFIRMADO' WHERE id_venta = $1`,
-      [id_venta]
+      `INSERT INTO codigo_verificacion (id_usuario, codigo_hash, expira_en)
+       VALUES ($1, $2, $3)`,
+      [row.id_usuario, codigoHash, expiraEn]
     );
+
+    try {
+      await enviarCodigoVerificacion(row.correo, codigo);
+    } catch (mailError) {
+      console.error("Error enviando código de verificación:", mailError);
+      return NextResponse.json(
+        { error: "No se pudo enviar el código de verificación. Intenta de nuevo en un momento." },
+        { status: 502 }
+      );
+    }
+
+    const preToken = signPreToken(row.id_usuario);
 
     return NextResponse.json({
       ok: true,
-      id_factura: facturaResult.rows[0].id_factura,
-      numero_factura: facturaResult.rows[0].numero_factura,
+      requiere_verificacion: true,
+      pre_token: preToken,
+      correo_enmascarado: enmascararCorreo(row.correo),
     });
   } catch (error) {
-    return apiError("FACTURACION POST", error);
+    return apiError("LOGIN POST", error);
   }
+}
+
+// Muestra el correo parcialmente oculto en el paso 2, ej. "ma***@tienda.com",
+// para confirmarle al usuario a dónde llegó el código sin exponerlo entero.
+function enmascararCorreo(correo: string): string {
+  const [usuario, dominio] = correo.split("@");
+  if (!dominio) return correo;
+  const visible = usuario.slice(0, 2);
+  return `${visible}${"*".repeat(Math.max(usuario.length - 2, 1))}@${dominio}`;
 }

@@ -177,12 +177,11 @@ El envío usa **Gmail SMTP** (gratis, con contraseña de aplicación). Para conf
 
 ## 🚧 En desarrollo (próximos sprints)
 
-- [ ] **RF2** — Registro de nuevos productos
-- [ ] **RF4** — Registro de entrada de inventario (Kardex)
-- [ ] **RF6** — Gestión de precios (supervisor)
-- [ ] **RF7** — Registro y gestión de clientes
-- [ ] **RF9** — Generación de facturas
-- [ ] **RF11** — Registro de métodos de pago
+- [x] **RF2** — Registro de nuevos productos
+- [x] **RF4** — Registro de entrada de inventario (Kardex)
+- [x] **RF6** — Gestión de precios (supervisor)
+- [x] **RF7** — Registro y gestión de clientes
+- [x] **RF9** — Generación de facturas
 
 ---
 
