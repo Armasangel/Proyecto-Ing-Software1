@@ -16,6 +16,14 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // Paso 2: verificación del código de 6 dígitos.
+  const [paso, setPaso] = useState<"credenciales" | "codigo">("credenciales");
+  const [preToken, setPreToken] = useState("");
+  const [correoEnmascarado, setCorreoEnmascarado] = useState("");
+  const [codigo, setCodigo] = useState("");
+  const [reenviando, setReenviando] = useState(false);
+  const [avisoReenvio, setAvisoReenvio] = useState("");
+
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setError("");
@@ -31,6 +39,33 @@ export default function LoginPage() {
         setError(data.error || "Error al iniciar sesión");
         return;
       }
+      // Usuario y contraseña correctos: ahora hay que meter el código
+      // que se mandó por correo, todavía no quedamos adentro.
+      setPreToken(data.pre_token);
+      setCorreoEnmascarado(data.correo_enmascarado || "");
+      setPaso("codigo");
+    } catch {
+      setError("No se pudo conectar con el servidor");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleVerificarCodigo(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      const res = await fetch("/api/login/verificar-codigo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pre_token: preToken, codigo }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Código incorrecto");
+        return;
+      }
       const dest =
         data.usuario?.tipo_usuario != null
           ? postLoginPath(data.usuario.tipo_usuario)
@@ -41,6 +76,40 @@ export default function LoginPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function handleReenviarCodigo() {
+    setError("");
+    setAvisoReenvio("");
+    setReenviando(true);
+    try {
+      const res = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "No se pudo reenviar el código");
+        return;
+      }
+      setPreToken(data.pre_token);
+      setCorreoEnmascarado(data.correo_enmascarado || "");
+      setCodigo("");
+      setAvisoReenvio("Te mandamos un código nuevo.");
+    } catch {
+      setError("No se pudo conectar con el servidor");
+    } finally {
+      setReenviando(false);
+    }
+  }
+
+  function handleVolver() {
+    setPaso("credenciales");
+    setCodigo("");
+    setError("");
+    setAvisoReenvio("");
+    setPreToken("");
   }
 
   return (
@@ -84,74 +153,138 @@ export default function LoginPage() {
         <div style={s.formCard}>
 
           <div style={s.formHeader}>
-            <h2 style={s.formTitle}>Bienvenido de vuelta</h2>
-            <p style={s.formSub}>Ingresa tus credenciales para continuar</p>
+            <h2 style={s.formTitle}>
+              {paso === "credenciales" ? "Bienvenido de vuelta" : "Verificá tu identidad"}
+            </h2>
+            <p style={s.formSub}>
+              {paso === "credenciales"
+                ? "Ingresa tus credenciales para continuar"
+                : `Te mandamos un código de 6 dígitos a ${correoEnmascarado || "tu correo"}`}
+            </p>
           </div>
 
-          <form onSubmit={handleLogin} style={s.form}>
+          {paso === "credenciales" ? (
+            <form onSubmit={handleLogin} style={s.form}>
 
-            {/* Correo */}
-            <div style={s.field}>
-              <label style={s.label}>Correo electrónico</label>
-              <input
-                type="email"
-                autoComplete="email"
-                placeholder="usuario@tienda.com"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                required
-                style={s.input}
-              />
-            </div>
-
-            {/* Contraseña */}
-            <div style={s.field}>
-              <label style={s.label}>Contraseña</label>
-              <input
-                type="password"
-                autoComplete="current-password"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                style={s.input}
-              />
-            </div>
-
-            {error && (
-              <div style={s.errorBox}>
-                <span>{error}</span>
+              {/* Correo */}
+              <div style={s.field}>
+                <label style={s.label}>Correo electrónico</label>
+                <input
+                  type="email"
+                  autoComplete="email"
+                  placeholder="usuario@tienda.com"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  required
+                  style={s.input}
+                />
               </div>
-            )}
 
-            <button
-              type="submit"
-              disabled={loading}
-              style={{ ...s.btn, opacity: loading ? 0.7 : 1 }}
-            >
-              {loading ? "Ingresando…" : "Ingresar al sistema"}
-            </button>
-          </form>
+              {/* Contraseña */}
+              <div style={s.field}>
+                <label style={s.label}>Contraseña</label>
+                <input
+                  type="password"
+                  autoComplete="current-password"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  style={s.input}
+                />
+              </div>
+
+              {error && (
+                <div style={s.errorBox}>
+                  <span>{error}</span>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={loading}
+                style={{ ...s.btn, opacity: loading ? 0.7 : 1 }}
+              >
+                {loading ? "Ingresando…" : "Ingresar al sistema"}
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={handleVerificarCodigo} style={s.form}>
+
+              {/* Código de verificación */}
+              <div style={s.field}>
+                <label style={s.label}>Código de verificación</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  placeholder="000000"
+                  value={codigo}
+                  onChange={(e) => setCodigo(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  maxLength={6}
+                  required
+                  autoFocus
+                  style={{ ...s.input, letterSpacing: "0.4em", textAlign: "center", fontSize: "1.2rem" }}
+                />
+              </div>
+
+              {error && (
+                <div style={s.errorBox}>
+                  <span>{error}</span>
+                </div>
+              )}
+
+              {avisoReenvio && (
+                <div style={s.avisoBox}>
+                  <span>{avisoReenvio}</span>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={loading || codigo.length !== 6}
+                style={{ ...s.btn, opacity: loading || codigo.length !== 6 ? 0.7 : 1 }}
+              >
+                {loading ? "Verificando…" : "Verificar y entrar"}
+              </button>
+
+              <div style={s.codigoAcciones}>
+                <button
+                  type="button"
+                  onClick={handleReenviarCodigo}
+                  disabled={reenviando}
+                  style={s.linkBtn}
+                >
+                  {reenviando ? "Reenviando…" : "Reenviar código"}
+                </button>
+                <button type="button" onClick={handleVolver} style={s.linkBtn}>
+                  Usar otra cuenta
+                </button>
+              </div>
+            </form>
+          )}
 
           {/* Usuarios de prueba */}
-          <div style={s.demo}>
-            <p style={s.demoLabel}>Usuarios de prueba (password123):</p>
-            <div style={s.demoBtns}>
-              {[
-                { label: "Dueño",           correo: "dueno@tienda.com"    },
-                { label: "Colaborador",     correo: "empleado@tienda.com" },
-              ].map((u) => (
-                <button
-                  key={u.correo}
-                  type="button"
-                  onClick={() => setUsername(u.correo)}
-                  style={s.demoBtn}
-                >
-                  {u.label}
-                </button>
-              ))}
+          {paso === "credenciales" && (
+            <div style={s.demo}>
+              <p style={s.demoLabel}>Usuarios de prueba (password123):</p>
+              <div style={s.demoBtns}>
+                {[
+                  { label: "Dueño",           correo: "dueno@tienda.com"    },
+                  { label: "Colaborador",     correo: "empleado@tienda.com" },
+                ].map((u) => (
+                  <button
+                    key={u.correo}
+                    type="button"
+                    onClick={() => setUsername(u.correo)}
+                    style={s.demoBtn}
+                  >
+                    {u.label}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
         </div>
       </div>
@@ -341,6 +474,31 @@ const s: Record<string, React.CSSProperties> = {
     padding: "0.75rem 1rem",
     color: "var(--red)",
     fontSize: "0.88rem",
+  },
+
+  avisoBox: {
+    background: "rgba(63, 185, 80, 0.08)",
+    border: "1px solid rgba(63, 185, 80, 0.25)",
+    borderRadius: "var(--radius)",
+    padding: "0.75rem 1rem",
+    color: "var(--green, #3fb950)",
+    fontSize: "0.85rem",
+  },
+
+  codigoAcciones: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: "0.5rem",
+  },
+
+  linkBtn: {
+    background: "transparent",
+    border: "none",
+    color: "var(--accent)",
+    fontSize: "0.82rem",
+    fontWeight: 500,
+    cursor: "pointer",
+    padding: 0,
   },
 
   switchLink: {
