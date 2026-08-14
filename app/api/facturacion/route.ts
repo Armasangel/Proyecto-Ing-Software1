@@ -57,12 +57,17 @@ export async function POST(req: NextRequest) {
     }
 
     const total = venta.rows[0].total;
-    const numero_factura = `FACT-${Date.now()}`;
 
+    // FIX: el número de factura ahora lo genera Postgres con nextval() de
+    // una secuencia, DENTRO del mismo INSERT — así es atómico (Postgres
+    // garantiza que nextval() nunca repite un valor, aunque dos facturas
+    // se estén creando al mismo tiempo) y queda como correlativo real
+    // (FACT-000001, FACT-000002, ...) en vez de un timestamp.
     const facturaResult = await pool.query(
       `INSERT INTO factura (id_venta, numero_factura, nombre_cliente, nit_cliente, total_factura)
-       VALUES ($1, $2, $3, $4, $5) RETURNING id_factura`,
-      [id_venta, numero_factura, nombre_cliente || "Consumidor Final", nit_cliente || "CF", total]
+       VALUES ($1, 'FACT-' || LPAD(nextval('factura_numero_seq')::text, 6, '0'), $2, $3, $4)
+       RETURNING id_factura, numero_factura`,
+      [id_venta, nombre_cliente || "Consumidor Final", nit_cliente || "CF", total]
     );
 
     await pool.query(
@@ -73,7 +78,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       id_factura: facturaResult.rows[0].id_factura,
-      numero_factura,
+      numero_factura: facturaResult.rows[0].numero_factura,
     });
   } catch (error) {
     return apiError("FACTURACION POST", error);

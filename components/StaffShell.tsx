@@ -7,6 +7,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { isColaboradorTipo, isDuenoTipo, labelRol, staffVariantFromTipo } from "@/lib/roles";
 import { Icon, type IconName } from "@/components/Icon";
+import { VentaToastListener } from "@/components/VentaToastListener";
 
 export type StaffUsuario = {
   id_usuario: number;
@@ -31,7 +32,7 @@ const NAV: NavItem[] = [
   { href: "/reportes",         label: "Reportes",        icon: "report"        },
   { href: "/proveedores",      label: "Proveedores",     icon: "hand-truck"    },
   { href: "/historial-ventas", label: "Historial ventas",icon: "distribution"  },
-  { href: "/deudas",           label: "Deudas",          icon: "money-bag"     },
+  { href: "/deudas",           label: "Deudas",          icon: "debt"     },
 ];
 
 function isStaffNavActive(
@@ -167,6 +168,10 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
         </div>
         {children}
       </main>
+
+      {/* Toast de venta realizada — solo el dueño lo ve, para enterarse en
+          tiempo casi-real cuando un empleado registra una venta. */}
+      {variant === "dueno" && <VentaToastListener />}
     </div>
   );
 }

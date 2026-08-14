@@ -139,7 +139,7 @@ CREATE TABLE detalle_venta (
     cantidad            NUMERIC(12,3)   NOT NULL,
     precio_unitario     NUMERIC(10,2)   NOT NULL,
     subtotal            NUMERIC(12,2)   NOT NULL,
-    CONSTRAINT fk_dv_venta    FOREIGN KEY (id_venta)    REFERENCES venta(id_venta),
+    CONSTRAINT fk_dv_venta    FOREIGN KEY (id_venta)    REFERENCES venta(id_venta) ON DELETE CASCADE,
     CONSTRAINT fk_dv_producto FOREIGN KEY (id_producto) REFERENCES producto(id_producto)
 );
 
@@ -189,10 +189,10 @@ INSERT INTO categoria (nombre_categoria) VALUES ('Abarrotes'), ('Lácteos'), ('B
 INSERT INTO marca (nombre_marca) VALUES ('Genérico'), ('La Mariposa'), ('Dos Pinos');
 INSERT INTO bodega (nombre_bodega, ubicacion) VALUES ('Bodega Principal', 'Zona 1, Guatemala');
 
--- Contraseña de prueba (los tres usuarios): password123
+-- Contraseña de prueba (los usuarios): password123
 INSERT INTO usuario (nombre, correo, telefono, contrasena_hash, tipo_usuario) VALUES
-  ('Admin Dueño',    'dueno@tienda.com',    '50201234567', '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm', 'DUENO'),
-  ('Carlos Empleado','empleado@tienda.com', '50207654321', '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm', 'EMPLEADO');
+  ('Admin Dueño',    'dueno@tienda.com',        '50201234567', '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm', 'DUENO'),
+  ('Carlos Empleado','armasangel193@gmail.com', '50207654321', '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm', 'EMPLEADO');
 
 INSERT INTO producto (codigo_producto, nombre_producto, precio_unitario, precio_mayoreo, unidad_medida, id_categoria, id_marca)
 VALUES
@@ -206,5 +206,5 @@ VALUES (1, 1, 150, 20), (1, 2, 80, 10), (1, 3, 45, 15);
 INSERT INTO cliente (nombre, correo, telefono, tipo_cliente) VALUES
   ('Maria Comprador', 'maria@gmail.com', '50209876543', 'MINORISTA'),
   ('Pedro Mayorista', 'pedro@gmail.com', '50205555555', 'MAYORISTA');
-  
+
   

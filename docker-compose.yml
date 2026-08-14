@@ -11,6 +11,8 @@ services:
       - NODE_ENV=development
       - JWT_SECRET=${JWT_SECRET:?JWT_SECRET no está definido — copia .env.example a .env}
       - DATABASE_URL=postgresql://dsm_user:dsm_password@db:5432/deposito_san_miguel
+      - GMAIL_USER=${GMAIL_USER}
+      - GMAIL_APP_PASSWORD=${GMAIL_APP_PASSWORD}
     volumes:
       - .:/app
       - /app/node_modules
