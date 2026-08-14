@@ -12,10 +12,11 @@ export function createMockRequest(
     method?: string;
     body?: unknown;
     cookies?: Record<string, string>;
+    headers?: Record<string, string>;
     user?: AuthUsuario;
   } = {}
 ): NextRequest {
-  const { method = "GET", body, cookies = {} } = options;
+  const { method = "GET", body, cookies = {}, headers = {} } = options;
   const cookieEntries = { ...cookies };
 
   if (options.user) {
@@ -32,6 +33,7 @@ export function createMockRequest(
     headers: {
       ...(body ? { "content-type": "application/json" } : {}),
       ...(cookieStr ? { cookie: cookieStr } : {}),
+      ...headers,
     },
     body: body ? JSON.stringify(body) : undefined,
   });

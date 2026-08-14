@@ -2,12 +2,24 @@ import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { AUTH_COOKIE, signAuthToken, verifyPassword } from "@/lib/auth";
 import { apiError } from "@/lib/api-error";
-import { TIPOS_USUARIO } from "@/lib/roles";
-import { enviarCodigoVerificacion } from "@/lib/mailer";
-import { fechaExpiracion, generarCodigo, hashCodigo, signPreToken } from "@/lib/verificacion";
+import {
+  clearFailedLogins,
+  getClientIp,
+  isLoginRateLimited,
+  recordFailedLogin,
+} from "@/lib/login-rate-limit";
 
 export async function POST(req: NextRequest) {
   try {
+    const ip = getClientIp(req);
+
+    if (isLoginRateLimited(ip)) {
+      return NextResponse.json(
+        { error: "Demasiados intentos. Intenta de nuevo en un minuto." },
+        { status: 429 }
+      );
+    }
+
     const body = await req.json();
     const username = typeof body.username === "string" ? body.username.trim() : "";
     const password = typeof body.password === "string" ? body.password : "";
@@ -33,14 +45,18 @@ export async function POST(req: NextRequest) {
     );
 
     if (result.rows.length === 0) {
+      recordFailedLogin(ip);
       return NextResponse.json({ error: "Credenciales incorrectas" }, { status: 401 });
     }
 
     const row = result.rows[0];
 
     if (!verifyPassword(password, row.contrasena_hash)) {
+      recordFailedLogin(ip);
       return NextResponse.json({ error: "Credenciales incorrectas" }, { status: 401 });
     }
+
+    clearFailedLogins(ip);
 
     const usuario = {
       id_usuario: row.id_usuario,
@@ -108,13 +124,4 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     return apiError("LOGIN POST", error);
   }
-}
-
-// Muestra el correo parcialmente oculto en el paso 2, ej. "ma***@tienda.com",
-// para confirmarle al usuario a dónde llegó el código sin exponerlo entero.
-function enmascararCorreo(correo: string): string {
-  const [usuario, dominio] = correo.split("@");
-  if (!dominio) return correo;
-  const visible = usuario.slice(0, 2);
-  return `${visible}${"*".repeat(Math.max(usuario.length - 2, 1))}@${dominio}`;
 }

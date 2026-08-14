@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import { POST } from "@/app/api/login/route";
 import { createMockRequest, testUserDueno } from "@/__tests__/utils/api-test-utils";
+import { resetLoginRateLimitStore } from "@/lib/login-rate-limit";
 
 jest.mock("bcryptjs");
 
@@ -24,11 +25,18 @@ const mockDbRow = {
   contrasena_hash: "$2a$04$mocked",
 };
 
-describe("POST /api/login (paso 1: usuario + contraseña)", () => {
+function failedLoginRequest(ip = "203.0.113.10") {
+  return createMockRequest("/api/login", {
+    method: "POST",
+    body: { username: "juan@tienda.com", password: "wrong" },
+    headers: { "x-forwarded-for": ip },
+  });
+}
+
+describe("POST /api/login", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockBcrypt.hashSync.mockReturnValue("codigo-hasheado" as unknown as string);
-    mockMailer.enviarCodigoVerificacion.mockResolvedValue(undefined);
+    resetLoginRateLimitStore();
   });
 
   it("returns 400 when username is missing", async () => {
@@ -121,5 +129,59 @@ describe("POST /api/login (paso 1: usuario + contraseña)", () => {
     });
     const res = await POST(req);
     expect(res.status).toBe(502);
+  });
+
+  it("blocks the 6th failed login from the same IP within 1 minute", async () => {
+    mockPool.query.mockResolvedValue({ rows: [mockDbRow], rowCount: 1 });
+    mockBcrypt.compareSync.mockReturnValue(false);
+
+    for (let i = 0; i < 5; i++) {
+      const res = await POST(failedLoginRequest());
+      expect(res.status).toBe(401);
+    }
+
+    const blocked = await POST(failedLoginRequest());
+    const data = await blocked.json();
+    expect(blocked.status).toBe(429);
+    expect(data.error).toBe("Demasiados intentos. Intenta de nuevo en un minuto.");
+  });
+
+  it("does not rate-limit a different IP after another IP is blocked", async () => {
+    mockPool.query.mockResolvedValue({ rows: [mockDbRow], rowCount: 1 });
+    mockBcrypt.compareSync.mockReturnValue(false);
+
+    for (let i = 0; i < 5; i++) {
+      await POST(failedLoginRequest("203.0.113.10"));
+    }
+
+    const blocked = await POST(failedLoginRequest("203.0.113.10"));
+    expect(blocked.status).toBe(429);
+
+    const otherIp = await POST(failedLoginRequest("198.51.100.20"));
+    expect(otherIp.status).toBe(401);
+  });
+
+  it("clears failed attempts after a successful login", async () => {
+    mockPool.query.mockResolvedValue({ rows: [mockDbRow], rowCount: 1 });
+    mockBcrypt.compareSync.mockReturnValue(false);
+
+    for (let i = 0; i < 3; i++) {
+      const res = await POST(failedLoginRequest());
+      expect(res.status).toBe(401);
+    }
+
+    mockBcrypt.compareSync.mockReturnValue(true);
+    const success = await POST(
+      createMockRequest("/api/login", {
+        method: "POST",
+        body: { username: "juan@tienda.com", password: "correcta" },
+        headers: { "x-forwarded-for": "203.0.113.10" },
+      })
+    );
+    expect(success.status).toBe(200);
+
+    mockBcrypt.compareSync.mockReturnValue(false);
+    const afterClear = await POST(failedLoginRequest());
+    expect(afterClear.status).toBe(401);
   });
 });
