@@ -39,7 +39,6 @@ describeIfDb("Login en 2 pasos — flujo completo (integración)", () => {
   const correo = `login2fa-${Date.now()}@test.com`;
   const password = "MiClaveSegura123";
   let idUsuario: number;
-
   beforeAll(async () => {
     const hash = bcrypt.hashSync(password, 10);
     const res = await pool.query(
@@ -104,5 +103,36 @@ describeIfDb("Login en 2 pasos — flujo completo (integración)", () => {
       makeReq("/api/login/verificar-codigo", { pre_token: dataLogin.pre_token, codigo: codigoReal })
     );
     expect(resReuso.status).toBe(400);
+  });
+
+  it("el dueño (DUENO) entra directo sin pasar por el código de verificación", async () => {
+    const correoDueno = `login2fa-dueno-${Date.now()}@test.com`;
+    const hash = bcrypt.hashSync(password, 10);
+    const resInsert = await pool.query(
+      `INSERT INTO usuario (nombre, correo, contrasena_hash, tipo_usuario, estado_usuario)
+       VALUES ($1, $2, $3, 'DUENO', TRUE) RETURNING id_usuario`,
+      ["Dueño 2FA Test", correoDueno, hash]
+    );
+    const idDueno = resInsert.rows[0].id_usuario;
+
+    try {
+      const res = await POST_LOGIN(makeReq("/api/login", { username: correoDueno, password }));
+      const data = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(data.requiere_verificacion).toBe(false);
+      expect(typeof data.token).toBe("string");
+      expect(res.headers.get("set-cookie")).toContain("auth_token=");
+
+      // No debe haber ningún código pendiente para el dueño.
+      const filas = await pool.query(
+        `SELECT COUNT(*)::int AS n FROM codigo_verificacion WHERE id_usuario = $1`,
+        [idDueno]
+      );
+      expect(filas.rows[0].n).toBe(0);
+    } finally {
+      await pool.query(`DELETE FROM codigo_verificacion WHERE id_usuario = $1`, [idDueno]);
+      await pool.query(`DELETE FROM usuario WHERE id_usuario = $1`, [idDueno]);
+    }
   });
 });

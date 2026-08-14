@@ -39,11 +39,19 @@ export default function LoginPage() {
         setError(data.error || "Error al iniciar sesión");
         return;
       }
-      // Usuario y contraseña correctos: ahora hay que meter el código
-      // que se mandó por correo, todavía no quedamos adentro.
-      setPreToken(data.pre_token);
-      setCorreoEnmascarado(data.correo_enmascarado || "");
-      setPaso("codigo");
+      // Solo los colaboradores pasan por el código de 2FA. El dueño
+      // entra directo con el AUTH_COOKIE que ya viene en la respuesta.
+      if (data.requiere_verificacion) {
+        setPreToken(data.pre_token);
+        setCorreoEnmascarado(data.correo_enmascarado || "");
+        setPaso("codigo");
+      } else {
+        const dest =
+          data.usuario?.tipo_usuario != null
+            ? postLoginPath(data.usuario.tipo_usuario)
+            : "/dashboard";
+        router.push(dest);
+      }
     } catch {
       setError("No se pudo conectar con el servidor");
     } finally {
@@ -270,8 +278,8 @@ export default function LoginPage() {
               <p style={s.demoLabel}>Usuarios de prueba (password123):</p>
               <div style={s.demoBtns}>
                 {[
-                  { label: "Dueño",           correo: "dueno@tienda.com"    },
-                  { label: "Colaborador",     correo: "empleado@tienda.com" },
+                  { label: "Dueño (entra directo)", correo: "dueno@tienda.com" },
+                  { label: "Colaborador (2FA por correo)", correo: "armasangel193@gmail.com" },
                 ].map((u) => (
                   <button
                     key={u.correo}

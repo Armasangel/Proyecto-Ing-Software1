@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
-import { verifyPassword } from "@/lib/auth";
+import { AUTH_COOKIE, signAuthToken, verifyPassword } from "@/lib/auth";
 import { apiError } from "@/lib/api-error";
+import { TIPOS_USUARIO } from "@/lib/roles";
 import { enviarCodigoVerificacion } from "@/lib/mailer";
 import { fechaExpiracion, generarCodigo, hashCodigo, signPreToken } from "@/lib/verificacion";
 
@@ -39,6 +40,38 @@ export async function POST(req: NextRequest) {
 
     if (!verifyPassword(password, row.contrasena_hash)) {
       return NextResponse.json({ error: "Credenciales incorrectas" }, { status: 401 });
+    }
+
+    const usuario = {
+      id_usuario: row.id_usuario,
+      nombre: row.nombre,
+      correo: row.correo,
+      tipo_usuario: row.tipo_usuario,
+    };
+
+    // El 2FA es solo para colaboradores (EMPLEADO). El dueño entra directo
+    // porque es el que administra el sistema y los códigos se mandan al
+    // correo configurado en GMAIL_USER (que puede no ser el del dueño).
+    if (row.tipo_usuario !== TIPOS_USUARIO.EMPLEADO) {
+      const token = signAuthToken(usuario);
+      const response = NextResponse.json({
+        ok: true,
+        requiere_verificacion: false,
+        token,
+        usuario,
+      });
+
+      response.cookies.set(AUTH_COOKIE, token, {
+        httpOnly: true,
+        path: "/",
+        maxAge: 60 * 60 * 8,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+      });
+
+      response.cookies.set("session", "", { path: "/", maxAge: 0 });
+
+      return response;
     }
 
     // Usuario y contraseña correctos: paso 1 completo. En vez de dar el

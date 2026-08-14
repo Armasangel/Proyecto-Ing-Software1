@@ -189,10 +189,10 @@ INSERT INTO categoria (nombre_categoria) VALUES ('Abarrotes'), ('Lácteos'), ('B
 INSERT INTO marca (nombre_marca) VALUES ('Genérico'), ('La Mariposa'), ('Dos Pinos');
 INSERT INTO bodega (nombre_bodega, ubicacion) VALUES ('Bodega Principal', 'Zona 1, Guatemala');
 
--- Contraseña de prueba (los tres usuarios): password123
+-- Contraseña de prueba (los usuarios): password123
 INSERT INTO usuario (nombre, correo, telefono, contrasena_hash, tipo_usuario) VALUES
-  ('Admin Dueño',    'dueno@tienda.com',    '50201234567', '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm', 'DUENO'),
-  ('Carlos Empleado','empleado@tienda.com', '50207654321', '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm', 'EMPLEADO');
+  ('Admin Dueño',    'dueno@tienda.com',        '50201234567', '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm', 'DUENO'),
+  ('Carlos Empleado','armasangel193@gmail.com', '50207654321', '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm', 'EMPLEADO');
 
 INSERT INTO producto (codigo_producto, nombre_producto, precio_unitario, precio_mayoreo, unidad_medida, id_categoria, id_marca)
 VALUES
