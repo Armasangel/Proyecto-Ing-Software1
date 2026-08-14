@@ -40,3 +40,16 @@ CREATE INDEX IF NOT EXISTS idx_detalle_venta_venta_producto
 -- filtro id_producto en historial-ventas.ts) sin pasar primero por id_venta.
 CREATE INDEX IF NOT EXISTS idx_detalle_venta_producto
     ON detalle_venta (id_producto);
+-- ALterar las tablas para añadir los límites de deudas dependiendo del cliente. 
+ALTER TABLE cliente
+    ADD COLUMN IF NOT EXISTS limite_deuda NUMERIC(12,2);
+ 
+ALTER TABLE deuda
+    ADD COLUMN IF NOT EXISTS id_cliente INT REFERENCES cliente(id_cliente),
+    ADD COLUMN IF NOT EXISTS fecha_limite_pago DATE;
+ 
+CREATE INDEX IF NOT EXISTS idx_deuda_cliente ON deuda(id_cliente);
+
+CREATE INDEX IF NOT EXISTS idx_deuda_fecha_limite ON deuda(fecha_limite_pago);
+ 
+ 
