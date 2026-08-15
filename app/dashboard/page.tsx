@@ -15,6 +15,7 @@ export default function DashboardPage() {
     ventas: 0,
     pendientes: 0,
     proveedores: 0,
+    clientesBloqueados: 0,
   });
 
   useEffect(() => {
@@ -114,6 +115,20 @@ export default function DashboardPage() {
               </div>
               <Link href="/ventas" style={s.alertLink}>
                 Ver detalles →
+              </Link>
+            </div>
+          </div>
+        )}
+        {stats.clientesBloqueados > 0 && (
+          <div style={s.alertCard}>
+            <span style={{ fontSize: "1.1rem" }}>🔒</span>
+            <div>
+              <div style={s.alertTitle}>
+                {stats.clientesBloqueados} cliente{stats.clientesBloqueados !== 1 ? "s" : ""}{" "}
+                bloqueado{stats.clientesBloqueados !== 1 ? "s" : ""} por deuda
+              </div>
+              <Link href="/deudas" style={s.alertLink}>
+                Ver en Deudas →
               </Link>
             </div>
           </div>

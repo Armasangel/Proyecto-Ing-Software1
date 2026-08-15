@@ -134,12 +134,19 @@ export async function POST(request: NextRequest) {
       await client.query("BEGIN");
 
       const existeCliente = await client.query(
-        `SELECT 1 FROM cliente WHERE id_cliente = $1 AND estado_cliente = TRUE`,
+        `SELECT estado_cliente FROM cliente WHERE id_cliente = $1`,
         [idCliente]
       );
       if (existeCliente.rowCount === 0) {
         await client.query("ROLLBACK");
         return NextResponse.json({ error: "Cliente no encontrado" }, { status: 400 });
+      }
+      if (existeCliente.rows[0].estado_cliente !== true) {
+        await client.query("ROLLBACK");
+        return NextResponse.json(
+          { error: "Este cliente está bloqueado (superó su límite de deuda) y no puede hacer pedidos" },
+          { status: 400 }
+        );
       }
 
       let total = 0;

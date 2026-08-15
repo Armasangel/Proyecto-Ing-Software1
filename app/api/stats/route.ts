@@ -11,11 +11,14 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const [productos, ventas, pendientes, proveedores] = await Promise.all([
+    const [productos, ventas, pendientes, proveedores, clientesBloqueados] = await Promise.all([
       pool.query(`SELECT COUNT(*)::int AS n FROM producto WHERE estado_producto = TRUE`),
       pool.query(`SELECT COUNT(*)::int AS n FROM venta`),
       pool.query(`SELECT COUNT(*)::int AS n FROM venta WHERE estado_venta = 'PENDIENTE'`),
       pool.query(`SELECT COUNT(*)::int AS n FROM proveedor WHERE estado_proveedor = TRUE`),
+      pool.query(
+        `SELECT COUNT(*)::int AS n FROM cliente WHERE estado_cliente = FALSE AND limite_deuda IS NOT NULL`
+      ),
     ]);
 
     return NextResponse.json({
@@ -24,9 +27,15 @@ export async function GET(req: NextRequest) {
         ventas: ventas.rows[0]?.n ?? 0,
         pendientes: pendientes.rows[0]?.n ?? 0,
         proveedores: proveedores.rows[0]?.n ?? 0,
+        clientesBloqueados: clientesBloqueados.rows[0]?.n ?? 0,
       },
     });
   } catch (error) {
     return apiError("STATS GET", error);
+    console.error("[STATS]", error);
+    return NextResponse.json(
+      { stats: { productos: 0, ventas: 0, pendientes: 0, proveedores: 0, clientesBloqueados: 0 } },
+      { status: 200 }
+    );
   }
 }

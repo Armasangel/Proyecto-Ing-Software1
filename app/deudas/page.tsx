@@ -17,9 +17,13 @@ type Deuda = {
   nombre_deudor: string;
   telefono_deudor: string | null;
   fecha_inicio: string;
+  fecha_limite_pago: string | null;
   monto_total: string;
   estado_deuda: "PENDIENTE" | "PAGADA";
   productos: ProductoDeuda[];
+  id_cliente: number | null;
+  limite_deuda: string | null;
+  cliente_puede_comprar: boolean | null;
 };
 
 type Producto = {
@@ -29,24 +33,99 @@ type Producto = {
   unidad_medida: string;
 };
 
+type Cliente = {
+  id_cliente: number;
+  nombre: string;
+  telefono: string | null;
+  correo: string | null;
+  tipo_cliente: string;
+  estado_cliente: boolean;
+  limite_deuda: string | null;
+};
+
+type Alerta = {
+  id_cliente: number;
+  deuda_pendiente: number;
+  limite_deuda: number | null;
+  bloqueado: boolean;
+  cambioEstado: boolean;
+};
+
 type LineaForm = { id_producto: string; cantidad: string };
 
 const formVacio = {
-  nombre_deudor: "",
-  telefono_deudor: "",
+  id_cliente: "",
   fecha_inicio: new Date().toISOString().slice(0, 10),
+  fecha_limite_pago: "",
 };
+
+const clienteFormVacio = {
+  nombre: "",
+  telefono: "",
+  correo: "",
+  tipo_cliente: "MINORISTA",
+  limite_deuda: "",
+  deuda_inicial: "",
+};
+
+const inputStyle: React.CSSProperties = {
+  padding: "0.3rem 0.6rem",
+  borderRadius: 6,
+  border: "1px solid var(--border)",
+  width: "100%",
+  background: "var(--surface)",
+  color: "var(--text)",
+};
+
+const badgeStyle = (bg: string): React.CSSProperties => ({
+  marginLeft: 6,
+  fontSize: "0.72rem",
+  color: "#fff",
+  background: bg,
+  padding: "1px 6px",
+  borderRadius: 4,
+});
+
+function diasRestantes(fecha: string | null): { texto: string; color: string } {
+  if (!fecha) return { texto: "Sin fecha límite", color: "var(--muted)" };
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+  const limite = new Date(`${fecha}T00:00:00`);
+  const dias = Math.round((limite.getTime() - hoy.getTime()) / 86400000);
+  if (dias < 0) return { texto: `Vencida hace ${Math.abs(dias)} día(s)`, color: "#e63946" };
+  if (dias === 0) return { texto: "Vence hoy", color: "#e63946" };
+  if (dias <= 3) return { texto: `Vence en ${dias} día(s)`, color: "#e08e0b" };
+  return { texto: `Vence en ${dias} día(s)`, color: "var(--muted)" };
+}
 
 export default function DeudasPage() {
   const usuario = useStaffSession();
+  const [tab, setTab] = useState<"deudas" | "limites">("deudas");
+  const [vista, setVista] = useState<"acumulado" | "vencimiento">("acumulado");
   const [deudas, setDeudas] = useState<Deuda[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
+  const [clientes, setClientes] = useState<Cliente[]>([]);
   const [creando, setCreando] = useState(false);
   const [form, setForm] = useState(formVacio);
   const [lineas, setLineas] = useState<LineaForm[]>([{ id_producto: "", cantidad: "1" }]);
   const [mensaje, setMensaje] = useState("");
   const [error, setError] = useState("");
+  const [alertaBloqueo, setAlertaBloqueo] = useState("");
   const [cambiandoId, setCambiandoId] = useState<number | null>(null);
+  const [expandidos, setExpandidos] = useState<Set<string>>(new Set());
+
+  // Búsqueda/autocompletar cliente en "Nueva deuda"
+  const [busquedaCliente, setBusquedaCliente] = useState("");
+  const [sugerenciasAbiertas, setSugerenciasAbiertas] = useState(false);
+
+  // Creación de cliente nuevo inline (desde el form de deuda o desde la pestaña de límites)
+  const [creandoCliente, setCreandoCliente] = useState(false);
+  const [formCliente, setFormCliente] = useState(clienteFormVacio);
+  const [guardandoCliente, setGuardandoCliente] = useState(false);
+
+  // Edición de límites (pestaña "Límites de deuda")
+  const [limitesEditando, setLimitesEditando] = useState<Record<number, string>>({});
+  const [guardandoLimiteId, setGuardandoLimiteId] = useState<number | null>(null);
 
   async function cargarDeudas() {
     const res = await fetch("/api/deudas");
@@ -60,9 +139,24 @@ export default function DeudasPage() {
     setProductos((data.productos || []).filter((p: any) => p.estado_producto));
   }
 
+  async function cargarClientes() {
+    const res = await fetch("/api/clientes?todos=1");
+    const data = await res.json();
+    const lista: Cliente[] = data.clientes || [];
+    setClientes(lista);
+    setLimitesEditando((prev) => {
+      const next = { ...prev };
+      for (const c of lista) {
+        if (!(c.id_cliente in next)) next[c.id_cliente] = c.limite_deuda ?? "";
+      }
+      return next;
+    });
+  }
+
   useEffect(() => {
     cargarDeudas();
     cargarProductos();
+    cargarClientes();
   }, []);
 
   // Agrupa las deudas por persona en vez de mostrarlas todas juntas por fecha.
@@ -113,15 +207,6 @@ export default function DeudasPage() {
     );
   }
 
-  const inputStyle: React.CSSProperties = {
-    padding: "0.3rem 0.6rem",
-    borderRadius: 6,
-    border: "1px solid var(--border)",
-    width: "100%",
-    background: "var(--background)",
-    color: "var(--foreground)",
-  };
-
   function agregarLinea() {
     setLineas([...lineas, { id_producto: "", cantidad: "1" }]);
   }
@@ -143,8 +228,22 @@ export default function DeudasPage() {
     }, 0);
   }
 
+  function cerrarFormularioDeuda() {
+    setCreando(false);
+    setForm(formVacio);
+    setBusquedaCliente("");
+    setLineas([{ id_producto: "", cantidad: "1" }]);
+  }
+
   async function crearDeuda() {
     setError("");
+    setAlertaBloqueo("");
+
+    if (!clienteSeleccionado) {
+      setError("Seleccioná (o creá) el cliente al que se le asigna la deuda.");
+      return;
+    }
+
     const productosPayload = lineas
       .filter((l) => l.id_producto && Number(l.cantidad) > 0)
       .map((l) => ({ id_producto: Number(l.id_producto), cantidad: Number(l.cantidad) }));
@@ -152,14 +251,21 @@ export default function DeudasPage() {
     const res = await fetch("/api/deudas", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...form, productos: productosPayload }),
+      body: JSON.stringify({
+        nombre_deudor: clienteSeleccionado.nombre,
+        telefono_deudor: clienteSeleccionado.telefono,
+        fecha_inicio: form.fecha_inicio,
+        fecha_limite_pago: form.fecha_limite_pago || null,
+        id_cliente: clienteSeleccionado.id_cliente,
+        productos: productosPayload,
+      }),
     });
 
     if (res.ok) {
+      const data = await res.json();
       setMensaje("Deuda creada.");
-      setCreando(false);
-      setForm(formVacio);
-      setLineas([{ id_producto: "", cantidad: "1" }]);
+      cerrarFormularioDeuda();
+      mostrarAlerta(data.alerta);
       cargarDeudas();
     } else {
       const data = await res.json().catch(() => ({}));
@@ -170,14 +276,201 @@ export default function DeudasPage() {
   // botonCambioEstado — DEV-81
   async function cambiarEstado(id_deuda: number) {
     setCambiandoId(id_deuda);
+    setAlertaBloqueo("");
     const res = await fetch(`/api/deudas/${id_deuda}`, { method: "PATCH" });
     if (res.ok) {
+      const data = await res.json();
+      mostrarAlerta(data.alerta);
       cargarDeudas();
     } else {
       setError("No se pudo cambiar el estado de la deuda.");
     }
     setCambiandoId(null);
   }
+
+  function toggleExpandido(key: string) {
+    setExpandidos((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  // Agrupa las deudas por cliente (o por nombre_deudor para las viejas que no
+  // están vinculadas a un cliente real) — usado en la vista "Acumulado".
+  function agruparPorCliente() {
+    const map = new Map<
+      string,
+      {
+        key: string;
+        label: string;
+        telefono: string | null;
+        id_cliente: number | null;
+        cliente_puede_comprar: boolean | null;
+        limite_deuda: number | null;
+        totalPendiente: number;
+        deudas: Deuda[];
+      }
+    >();
+    for (const d of deudas) {
+      const key = d.id_cliente !== null ? `c${d.id_cliente}` : `n${d.nombre_deudor}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          label: d.nombre_deudor,
+          telefono: d.telefono_deudor,
+          id_cliente: d.id_cliente,
+          cliente_puede_comprar: d.cliente_puede_comprar,
+          limite_deuda: d.limite_deuda ? Number(d.limite_deuda) : null,
+          totalPendiente: 0,
+          deudas: [],
+        });
+      }
+      const g = map.get(key)!;
+      g.deudas.push(d);
+      if (d.estado_deuda === "PENDIENTE") g.totalPendiente += Number(d.monto_total);
+    }
+    return Array.from(map.values()).sort((a, b) => b.totalPendiente - a.totalPendiente);
+  }
+
+  function deudasPorVencer(): Deuda[] {
+    return deudas
+      .filter((d) => d.estado_deuda === "PENDIENTE")
+      .slice()
+      .sort((a, b) => {
+        if (!a.fecha_limite_pago && !b.fecha_limite_pago) return 0;
+        if (!a.fecha_limite_pago) return 1;
+        if (!b.fecha_limite_pago) return -1;
+        return a.fecha_limite_pago.localeCompare(b.fecha_limite_pago);
+      });
+  }
+
+  function formularioClienteNuevo(onCreado: (nuevo: Cliente) => void) {
+    return (
+      <div
+        style={{
+          padding: "0.75rem",
+          border: "1px dashed var(--border)",
+          borderRadius: 8,
+          marginTop: "0.5rem",
+          marginBottom: "0.5rem",
+        }}
+      >
+        <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
+          <input
+            style={inputStyle}
+            placeholder="Nombre *"
+            value={formCliente.nombre}
+            onChange={(e) => setFormCliente({ ...formCliente, nombre: e.target.value })}
+          />
+          <input
+            style={inputStyle}
+            placeholder="Teléfono"
+            value={formCliente.telefono}
+            onChange={(e) => setFormCliente({ ...formCliente, telefono: e.target.value })}
+          />
+        </div>
+        <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
+          <input
+            style={inputStyle}
+            placeholder="Correo (opcional)"
+            value={formCliente.correo}
+            onChange={(e) => setFormCliente({ ...formCliente, correo: e.target.value })}
+          />
+          <select
+            style={inputStyle}
+            value={formCliente.tipo_cliente}
+            onChange={(e) => setFormCliente({ ...formCliente, tipo_cliente: e.target.value })}
+          >
+            <option value="MINORISTA">Minorista</option>
+            <option value="MAYORISTA">Mayorista</option>
+          </select>
+        </div>
+        <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
+          <div style={{ flex: 1 }}>
+            <label style={{ display: "block", marginBottom: 4, fontSize: "0.8rem" }}>
+              Límite de deuda (opcional)
+            </label>
+            <input
+              type="number"
+              min={0}
+              step="0.01"
+              style={inputStyle}
+              placeholder="Sin límite"
+              value={formCliente.limite_deuda}
+              onChange={(e) => setFormCliente({ ...formCliente, limite_deuda: e.target.value })}
+            />
+          </div>
+          <div style={{ flex: 1 }}>
+            <label style={{ display: "block", marginBottom: 4, fontSize: "0.8rem" }}>
+              Deuda que ya tenía (opcional)
+            </label>
+            <input
+              type="number"
+              min={0}
+              step="0.01"
+              style={inputStyle}
+              placeholder="Q0.00"
+              value={formCliente.deuda_inicial}
+              onChange={(e) => setFormCliente({ ...formCliente, deuda_inicial: e.target.value })}
+            />
+          </div>
+        </div>
+        <p style={{ fontSize: "0.75rem", color: "var(--muted)", marginTop: -4, marginBottom: "0.5rem" }}>
+          Si ya te debía algo se registra de una vez como deuda pendiente — y si eso ya supera el
+          límite que le pongas, queda bloqueado desde ya.
+        </p>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            onClick={async () => {
+              const nuevo = await crearCliente();
+              if (nuevo) onCreado(nuevo);
+            }}
+            disabled={guardandoCliente}
+            style={{
+              padding: "0.3rem 0.8rem",
+              borderRadius: 6,
+              background: "#52b788",
+              color: "#fff",
+              border: "none",
+              cursor: guardandoCliente ? "default" : "pointer",
+              fontSize: "0.85rem",
+            }}
+          >
+            {guardandoCliente ? "Creando…" : "Crear cliente"}
+          </button>
+          <button
+            onClick={() => {
+              setCreandoCliente(false);
+              setFormCliente(clienteFormVacio);
+            }}
+            style={{
+              padding: "0.3rem 0.8rem",
+              borderRadius: 6,
+              background: "var(--border)",
+              border: "none",
+              cursor: "pointer",
+              fontSize: "0.85rem",
+            }}
+          >
+            Cancelar
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const tabBtnStyle = (activo: boolean): React.CSSProperties => ({
+    padding: "0.35rem 0.9rem",
+    borderRadius: 999,
+    border: activo ? "1px solid #52b788" : "1px solid var(--border)",
+    background: activo ? "#52b788" : "transparent",
+    color: activo ? "#fff" : "var(--text)",
+    cursor: "pointer",
+    fontSize: "0.82rem",
+    fontWeight: 600,
+  });
 
   return (
     <StaffShell
@@ -191,166 +484,626 @@ export default function DeudasPage() {
       {error && (
         <p style={{ color: "#e63946", marginBottom: "1rem", fontWeight: 600 }}>{error}</p>
       )}
-
-      {!creando && (
-        <button
-          onClick={() => {
-            setCreando(true);
-            setMensaje("");
-            setError("");
-          }}
+      {alertaBloqueo && (
+        <p
           style={{
-            marginBottom: "1.5rem",
-            padding: "0.5rem 1.2rem",
-            borderRadius: 6,
-            background: "#52b788",
             color: "#fff",
-            border: "none",
-            cursor: "pointer",
+            background: alertaBloqueo.startsWith("⚠️") ? "#e63946" : "#52b788",
+            padding: "0.6rem 1rem",
+            borderRadius: 6,
+            marginBottom: "1rem",
             fontWeight: 600,
           }}
         >
-          + Nueva deuda
-        </button>
+          {alertaBloqueo}
+        </p>
       )}
 
-      {creando && (
-        <div
-          style={{
-            marginBottom: "1.5rem",
-            padding: "1rem",
-            border: "1px solid var(--border)",
-            borderRadius: 8,
-            maxWidth: 600,
-          }}
-        >
-          <h3 style={{ marginBottom: "1rem" }}>Nueva deuda</h3>
+      <div style={{ display: "flex", gap: 4, marginBottom: "1.5rem", borderBottom: "1px solid var(--border)" }}>
+        {(
+          [
+            { id: "deudas", label: "Deudas" },
+            { id: "limites", label: "Límites de deuda" },
+          ] as const
+        ).map((t) => (
+          <button
+            key={t.id}
+            onClick={() => {
+              setTab(t.id);
+              setError("");
+              setMensaje("");
+            }}
+            style={{
+              padding: "0.6rem 1.1rem",
+              border: "none",
+              background: "transparent",
+              cursor: "pointer",
+              fontWeight: 600,
+              color: tab === t.id ? "var(--text)" : "var(--muted)",
+              borderBottom: tab === t.id ? "2px solid #52b788" : "2px solid transparent",
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
 
-          <div style={{ marginBottom: "0.75rem" }}>
-            <label style={{ display: "block", marginBottom: 4, fontSize: "0.85rem" }}>
-              ¿Quién debe? *
-            </label>
-            <input
-              style={inputStyle}
-              value={form.nombre_deudor}
-              onChange={(e) => setForm({ ...form, nombre_deudor: e.target.value })}
-              placeholder="Nombre de la persona"
-            />
-          </div>
+      {tab === "deudas" && (
+        <>
+          {!creando && (
+            <button
+              onClick={() => {
+                setCreando(true);
+                setMensaje("");
+                setError("");
+              }}
+              style={{
+                marginBottom: "1.5rem",
+                padding: "0.5rem 1.2rem",
+                borderRadius: 6,
+                background: "#52b788",
+                color: "#fff",
+                border: "none",
+                cursor: "pointer",
+                fontWeight: 600,
+              }}
+            >
+              + Nueva deuda
+            </button>
+          )}
 
-          <div style={{ display: "flex", gap: "0.75rem", marginBottom: "0.75rem" }}>
-            <div style={{ flex: 1 }}>
+          {creando && (
+            <div
+              style={{
+                marginBottom: "1.5rem",
+                padding: "1rem",
+                border: "1px solid var(--border)",
+                borderRadius: 8,
+                maxWidth: 600,
+              }}
+            >
+              <h3 style={{ marginBottom: "1rem" }}>Nueva deuda</h3>
+
+              <div style={{ marginBottom: "0.75rem" }}>
+                <label style={{ display: "block", marginBottom: 4, fontSize: "0.85rem" }}>
+                  Cliente *
+                </label>
+                <div style={{ display: "flex", gap: "0.5rem" }}>
+                  <div style={{ position: "relative", flex: 1 }}>
+                    <input
+                      style={inputStyle}
+                      placeholder="Escribí el nombre para buscar…"
+                      value={busquedaCliente}
+                      onChange={(e) => {
+                        setBusquedaCliente(e.target.value);
+                        setForm((f) => ({ ...f, id_cliente: "" }));
+                        setSugerenciasAbiertas(true);
+                      }}
+                      onFocus={() => setSugerenciasAbiertas(true)}
+                      onBlur={() => setTimeout(() => setSugerenciasAbiertas(false), 150)}
+                    />
+                    {sugerenciasAbiertas && busquedaCliente.trim() !== "" && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: "100%",
+                          left: 0,
+                          right: 0,
+                          background: "var(--surface)",
+                          border: "1px solid var(--border)",
+                          borderRadius: 6,
+                          marginTop: 2,
+                          zIndex: 20,
+                          maxHeight: 200,
+                          overflowY: "auto",
+                          boxShadow: "0 4px 10px rgba(0,0,0,0.12)",
+                        }}
+                      >
+                        {clientesFiltrados.length === 0 && (
+                          <div style={{ padding: "0.5rem 0.7rem", fontSize: "0.85rem", color: "var(--muted)" }}>
+                            Sin resultados — probá &quot;+ Cliente nuevo&quot;.
+                          </div>
+                        )}
+                        {clientesFiltrados.slice(0, 8).map((c) => (
+                          <div
+                            key={c.id_cliente}
+                            onMouseDown={() => seleccionarCliente(c)}
+                            style={{
+                              padding: "0.45rem 0.7rem",
+                              cursor: "pointer",
+                              fontSize: "0.85rem",
+                              borderBottom: "1px solid var(--border)",
+                            }}
+                          >
+                            {c.nombre} {c.estado_cliente ? "" : "(bloqueado)"}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => setCreandoCliente((v) => !v)}
+                    style={{
+                      padding: "0.3rem 0.8rem",
+                      borderRadius: 6,
+                      background: "var(--border)",
+                      border: "none",
+                      cursor: "pointer",
+                      fontSize: "0.8rem",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    + Cliente nuevo
+                  </button>
+                </div>
+                <p style={{ fontSize: "0.78rem", color: "var(--muted)", marginTop: 4 }}>
+                  Toda deuda queda asociada a un cliente registrado; si supera su límite, se le
+                  bloquean compras y pedidos.
+                </p>
+
+                {creandoCliente &&
+                  formularioClienteNuevo((nuevo) => {
+                    setForm((f) => ({ ...f, id_cliente: String(nuevo.id_cliente) }));
+                    setBusquedaCliente(nuevo.nombre);
+                    setCreandoCliente(false);
+                  })}
+
+                {clienteSeleccionado && (
+                  <p style={{ fontSize: "0.82rem", marginTop: 4 }}>
+                    {clienteSeleccionado.telefono && <>Tel: {clienteSeleccionado.telefono} · </>}
+                    Deuda pendiente actual: Q{deudaPendienteDe(clienteSeleccionado.id_cliente).toFixed(2)}
+                    {clienteSeleccionado.limite_deuda && (
+                      <> / límite Q{Number(clienteSeleccionado.limite_deuda).toFixed(2)}</>
+                    )}
+                  </p>
+                )}
+              </div>
+
+              <div style={{ display: "flex", gap: "0.75rem", marginBottom: "0.75rem" }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: "block", marginBottom: 4, fontSize: "0.85rem" }}>
+                    Fecha de inicio
+                  </label>
+                  <input
+                    type="date"
+                    style={inputStyle}
+                    value={form.fecha_inicio}
+                    onChange={(e) => setForm({ ...form, fecha_inicio: e.target.value })}
+                  />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: "block", marginBottom: 4, fontSize: "0.85rem" }}>
+                    Fecha límite de pago (opcional)
+                  </label>
+                  <input
+                    type="date"
+                    style={inputStyle}
+                    value={form.fecha_limite_pago}
+                    onChange={(e) => setForm({ ...form, fecha_limite_pago: e.target.value })}
+                  />
+                </div>
+              </div>
+
               <label style={{ display: "block", marginBottom: 4, fontSize: "0.85rem" }}>
-                Teléfono (opcional)
+                Productos *
               </label>
-              <input
-                style={inputStyle}
-                value={form.telefono_deudor}
-                onChange={(e) => setForm({ ...form, telefono_deudor: e.target.value })}
-              />
-            </div>
-            <div style={{ flex: 1 }}>
-              <label style={{ display: "block", marginBottom: 4, fontSize: "0.85rem" }}>
-                Fecha de inicio
-              </label>
-              <input
-                type="date"
-                style={inputStyle}
-                value={form.fecha_inicio}
-                onChange={(e) => setForm({ ...form, fecha_inicio: e.target.value })}
-              />
-            </div>
-          </div>
-
-          <label style={{ display: "block", marginBottom: 4, fontSize: "0.85rem" }}>
-            Productos *
-          </label>
-          {lineas.map((linea, idx) => (
-            <div key={idx} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
-              <select
-                style={inputStyle}
-                value={linea.id_producto}
-                onChange={(e) => actualizarLinea(idx, "id_producto", e.target.value)}
+              {lineas.map((linea, idx) => (
+                <div key={idx} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
+                  <select
+                    style={inputStyle}
+                    value={linea.id_producto}
+                    onChange={(e) => actualizarLinea(idx, "id_producto", e.target.value)}
+                  >
+                    <option value="">Seleccioná un producto…</option>
+                    {productos.map((p) => (
+                      <option key={p.id_producto} value={p.id_producto}>
+                        {p.nombre_producto} (Q{Number(p.precio_unitario).toFixed(2)}/{p.unidad_medida})
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    min={0.001}
+                    step="1"
+                    style={{ ...inputStyle, width: 100 }}
+                    value={linea.cantidad}
+                    onChange={(e) => actualizarLinea(idx, "cantidad", e.target.value)}
+                  />
+                  {lineas.length > 1 && (
+                    <button
+                      onClick={() => quitarLinea(idx)}
+                      style={{
+                        padding: "0 0.6rem",
+                        borderRadius: 6,
+                        background: "var(--border)",
+                        border: "none",
+                        cursor: "pointer",
+                      }}
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              ))}
+              <button
+                onClick={agregarLinea}
+                style={{
+                  marginTop: "0.25rem",
+                  marginBottom: "1rem",
+                  padding: "0.3rem 0.8rem",
+                  borderRadius: 6,
+                  background: "transparent",
+                  border: "1px dashed var(--border)",
+                  cursor: "pointer",
+                  fontSize: "0.85rem",
+                }}
               >
-                <option value="">Seleccioná un producto…</option>
-                {productos.map((p) => (
-                  <option key={p.id_producto} value={p.id_producto}>
-                    {p.nombre_producto} (Q{Number(p.precio_unitario).toFixed(2)}/{p.unidad_medida})
-                  </option>
-                ))}
-              </select>
-              <input
-                type="number"
-                min={0.001}
-                step="0.001"
-                style={{ ...inputStyle, width: 100 }}
-                value={linea.cantidad}
-                onChange={(e) => actualizarLinea(idx, "cantidad", e.target.value)}
-              />
-              {lineas.length > 1 && (
+                + Agregar producto
+              </button>
+
+              <p style={{ fontWeight: 700, marginBottom: "1rem" }}>
+                Total: Q{totalPreview().toFixed(2)}
+              </p>
+
+              <div style={{ display: "flex", gap: 8 }}>
                 <button
-                  onClick={() => quitarLinea(idx)}
+                  onClick={crearDeuda}
                   style={{
-                    padding: "0 0.6rem",
+                    padding: "0.4rem 1rem",
+                    borderRadius: 6,
+                    background: "#52b788",
+                    color: "#fff",
+                    border: "none",
+                    cursor: "pointer",
+                  }}
+                >
+                  Guardar deuda
+                </button>
+                <button
+                  onClick={cerrarFormularioDeuda}
+                  style={{
+                    padding: "0.4rem 1rem",
                     borderRadius: 6,
                     background: "var(--border)",
                     border: "none",
                     cursor: "pointer",
                   }}
                 >
-                  ✕
+                  Cancelar
                 </button>
-              )}
+              </div>
             </div>
-          ))}
-          <button
-            onClick={agregarLinea}
-            style={{
-              marginTop: "0.25rem",
-              marginBottom: "1rem",
-              padding: "0.3rem 0.8rem",
-              borderRadius: 6,
-              background: "transparent",
-              border: "1px dashed var(--border)",
-              cursor: "pointer",
-              fontSize: "0.85rem",
-            }}
-          >
-            + Agregar producto
-          </button>
+          )}
 
-          <p style={{ fontWeight: 700, marginBottom: "1rem" }}>
-            Total: Q{totalPreview().toFixed(2)}
+          <div style={{ display: "flex", gap: 6, marginBottom: "1rem" }}>
+            <button style={tabBtnStyle(vista === "acumulado")} onClick={() => setVista("acumulado")}>
+              Acumulado por cliente
+            </button>
+            <button style={tabBtnStyle(vista === "vencimiento")} onClick={() => setVista("vencimiento")}>
+              Próximas a vencer
+            </button>
+          </div>
+
+          {vista === "acumulado" && (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
+                <thead>
+                  <tr style={{ borderBottom: "2px solid var(--border)", textAlign: "left" }}>
+                    <th style={{ padding: "0.75rem" }}>Persona</th>
+                    <th style={{ padding: "0.75rem" }}>Estado</th>
+                    <th style={{ padding: "0.75rem" }}>Deuda pendiente acumulada</th>
+                    <th style={{ padding: "0.75rem" }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {agruparPorCliente().map((g) => (
+                    <>
+                      <tr key={g.key} style={{ borderBottom: "1px solid var(--border)" }}>
+                        <td style={{ padding: "0.75rem" }}>
+                          {g.label}
+                          {g.telefono && (
+                            <div style={{ color: "var(--muted)", fontSize: "0.78rem" }}>{g.telefono}</div>
+                          )}
+                        </td>
+                        <td style={{ padding: "0.75rem" }}>
+                          {g.id_cliente === null ? (
+                            <span style={{ color: "var(--muted)" }}>Sin vincular</span>
+                          ) : (
+                            <span
+                              style={{
+                                color: g.cliente_puede_comprar ? "#52b788" : "#e63946",
+                                fontWeight: 600,
+                              }}
+                            >
+                              {g.cliente_puede_comprar ? "Activo" : "Bloqueado"}
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ padding: "0.75rem", fontWeight: 600 }}>
+                          Q{g.totalPendiente.toFixed(2)}
+                          {g.limite_deuda !== null && (
+                            <span style={{ color: "var(--muted)", fontWeight: 400 }}>
+                              {" "}
+                              / límite Q{g.limite_deuda.toFixed(2)}
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ padding: "0.75rem" }}>
+                          <button
+                            onClick={() => toggleExpandido(g.key)}
+                            style={{
+                              padding: "0.3rem 0.8rem",
+                              borderRadius: 6,
+                              background: "var(--border)",
+                              border: "none",
+                              cursor: "pointer",
+                              fontSize: "0.8rem",
+                            }}
+                          >
+                            {expandidos.has(g.key) ? "Ocultar detalle" : "Detalle"}
+                          </button>
+                        </td>
+                      </tr>
+                      {expandidos.has(g.key) && (
+                        <tr key={`${g.key}-detalle`}>
+                          <td colSpan={4} style={{ padding: "0 0.75rem 1rem" }}>
+                            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
+                              <thead>
+                                <tr style={{ color: "var(--muted)", textAlign: "left" }}>
+                                  <th style={{ padding: "0.4rem" }}>Fecha inicio</th>
+                                  <th style={{ padding: "0.4rem" }}>Fecha límite</th>
+                                  <th style={{ padding: "0.4rem" }}>Productos</th>
+                                  <th style={{ padding: "0.4rem" }}>Monto</th>
+                                  <th style={{ padding: "0.4rem" }}>Estado</th>
+                                  <th style={{ padding: "0.4rem" }}></th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {g.deudas.map((d) => (
+                                  <tr key={d.id_deuda} style={{ borderTop: "1px solid var(--border)" }}>
+                                    <td style={{ padding: "0.4rem" }}>
+                                      {new Date(d.fecha_inicio).toLocaleDateString("es-GT")}
+                                    </td>
+                                    <td style={{ padding: "0.4rem" }}>
+                                      {d.fecha_limite_pago
+                                        ? new Date(d.fecha_limite_pago).toLocaleDateString("es-GT")
+                                        : "—"}
+                                    </td>
+                                    <td style={{ padding: "0.4rem", color: "var(--muted)" }}>
+                                      {d.productos.length > 0
+                                        ? d.productos.map((p) => `${p.nombre_producto} x${p.cantidad}`).join(", ")
+                                        : "—"}
+                                    </td>
+                                    <td style={{ padding: "0.4rem", fontWeight: 600 }}>
+                                      Q{Number(d.monto_total).toFixed(2)}
+                                    </td>
+                                    <td style={{ padding: "0.4rem" }}>
+                                      <span
+                                        style={{
+                                          color: d.estado_deuda === "PAGADA" ? "#52b788" : "#e63946",
+                                          fontWeight: 600,
+                                        }}
+                                      >
+                                        {d.estado_deuda === "PAGADA" ? "Pagada" : "Pendiente"}
+                                      </span>
+                                    </td>
+                                    <td style={{ padding: "0.4rem" }}>
+                                      <button
+                                        onClick={() => cambiarEstado(d.id_deuda)}
+                                        disabled={cambiandoId === d.id_deuda}
+                                        style={{
+                                          padding: "0.25rem 0.6rem",
+                                          borderRadius: 6,
+                                          background: d.estado_deuda === "PAGADA" ? "#e63946" : "#52b788",
+                                          color: "#fff",
+                                          border: "none",
+                                          cursor: cambiandoId === d.id_deuda ? "default" : "pointer",
+                                          opacity: cambiandoId === d.id_deuda ? 0.6 : 1,
+                                          fontSize: "0.75rem",
+                                        }}
+                                      >
+                                        {cambiandoId === d.id_deuda
+                                          ? "…"
+                                          : d.estado_deuda === "PAGADA"
+                                          ? "Marcar pendiente"
+                                          : "Marcar pagada"}
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </td>
+                        </tr>
+                      )}
+                    </>
+                  ))}
+                  {deudas.length === 0 && (
+                    <tr>
+                      <td colSpan={4} style={{ padding: "1.5rem", textAlign: "center", color: "var(--muted)" }}>
+                        No hay deudas registradas.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {vista === "vencimiento" && (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
+                <thead>
+                  <tr style={{ borderBottom: "2px solid var(--border)", textAlign: "left" }}>
+                    <th style={{ padding: "0.75rem" }}>Persona</th>
+                    <th style={{ padding: "0.75rem" }}>Monto</th>
+                    <th style={{ padding: "0.75rem" }}>Fecha límite</th>
+                    <th style={{ padding: "0.75rem" }}>Vencimiento</th>
+                    <th style={{ padding: "0.75rem" }}>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {deudasPorVencer().map((d) => {
+                    const rest = diasRestantes(d.fecha_limite_pago);
+                    return (
+                      <tr key={d.id_deuda} style={{ borderBottom: "1px solid var(--border)" }}>
+                        <td style={{ padding: "0.75rem" }}>
+                          {d.nombre_deudor}
+                          {d.id_cliente !== null && d.cliente_puede_comprar === false && (
+                            <span style={badgeStyle("#e63946")}>bloqueado</span>
+                          )}
+                        </td>
+                        <td style={{ padding: "0.75rem", fontWeight: 600 }}>
+                          Q{Number(d.monto_total).toFixed(2)}
+                        </td>
+                        <td style={{ padding: "0.75rem", color: "var(--muted)" }}>
+                          {d.fecha_limite_pago
+                            ? new Date(d.fecha_limite_pago).toLocaleDateString("es-GT")
+                            : "—"}
+                        </td>
+                        <td style={{ padding: "0.75rem", color: rest.color, fontWeight: 600 }}>
+                          {rest.texto}
+                        </td>
+                        <td style={{ padding: "0.75rem" }}>
+                          <button
+                            onClick={() => cambiarEstado(d.id_deuda)}
+                            disabled={cambiandoId === d.id_deuda}
+                            style={{
+                              padding: "0.3rem 0.8rem",
+                              borderRadius: 6,
+                              background: "#52b788",
+                              color: "#fff",
+                              border: "none",
+                              cursor: cambiandoId === d.id_deuda ? "default" : "pointer",
+                              opacity: cambiandoId === d.id_deuda ? 0.6 : 1,
+                              fontSize: "0.8rem",
+                            }}
+                          >
+                            {cambiandoId === d.id_deuda ? "Guardando…" : "Marcar pagada"}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {deudasPorVencer().length === 0 && (
+                    <tr>
+                      <td colSpan={5} style={{ padding: "1.5rem", textAlign: "center", color: "var(--muted)" }}>
+                        No hay deudas pendientes.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+
+      {tab === "limites" && (
+        <>
+          <p style={{ color: "var(--muted)", marginBottom: "1rem", maxWidth: 640 }}>
+            Definí el límite de deuda de cada cliente. Al llegar (o superar) ese monto en deudas
+            pendientes, el cliente queda bloqueado automáticamente para comprar o hacer pedidos —
+            se desbloquea solo cuando su deuda pendiente vuelve a bajar del límite.
           </p>
 
-          <div style={{ display: "flex", gap: 8 }}>
+          {!creandoCliente && (
             <button
-              onClick={crearDeuda}
+              onClick={() => setCreandoCliente(true)}
               style={{
+                marginBottom: "1rem",
                 padding: "0.4rem 1rem",
                 borderRadius: 6,
                 background: "#52b788",
                 color: "#fff",
                 border: "none",
                 cursor: "pointer",
+                fontWeight: 600,
+                fontSize: "0.85rem",
               }}
             >
-              Guardar deuda
+              + Nuevo cliente
             </button>
-            <button
-              onClick={() => setCreando(false)}
-              style={{
-                padding: "0.4rem 1rem",
-                borderRadius: 6,
-                background: "var(--border)",
-                border: "none",
-                cursor: "pointer",
-              }}
-            >
-              Cancelar
-            </button>
+          )}
+          {creandoCliente && (
+            <div style={{ maxWidth: 560 }}>
+              {formularioClienteNuevo(() => setCreandoCliente(false))}
+            </div>
+          )}
+
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
+              <thead>
+                <tr style={{ borderBottom: "2px solid var(--border)", textAlign: "left" }}>
+                  <th style={{ padding: "0.75rem" }}>Cliente</th>
+                  <th style={{ padding: "0.75rem" }}>Estado</th>
+                  <th style={{ padding: "0.75rem" }}>Deuda pendiente</th>
+                  <th style={{ padding: "0.75rem" }}>Límite de deuda (Q)</th>
+                  <th style={{ padding: "0.75rem" }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {clientes.map((c) => (
+                  <tr key={c.id_cliente} style={{ borderBottom: "1px solid var(--border)" }}>
+                    <td style={{ padding: "0.75rem" }}>
+                      {c.nombre}
+                      {c.telefono && (
+                        <div style={{ color: "var(--muted)", fontSize: "0.78rem" }}>{c.telefono}</div>
+                      )}
+                    </td>
+                    <td style={{ padding: "0.75rem" }}>
+                      <span
+                        style={{
+                          color: c.estado_cliente ? "#52b788" : "#e63946",
+                          fontWeight: 600,
+                        }}
+                      >
+                        {c.estado_cliente ? "Activo" : "Bloqueado"}
+                      </span>
+                    </td>
+                    <td style={{ padding: "0.75rem" }}>Q{deudaPendienteDe(c.id_cliente).toFixed(2)}</td>
+                    <td style={{ padding: "0.75rem" }}>
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        placeholder="Sin límite"
+                        style={{ ...inputStyle, width: 130 }}
+                        value={limitesEditando[c.id_cliente] ?? ""}
+                        onChange={(e) =>
+                          setLimitesEditando((prev) => ({ ...prev, [c.id_cliente]: e.target.value }))
+                        }
+                      />
+                    </td>
+                    <td style={{ padding: "0.75rem" }}>
+                      <button
+                        onClick={() => guardarLimite(c.id_cliente)}
+                        disabled={guardandoLimiteId === c.id_cliente}
+                        style={{
+                          padding: "0.3rem 0.8rem",
+                          borderRadius: 6,
+                          background: "var(--border)",
+                          border: "none",
+                          cursor: guardandoLimiteId === c.id_cliente ? "default" : "pointer",
+                          fontSize: "0.8rem",
+                        }}
+                      >
+                        {guardandoLimiteId === c.id_cliente ? "Guardando…" : "Guardar"}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {clientes.length === 0 && (
+                  <tr>
+                    <td colSpan={5} style={{ padding: "1.5rem", textAlign: "center", color: "var(--muted)" }}>
+                      No hay clientes registrados.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
-        </div>
+        </>
       )}
 
       {gruposPorPersona.length === 0 && (

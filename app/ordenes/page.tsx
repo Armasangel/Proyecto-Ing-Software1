@@ -137,13 +137,38 @@ export default function OrdenesPage() {
     }
   }, []);
 
+  const cargarClientes = useCallback(async () => {
+    const r = await fetch("/api/clientes", { cache: "no-store" });
+    const d = await r.json();
+    setClientes(d.clientes || []);
+  }, []);
+
   useEffect(() => {
     if (!usuario) return;
-    fetch("/api/clientes").then((r) => r.json()).then((d) => setClientes(d.clientes || []));
+    cargarClientes();
     fetch("/api/productos").then((r) => r.json()).then((d) => setProductos(d.productos || []));
     fetch("/api/bodegas").then((r) => r.json()).then((d) => setBodegas(d.bodegas || []));
     cargarOrdenes();
-  }, [usuario, cargarOrdenes]);
+  }, [usuario, cargarOrdenes, cargarClientes]);
+
+  // Si el colaborador deja la pestaña de Pedidos abierta y el dueño bloquea
+  // (o desbloquea) a un cliente por deuda mientras tanto, esto refresca la
+  // lista al volver — así nunca queda desactualizada.
+  useEffect(() => {
+    if (!usuario) return;
+    function onFocus() {
+      cargarClientes();
+    }
+    function onVisibility() {
+      if (document.visibilityState === "visible") cargarClientes();
+    }
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [usuario, cargarClientes]);
 
   const productoPorId = useMemo(() => {
     const m = new Map<number, Producto>();
