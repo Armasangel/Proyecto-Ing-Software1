@@ -40,6 +40,29 @@ export const handlers = [
     if (!user || password !== "correcta") {
       return res(ctx.status(401), ctx.json({ error: "Credenciales incorrectas" }));
     }
+    // Paso 1 completo: ya no se entrega el token acá, se simula el envío
+    // del código de verificación (paso 2 lo resuelve /api/login/verificar-codigo).
+    return res(
+      ctx.status(200),
+      ctx.json({
+        ok: true,
+        requiere_verificacion: true,
+        pre_token: "mock-pre-token-" + user.id_usuario,
+        correo_enmascarado: user.correo.replace(/^(.{2}).+(@.+)$/, "$1***$2"),
+      })
+    );
+  }),
+
+  rest.post("/api/login/verificar-codigo", async (req, res, ctx) => {
+    const { pre_token, codigo } = await req.json();
+    if (!pre_token || !codigo) {
+      return res(ctx.status(400), ctx.json({ error: "Faltan datos para verificar el código" }));
+    }
+    const idUsuario = Number(String(pre_token).replace("mock-pre-token-", ""));
+    const user = mockUsuarios.find((u) => u.id_usuario === idUsuario);
+    if (!user || codigo !== "123456") {
+      return res(ctx.status(401), ctx.json({ error: "Código incorrecto" }));
+    }
     return res(
       ctx.status(200),
       ctx.json({ ok: true, token: "mock-token-" + user.id_usuario, usuario: user })

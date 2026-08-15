@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { StaffShell } from "@/components/StaffShell";
 import { useStaffSession } from "@/hooks/useStaffSession";
 
@@ -159,138 +159,41 @@ export default function DeudasPage() {
     cargarClientes();
   }, []);
 
-  // Muestra el mensaje de alerta cuando una deuda vinculada a un cliente
-  // acaba de bloquearlo o desbloquearlo por deuda.
-  function mostrarAlerta(alerta: Alerta | null) {
-    if (!alerta) return;
-    if (alerta.bloqueado) {
-      setAlertaBloqueo(
-        `⚠️ Este cliente alcanzó su límite de deuda (Q${alerta.limite_deuda?.toFixed(2)}). ` +
-          `Deuda pendiente: Q${alerta.deuda_pendiente.toFixed(2)}. Ya no puede comprar ni hacer pedidos.`
-      );
-    } else if (alerta.cambioEstado) {
-      setAlertaBloqueo("✓ El cliente volvió a estar por debajo de su límite y puede comprar de nuevo.");
-    } else {
-      setAlertaBloqueo("");
-    }
-    cargarClientes();
-  }
+  // Agrupa las deudas por persona en vez de mostrarlas todas juntas por fecha.
+  // (Este hook va antes de cualquier "return" temprano para respetar el orden de hooks de React.)
+  const gruposPorPersona = useMemo(() => {
+    const grupos = new Map<
+      string,
+      { nombre_deudor: string; telefono_deudor: string | null; deudas: Deuda[] }
+    >();
 
-  const clienteSeleccionado = clientes.find((c) => String(c.id_cliente) === form.id_cliente);
-
-  function deudaPendienteDe(id_cliente: number): number {
-    return deudas
-      .filter((d) => d.id_cliente === id_cliente && d.estado_deuda === "PENDIENTE")
-      .reduce((acc, d) => acc + Number(d.monto_total), 0);
-  }
-
-  const clientesFiltrados =
-    busquedaCliente.trim() === ""
-      ? []
-      : clientes.filter((c) => c.nombre.toLowerCase().includes(busquedaCliente.trim().toLowerCase()));
-
-  function seleccionarCliente(c: Cliente) {
-    setForm((f) => ({ ...f, id_cliente: String(c.id_cliente) }));
-    setBusquedaCliente(c.nombre);
-    setSugerenciasAbiertas(false);
-  }
-
-  async function crearCliente(): Promise<Cliente | null> {
-    if (!formCliente.nombre.trim()) {
-      setError("El nombre del cliente nuevo es obligatorio");
-      return null;
-    }
-    const limiteInicial =
-      formCliente.limite_deuda === "" ? null : Number(formCliente.limite_deuda);
-    if (limiteInicial !== null && (!Number.isFinite(limiteInicial) || limiteInicial < 0)) {
-      setError("El límite de deuda debe ser un número mayor o igual a 0");
-      return null;
-    }
-    const deudaInicial =
-      formCliente.deuda_inicial === "" ? null : Number(formCliente.deuda_inicial);
-    if (deudaInicial !== null && (!Number.isFinite(deudaInicial) || deudaInicial <= 0)) {
-      setError("La deuda inicial debe ser un número mayor a 0");
-      return null;
-    }
-
-    setGuardandoCliente(true);
-    setError("");
-    const res = await fetch("/api/clientes", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        nombre: formCliente.nombre,
-        telefono: formCliente.telefono,
-        correo: formCliente.correo,
-        tipo_cliente: formCliente.tipo_cliente,
-        limite_deuda: limiteInicial,
-      }),
-    });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      setError(data.error || "No se pudo crear el cliente.");
-      setGuardandoCliente(false);
-      return null;
-    }
-    const data = await res.json();
-    const nuevo: Cliente = data.cliente;
-
-    // Si se indicó una deuda inicial (ej. un cliente que ya venía debiendo),
-    // se registra de una vez como una deuda "de arrastre" sin productos. Como
-    // el cliente ya tiene su límite recién asignado, esto puede bloquearlo de
-    // inmediato si la deuda inicial ya lo supera.
-    if (deudaInicial !== null) {
-      const resDeuda = await fetch("/api/deudas", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          nombre_deudor: nuevo.nombre,
-          telefono_deudor: nuevo.telefono,
-          fecha_inicio: new Date().toISOString().slice(0, 10),
-          id_cliente: nuevo.id_cliente,
-          monto_libre: deudaInicial,
-        }),
-      });
-      if (resDeuda.ok) {
-        const dataDeuda = await resDeuda.json();
-        mostrarAlerta(dataDeuda.alerta);
-        cargarDeudas();
-      } else {
-        const dataErr = await resDeuda.json().catch(() => ({}));
-        setError(
-          `Cliente creado, pero no se pudo registrar la deuda inicial: ${
-            dataErr.error || "error desconocido"
-          }`
-        );
+    for (const d of deudas) {
+      const clave = d.nombre_deudor.trim().toLowerCase();
+      if (!grupos.has(clave)) {
+        grupos.set(clave, {
+          nombre_deudor: d.nombre_deudor,
+          telefono_deudor: d.telefono_deudor,
+          deudas: [],
+        });
       }
+      grupos.get(clave)!.deudas.push(d);
     }
 
-    setClientes((prev) => [...prev, nuevo].sort((a, b) => a.nombre.localeCompare(b.nombre)));
-    setLimitesEditando((prev) => ({ ...prev, [nuevo.id_cliente]: nuevo.limite_deuda ?? "" }));
-    setCreandoCliente(false);
-    setFormCliente(clienteFormVacio);
-    setGuardandoCliente(false);
-    return nuevo;
-  }
-
-  async function guardarLimite(id_cliente: number) {
-    setGuardandoLimiteId(id_cliente);
-    setAlertaBloqueo("");
-    const valor = limitesEditando[id_cliente] ?? "";
-    const res = await fetch(`/api/clientes/${id_cliente}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ limite_deuda: valor === "" ? null : valor }),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      mostrarAlerta(data.alerta);
-    } else {
-      const data = await res.json().catch(() => ({}));
-      setError(data.error || "No se pudo guardar el límite.");
-    }
-    setGuardandoLimiteId(null);
-  }
+    return Array.from(grupos.values())
+      .map((g) => {
+        const montoPendiente = g.deudas
+          .filter((d) => d.estado_deuda === "PENDIENTE")
+          .reduce((acc, d) => acc + Number(d.monto_total), 0);
+        const montoTotal = g.deudas.reduce((acc, d) => acc + Number(d.monto_total), 0);
+        return { ...g, montoPendiente, montoTotal };
+      })
+      .sort((a, b) => {
+        // Personas con deuda pendiente primero, luego alfabético.
+        if (a.montoPendiente > 0 && b.montoPendiente === 0) return -1;
+        if (a.montoPendiente === 0 && b.montoPendiente > 0) return 1;
+        return a.nombre_deudor.localeCompare(b.nombre_deudor, "es");
+      });
+  }, [deudas]);
 
   if (!usuario) {
     return <p style={{ padding: "2rem", color: "var(--muted)" }}>Cargando…</p>;
@@ -1202,6 +1105,111 @@ export default function DeudasPage() {
           </div>
         </>
       )}
+
+      {gruposPorPersona.length === 0 && (
+        <p style={{ padding: "1.5rem 0", textAlign: "center", color: "var(--muted)" }}>
+          No hay deudas registradas.
+        </p>
+      )}
+
+      {gruposPorPersona.map((grupo) => (
+        <div
+          key={grupo.nombre_deudor.trim().toLowerCase()}
+          style={{
+            marginBottom: "1.5rem",
+            border: "1px solid var(--border)",
+            borderRadius: 8,
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              padding: "0.75rem 1rem",
+              background: "var(--border)",
+            }}
+          >
+            <div>
+              <span style={{ fontWeight: 700 }}>{grupo.nombre_deudor}</span>
+              {grupo.telefono_deudor && (
+                <span style={{ color: "var(--muted)", fontSize: "0.85rem", marginLeft: 8 }}>
+                  {grupo.telefono_deudor}
+                </span>
+              )}
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontWeight: 700 }}>
+                Pendiente: Q{grupo.montoPendiente.toFixed(2)}
+              </div>
+              <div style={{ color: "var(--muted)", fontSize: "0.78rem" }}>
+                Histórico total: Q{grupo.montoTotal.toFixed(2)}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
+              <thead>
+                <tr style={{ borderBottom: "2px solid var(--border)", textAlign: "left" }}>
+                  <th style={{ padding: "0.6rem 0.75rem" }}>Productos</th>
+                  <th style={{ padding: "0.6rem 0.75rem" }}>Monto</th>
+                  <th style={{ padding: "0.6rem 0.75rem" }}>Fecha inicio</th>
+                  <th style={{ padding: "0.6rem 0.75rem" }}>Estado</th>
+                  <th style={{ padding: "0.6rem 0.75rem" }}>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {grupo.deudas.map((d) => (
+                  <tr key={d.id_deuda} style={{ borderBottom: "1px solid var(--border)" }}>
+                    <td style={{ padding: "0.6rem 0.75rem", color: "var(--muted)" }}>
+                      {d.productos.map((p) => `${p.nombre_producto} x${p.cantidad}`).join(", ")}
+                    </td>
+                    <td style={{ padding: "0.6rem 0.75rem", fontWeight: 600 }}>
+                      Q{Number(d.monto_total).toFixed(2)}
+                    </td>
+                    <td style={{ padding: "0.6rem 0.75rem", color: "var(--muted)" }}>
+                      {new Date(d.fecha_inicio).toLocaleDateString("es-GT")}
+                    </td>
+                    <td style={{ padding: "0.6rem 0.75rem" }}>
+                      <span
+                        style={{
+                          color: d.estado_deuda === "PAGADA" ? "#52b788" : "#e63946",
+                          fontWeight: 600,
+                        }}
+                      >
+                        {d.estado_deuda === "PAGADA" ? "Pagada" : "Pendiente"}
+                      </span>
+                    </td>
+                    <td style={{ padding: "0.6rem 0.75rem" }}>
+                      <button
+                        onClick={() => cambiarEstado(d.id_deuda)}
+                        disabled={cambiandoId === d.id_deuda}
+                        style={{
+                          padding: "0.3rem 0.8rem",
+                          borderRadius: 6,
+                          background: d.estado_deuda === "PAGADA" ? "#e63946" : "#52b788",
+                          color: "#fff",
+                          border: "none",
+                          cursor: cambiandoId === d.id_deuda ? "default" : "pointer",
+                          opacity: cambiandoId === d.id_deuda ? 0.6 : 1,
+                        }}
+                      >
+                        {cambiandoId === d.id_deuda
+                          ? "Guardando…"
+                          : d.estado_deuda === "PAGADA"
+                          ? "Marcar pendiente"
+                          : "Marcar pagada"}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
     </StaffShell>
   );
 }

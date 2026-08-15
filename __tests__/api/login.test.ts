@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import { POST } from "@/app/api/login/route";
 import { createMockRequest, testUserDueno } from "@/__tests__/utils/api-test-utils";
+import { resetLoginRateLimitStore } from "@/lib/login-rate-limit";
 
 jest.mock("bcryptjs");
 
@@ -8,8 +9,13 @@ jest.mock("@/lib/db", () => ({
   pool: { query: jest.fn(), connect: jest.fn() },
 }));
 
+jest.mock("@/lib/mailer", () => ({
+  enviarCodigoVerificacion: jest.fn(),
+}));
+
 const mockPool = jest.requireMock("@/lib/db").pool as { query: jest.Mock };
 const mockBcrypt = bcrypt as jest.Mocked<typeof bcrypt>;
+const mockMailer = jest.requireMock("@/lib/mailer") as { enviarCodigoVerificacion: jest.Mock };
 
 const mockDbRow = {
   id_usuario: testUserDueno.id_usuario,
@@ -19,9 +25,18 @@ const mockDbRow = {
   contrasena_hash: "$2a$04$mocked",
 };
 
+function failedLoginRequest(ip = "203.0.113.10") {
+  return createMockRequest("/api/login", {
+    method: "POST",
+    body: { username: "juan@tienda.com", password: "wrong" },
+    headers: { "x-forwarded-for": ip },
+  });
+}
+
 describe("POST /api/login", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    resetLoginRateLimitStore();
   });
 
   it("returns 400 when username is missing", async () => {
@@ -71,38 +86,102 @@ describe("POST /api/login", () => {
     expect(data.error).toBe("Credenciales incorrectas");
   });
 
-  it("returns 200 with token and user on success", async () => {
-    mockPool.query.mockResolvedValue({ rows: [mockDbRow], rowCount: 1 });
+  it("on correct credentials, does NOT set the auth cookie yet — sends a code instead", async () => {
+    mockPool.query
+      .mockResolvedValueOnce({ rows: [mockDbRow], rowCount: 1 }) // SELECT usuario
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 }); // INSERT codigo_verificacion
     mockBcrypt.compareSync.mockReturnValue(true);
+
     const req = createMockRequest("/api/login", {
       method: "POST",
       body: { username: "juan@tienda.com", password: "correcta" },
     });
     const res = await POST(req);
     const data = await res.json();
+
     expect(res.status).toBe(200);
     expect(data.ok).toBe(true);
-    expect(typeof data.token).toBe("string");
-    expect(data.usuario).toMatchObject({
-      id_usuario: testUserDueno.id_usuario,
-      nombre: testUserDueno.nombre,
-      correo: testUserDueno.correo,
-      tipo_usuario: testUserDueno.tipo_usuario,
-    });
+    expect(data.requiere_verificacion).toBe(true);
+    expect(typeof data.pre_token).toBe("string");
+    expect(data.correo_enmascarado).toContain("@");
+    expect(data.token).toBeUndefined(); // el AUTH token real todavía no se entrega
+
+    const setCookie = res.headers.get("set-cookie");
+    expect(setCookie ?? "").not.toContain("auth_token=");
+
+    expect(mockMailer.enviarCodigoVerificacion).toHaveBeenCalledTimes(1);
+    expect(mockMailer.enviarCodigoVerificacion).toHaveBeenCalledWith(
+      mockDbRow.correo,
+      expect.stringMatching(/^\d{6}$/)
+    );
   });
 
-  it("sets the auth_token cookie on success", async () => {
-    mockPool.query.mockResolvedValue({ rows: [mockDbRow], rowCount: 1 });
+  it("returns 502 if sending the email fails", async () => {
+    mockPool.query
+      .mockResolvedValueOnce({ rows: [mockDbRow], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 });
     mockBcrypt.compareSync.mockReturnValue(true);
+    mockMailer.enviarCodigoVerificacion.mockRejectedValue(new Error("SMTP down"));
+
     const req = createMockRequest("/api/login", {
       method: "POST",
       body: { username: "juan@tienda.com", password: "correcta" },
     });
     const res = await POST(req);
-    const setCookie = res.headers.get("set-cookie");
-    expect(setCookie).toContain("auth_token=");
-    expect(setCookie).toContain("Max-Age=28800");
-    expect(setCookie).toContain("HttpOnly");
-    expect(setCookie).toContain("Path=/");
+    expect(res.status).toBe(502);
+  });
+
+  it("blocks the 6th failed login from the same IP within 1 minute", async () => {
+    mockPool.query.mockResolvedValue({ rows: [mockDbRow], rowCount: 1 });
+    mockBcrypt.compareSync.mockReturnValue(false);
+
+    for (let i = 0; i < 5; i++) {
+      const res = await POST(failedLoginRequest());
+      expect(res.status).toBe(401);
+    }
+
+    const blocked = await POST(failedLoginRequest());
+    const data = await blocked.json();
+    expect(blocked.status).toBe(429);
+    expect(data.error).toBe("Demasiados intentos. Intenta de nuevo en un minuto.");
+  });
+
+  it("does not rate-limit a different IP after another IP is blocked", async () => {
+    mockPool.query.mockResolvedValue({ rows: [mockDbRow], rowCount: 1 });
+    mockBcrypt.compareSync.mockReturnValue(false);
+
+    for (let i = 0; i < 5; i++) {
+      await POST(failedLoginRequest("203.0.113.10"));
+    }
+
+    const blocked = await POST(failedLoginRequest("203.0.113.10"));
+    expect(blocked.status).toBe(429);
+
+    const otherIp = await POST(failedLoginRequest("198.51.100.20"));
+    expect(otherIp.status).toBe(401);
+  });
+
+  it("clears failed attempts after a successful login", async () => {
+    mockPool.query.mockResolvedValue({ rows: [mockDbRow], rowCount: 1 });
+    mockBcrypt.compareSync.mockReturnValue(false);
+
+    for (let i = 0; i < 3; i++) {
+      const res = await POST(failedLoginRequest());
+      expect(res.status).toBe(401);
+    }
+
+    mockBcrypt.compareSync.mockReturnValue(true);
+    const success = await POST(
+      createMockRequest("/api/login", {
+        method: "POST",
+        body: { username: "juan@tienda.com", password: "correcta" },
+        headers: { "x-forwarded-for": "203.0.113.10" },
+      })
+    );
+    expect(success.status).toBe(200);
+
+    mockBcrypt.compareSync.mockReturnValue(false);
+    const afterClear = await POST(failedLoginRequest());
+    expect(afterClear.status).toBe(401);
   });
 });

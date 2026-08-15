@@ -353,53 +353,47 @@ export default function EstadisticasPage() {
       if (!res.ok) throw new Error(json.error || "Error al exportar");
       const exportData = json as EstadisticasData;
 
-      const rows: string[] = [];
-      const csvLine = (arr: (string | number)[]) => arr.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",");
-      const addSection = (titulo: string) => { rows.push(""); rows.push(titulo); };
+      const rows: (string | number)[][] = [];
+      const addSection = (titulo: string) => { rows.push([]); rows.push([titulo]); };
 
-      rows.push(csvLine(["Reporte de estadísticas", tipo === "todo" ? "Todo el histórico" : `Periodo: ${exportData.periodo.tipo}`]));
+      rows.push(["Reporte de estadísticas", tipo === "todo" ? "Todo el histórico" : `Periodo: ${exportData.periodo.tipo}`]);
 
       addSection("Resumen");
-      rows.push(csvLine(["Ventas totales", exportData.resumen.total_ventas]));
-      rows.push(csvLine(["Ingresos totales", exportData.resumen.ingresos_totales]));
-      rows.push(csvLine(["Ticket promedio", exportData.resumen.ticket_promedio]));
-      rows.push(csvLine(["Ventas canceladas", exportData.resumen.ventas_canceladas]));
+      rows.push(["Ventas totales", exportData.resumen.total_ventas]);
+      rows.push(["Ingresos totales", exportData.resumen.ingresos_totales]);
+      rows.push(["Ticket promedio", exportData.resumen.ticket_promedio]);
+      rows.push(["Ventas canceladas", exportData.resumen.ventas_canceladas]);
 
       addSection("Resumen de ventas");
-      rows.push(csvLine(["Ticket promedio", exportData.estadisticas_descriptivas.media]));
-      rows.push(csvLine(["Ticket típico", exportData.estadisticas_descriptivas.mediana]));
-      rows.push(csvLine(["Monto más común", exportData.estadisticas_descriptivas.moda.join(" / ")]));
-      rows.push(csvLine(["Qué tanto varían tus ventas", exportData.estadisticas_descriptivas.desviacion_estandar]));
-      rows.push(csvLine(["Ticket mínimo", exportData.estadisticas_descriptivas.min_total]));
-      rows.push(csvLine(["Ticket máximo", exportData.estadisticas_descriptivas.max_total]));
+      rows.push(["Ticket promedio", exportData.estadisticas_descriptivas.media]);
+      rows.push(["Ticket típico", exportData.estadisticas_descriptivas.mediana]);
+      rows.push(["Monto más común", exportData.estadisticas_descriptivas.moda.join(" / ")]);
+      rows.push(["Qué tanto varían tus ventas", exportData.estadisticas_descriptivas.desviacion_estandar]);
+      rows.push(["Ticket mínimo", exportData.estadisticas_descriptivas.min_total]);
+      rows.push(["Ticket máximo", exportData.estadisticas_descriptivas.max_total]);
 
       addSection("Ventas por día");
-      rows.push(csvLine(["Fecha", "Total", "Cantidad"]));
-      exportData.ventas_por_dia.forEach((d) => rows.push(csvLine([d.fecha, d.total_dia, d.cantidad])));
+      rows.push(["Fecha", "Total", "Cantidad"]);
+      exportData.ventas_por_dia.forEach((d) => rows.push([d.fecha, d.total_dia, d.cantidad]));
 
       addSection("Top productos");
-      rows.push(csvLine(["Producto", "Código", "Categoría", "Marca", "Unidades", "Ingresos", "Veces vendido"]));
-      exportData.top_productos.forEach((p) => rows.push(csvLine([p.nombre_producto, p.codigo_producto, p.nombre_categoria, p.nombre_marca, p.total_unidades, p.total_ingresos, p.veces_vendido])));
+      rows.push(["Producto", "Código", "Categoría", "Marca", "Unidades", "Ingresos", "Veces vendido"]);
+      exportData.top_productos.forEach((p) => rows.push([p.nombre_producto, p.codigo_producto, p.nombre_categoria, p.nombre_marca, p.total_unidades, p.total_ingresos, p.veces_vendido]));
 
       addSection("Top clientes");
-      rows.push(csvLine(["Nombre", "Correo", "Total compras", "Cantidad pedidos"]));
-      exportData.top_clientes.forEach((c) => rows.push(csvLine([c.nombre, c.correo, c.total_compras, c.cantidad_pedidos])));
+      rows.push(["Nombre", "Correo", "Total compras", "Cantidad pedidos"]);
+      exportData.top_clientes.forEach((c) => rows.push([c.nombre, c.correo, c.total_compras, c.cantidad_pedidos]));
 
       addSection("Ingresos por categoría");
-      rows.push(csvLine(["Categoría", "Ingresos", "Unidades"]));
-      exportData.ingresos_por_categoria.forEach((c) => rows.push(csvLine([c.nombre_categoria, c.total_ingresos, c.total_unidades])));
+      rows.push(["Categoría", "Ingresos", "Unidades"]);
+      exportData.ingresos_por_categoria.forEach((c) => rows.push([c.nombre_categoria, c.total_ingresos, c.total_unidades]));
 
-      const csvContent = "\uFEFF" + rows.join("\n");
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
+      const XLSX = await import("xlsx");
+      const worksheet = XLSX.utils.aoa_to_sheet(rows);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Reporte");
       const fechaHoy = new Date().toISOString().slice(0, 10);
-      a.href = url;
-      a.download = `reporte-${tipo === "todo" ? "completo" : periodo}-${fechaHoy}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      XLSX.writeFile(workbook, `reporte-${tipo === "todo" ? "completo" : periodo}-${fechaHoy}.xlsx`);
     } catch (e) {
       setError(String(e));
     } finally {
