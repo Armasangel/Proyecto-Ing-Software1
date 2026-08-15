@@ -21,7 +21,8 @@ describe("GET /api/stats", () => {
       .mockResolvedValueOnce({ rows: [{ n: 5 }] })
       .mockResolvedValueOnce({ rows: [{ n: 10 }] })
       .mockResolvedValueOnce({ rows: [{ n: 2 }] })
-      .mockResolvedValueOnce({ rows: [{ n: 3 }] });
+      .mockResolvedValueOnce({ rows: [{ n: 3 }] })
+      .mockResolvedValueOnce({ rows: [{ n: 1 }] });
     const req = createMockRequest("/api/stats", { user: testUserDueno });
     const res = await GET(req);
     const data = await res.json();
@@ -30,6 +31,7 @@ describe("GET /api/stats", () => {
       ventas: 10,
       pendientes: 2,
       proveedores: 3,
+      clientesBloqueados: 1,
     });
   });
 
