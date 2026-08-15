@@ -60,6 +60,13 @@ describe("login-rate-limit", () => {
     await expect(isLoginRateLimited("203.0.113.50")).resolves.toBe(false);
   });
 
+  it("fails open (not limited) when the DB query errors", async () => {
+    mockPool.query.mockRejectedValue(new Error("db down"));
+    await expect(isLoginRateLimited("203.0.113.50")).resolves.toBe(false);
+    await expect(recordFailedLogin("203.0.113.50")).resolves.toBeUndefined();
+    await expect(clearFailedLogins("203.0.113.50")).resolves.toBeUndefined();
+  });
+
   it("records failures and blocks after MAX attempts", async () => {
     let intentos = 0;
     mockPool.query.mockImplementation(async (sql: string) => {

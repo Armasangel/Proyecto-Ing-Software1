@@ -23,56 +23,72 @@ export function getClientIp(req: NextRequest): string {
  * Verifica si el IP está bloqueado por exceder los intentos de login.
  * Persistido en Postgres (tabla login_intento) para compartirse entre
  * instancias y sobrevivir reinicios.
+ *
+ * Si la consulta falla, se degrada a "no bloqueado" (fail-open) con log en el
+ * servidor: un fallo del rate-limit nunca debe tumbar el login completo.
  */
 export async function isLoginRateLimited(ip: string): Promise<boolean> {
-  const result = await pool.query<{ bloqueado_hasta: Date | null }>(
-    `SELECT bloqueado_hasta FROM login_intento WHERE ip = $1`,
-    [ip]
-  );
-  const bloqueadoHasta = result.rows[0]?.bloqueado_hasta;
-  if (!bloqueadoHasta) return false;
-  return new Date(bloqueadoHasta).getTime() > Date.now();
+  try {
+    const result = await pool.query<{ bloqueado_hasta: Date | null }>(
+      `SELECT bloqueado_hasta FROM login_intento WHERE ip = $1`,
+      [ip]
+    );
+    const bloqueadoHasta = result.rows[0]?.bloqueado_hasta;
+    if (!bloqueadoHasta) return false;
+    return new Date(bloqueadoHasta).getTime() > Date.now();
+  } catch (error) {
+    console.error("[LOGIN-RATE-LIMIT] isLoginRateLimited:", error);
+    return false;
+  }
 }
 
 /**
  * Registra un intento fallido. La ventana se reinicia si pasó el tiempo del
  * bloqueo sin nuevos intentos; al alcanzar el máximo, el IP queda bloqueado
- * por LOGIN_RATE_LIMIT_WINDOW_MS.
+ * por LOGIN_RATE_LIMIT_WINDOW_MS. Best-effort: un error aquí solo se loguea.
  */
 export async function recordFailedLogin(ip: string): Promise<void> {
-  const result = await pool.query<{ intentos: number }>(
-    `INSERT INTO login_intento (ip, intentos, bloqueado_hasta, ultimo_intento)
-     VALUES ($1, 1, NULL, NOW())
-     ON CONFLICT (ip) DO UPDATE SET
-       intentos = CASE
-         WHEN login_intento.ultimo_intento <= NOW() - make_interval(secs => $2)
-           THEN 1
-         ELSE login_intento.intentos + 1
-       END,
-       ultimo_intento = NOW(),
-       bloqueado_hasta = CASE
-         WHEN login_intento.bloqueado_hasta IS NOT NULL
-          AND login_intento.bloqueado_hasta > NOW()
-           THEN login_intento.bloqueado_hasta
-         ELSE NULL
-       END
-     RETURNING intentos`,
-    [ip, LOGIN_RATE_LIMIT_WINDOW_SECONDS]
-  );
-
-  const intentos = result.rows[0]?.intentos ?? 0;
-  if (intentos >= LOGIN_RATE_LIMIT_MAX) {
-    await pool.query(
-      `UPDATE login_intento
-       SET bloqueado_hasta = NOW() + make_interval(secs => $2)
-       WHERE ip = $1`,
+  try {
+    const result = await pool.query<{ intentos: number }>(
+      `INSERT INTO login_intento (ip, intentos, bloqueado_hasta, ultimo_intento)
+       VALUES ($1, 1, NULL, NOW())
+       ON CONFLICT (ip) DO UPDATE SET
+         intentos = CASE
+           WHEN login_intento.ultimo_intento <= NOW() - make_interval(secs => $2)
+             THEN 1
+           ELSE login_intento.intentos + 1
+         END,
+         ultimo_intento = NOW(),
+         bloqueado_hasta = CASE
+           WHEN login_intento.bloqueado_hasta IS NOT NULL
+            AND login_intento.bloqueado_hasta > NOW()
+             THEN login_intento.bloqueado_hasta
+           ELSE NULL
+         END
+       RETURNING intentos`,
       [ip, LOGIN_RATE_LIMIT_WINDOW_SECONDS]
     );
+
+    const intentos = result.rows[0]?.intentos ?? 0;
+    if (intentos >= LOGIN_RATE_LIMIT_MAX) {
+      await pool.query(
+        `UPDATE login_intento
+         SET bloqueado_hasta = NOW() + make_interval(secs => $2)
+         WHERE ip = $1`,
+        [ip, LOGIN_RATE_LIMIT_WINDOW_SECONDS]
+      );
+    }
+  } catch (error) {
+    console.error("[LOGIN-RATE-LIMIT] recordFailedLogin:", error);
   }
 }
 
 export async function clearFailedLogins(ip: string): Promise<void> {
-  await pool.query(`DELETE FROM login_intento WHERE ip = $1`, [ip]);
+  try {
+    await pool.query(`DELETE FROM login_intento WHERE ip = $1`, [ip]);
+  } catch (error) {
+    console.error("[LOGIN-RATE-LIMIT] clearFailedLogins:", error);
+  }
 }
 
 /** Borra todos los intentos registrados. Intended for tests / soporte. */
