@@ -1,87 +1,50 @@
+// app/api/ventas/recientes/route.ts
+//
+// GET /api/ventas/recientes?desde=<id_venta>
+//
+// Usado por el dueño para el toast de "venta realizada": el cliente
+// pregunta cada pocos segundos "¿hay ventas con id mayor a X?" y si las
+// hay, las devuelve para mostrar el toast. Solo el dueño puede pedir esto.
+
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
-import { verifyPassword } from "@/lib/auth";
-import { apiError } from "@/lib/api-error";
-import { enviarCodigoVerificacion } from "@/lib/mailer";
-import { fechaExpiracion, generarCodigo, hashCodigo, signPreToken } from "@/lib/verificacion";
+import { getUsuarioFromRequest } from "@/lib/server-auth";
+import { isDuenoTipo } from "@/lib/roles";
 
-export async function POST(req: NextRequest) {
-  try {
-    const body = await req.json();
-    const username = typeof body.username === "string" ? body.username.trim() : "";
-    const password = typeof body.password === "string" ? body.password : "";
-
-    if (!username || !password) {
-      return NextResponse.json(
-        { error: "Usuario y contraseña son obligatorios" },
-        { status: 400 }
-      );
-    }
-
-    const result = await pool.query<{
-      id_usuario: number;
-      nombre: string;
-      correo: string;
-      tipo_usuario: string;
-      contrasena_hash: string;
-    }>(
-      `SELECT id_usuario, nombre, correo, tipo_usuario, contrasena_hash
-       FROM usuario
-       WHERE LOWER(correo) = LOWER($1) AND estado_usuario = TRUE`,
-      [username]
-    );
-
-    if (result.rows.length === 0) {
-      return NextResponse.json({ error: "Credenciales incorrectas" }, { status: 401 });
-    }
-
-    const row = result.rows[0];
-
-    if (!verifyPassword(password, row.contrasena_hash)) {
-      return NextResponse.json({ error: "Credenciales incorrectas" }, { status: 401 });
-    }
-
-    // Usuario y contraseña correctos: paso 1 completo. En vez de dar el
-    // AUTH_COOKIE de una vez, generamos el código de verificación en 2 pasos,
-    // lo guardamos hasheado con vencimiento corto, y se lo mandamos por correo.
-    const codigo = generarCodigo();
-    const codigoHash = hashCodigo(codigo);
-    const expiraEn = fechaExpiracion();
-
-    await pool.query(
-      `INSERT INTO codigo_verificacion (id_usuario, codigo_hash, expira_en)
-       VALUES ($1, $2, $3)`,
-      [row.id_usuario, codigoHash, expiraEn]
-    );
-
-    try {
-      await enviarCodigoVerificacion(row.correo, codigo);
-    } catch (mailError) {
-      console.error("Error enviando código de verificación:", mailError);
-      return NextResponse.json(
-        { error: "No se pudo enviar el código de verificación. Intenta de nuevo en un momento." },
-        { status: 502 }
-      );
-    }
-
-    const preToken = signPreToken(row.id_usuario);
-
-    return NextResponse.json({
-      ok: true,
-      requiere_verificacion: true,
-      pre_token: preToken,
-      correo_enmascarado: enmascararCorreo(row.correo),
-    });
-  } catch (error) {
-    return apiError("LOGIN POST", error);
+export async function GET(req: NextRequest) {
+  const usuario = getUsuarioFromRequest(req);
+  if (!usuario || !isDuenoTipo(usuario.tipo_usuario)) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 403 });
   }
-}
 
-// Muestra el correo parcialmente oculto en el paso 2, ej. "ma***@tienda.com",
-// para confirmarle al usuario a dónde llegó el código sin exponerlo entero.
-function enmascararCorreo(correo: string): string {
-  const [usuario, dominio] = correo.split("@");
-  if (!dominio) return correo;
-  const visible = usuario.slice(0, 2);
-  return `${visible}${"*".repeat(Math.max(usuario.length - 2, 1))}@${dominio}`;
+  const { searchParams } = req.nextUrl;
+  const desde = Number(searchParams.get("desde") ?? "0");
+
+  try {
+    if (!desde || desde <= 0) {
+      const ultimo = await pool.query(`SELECT COALESCE(MAX(id_venta), 0) AS max_id FROM venta`);
+      return NextResponse.json({ ventas: [], ultimo_id: ultimo.rows[0].max_id });
+    }
+
+    const result = await pool.query(
+      `SELECT
+         v.id_venta,
+         v.total,
+         v.fecha_venta,
+         u.nombre AS nombre_empleado
+       FROM venta v
+       LEFT JOIN usuario u ON u.id_usuario = v.id_empleado
+       WHERE v.id_venta > $1
+       ORDER BY v.id_venta ASC
+       LIMIT 20`,
+      [desde]
+    );
+
+    const maxId = result.rows.length > 0 ? result.rows[result.rows.length - 1].id_venta : desde;
+
+    return NextResponse.json({ ventas: result.rows, ultimo_id: maxId });
+  } catch (err) {
+    console.error("Error en GET /api/ventas/recientes:", err);
+    return NextResponse.json({ error: "Error al buscar ventas recientes" }, { status: 500 });
+  }
 }

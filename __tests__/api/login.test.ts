@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import { POST } from "@/app/api/login/route";
-import { createMockRequest, testUserDueno } from "@/__tests__/utils/api-test-utils";
+import { createMockRequest, testUserDueno, testUserEmpleado } from "@/__tests__/utils/api-test-utils";
 import { resetLoginRateLimitStore } from "@/lib/login-rate-limit";
 
 jest.mock("bcryptjs");
@@ -22,6 +22,15 @@ const mockDbRow = {
   nombre: testUserDueno.nombre,
   correo: testUserDueno.correo,
   tipo_usuario: testUserDueno.tipo_usuario,
+  contrasena_hash: "$2a$04$mocked",
+};
+
+// El 2FA solo aplica a colaboradores (EMPLEADO); el dueño entra directo.
+const mockDbEmpleado = {
+  id_usuario: testUserEmpleado.id_usuario,
+  nombre: testUserEmpleado.nombre,
+  correo: testUserEmpleado.correo,
+  tipo_usuario: testUserEmpleado.tipo_usuario,
   contrasena_hash: "$2a$04$mocked",
 };
 
@@ -88,7 +97,7 @@ describe("POST /api/login", () => {
 
   it("on correct credentials, does NOT set the auth cookie yet — sends a code instead", async () => {
     mockPool.query
-      .mockResolvedValueOnce({ rows: [mockDbRow], rowCount: 1 }) // SELECT usuario
+      .mockResolvedValueOnce({ rows: [mockDbEmpleado], rowCount: 1 }) // SELECT usuario
       .mockResolvedValueOnce({ rows: [], rowCount: 1 }); // INSERT codigo_verificacion
     mockBcrypt.compareSync.mockReturnValue(true);
 
@@ -111,14 +120,14 @@ describe("POST /api/login", () => {
 
     expect(mockMailer.enviarCodigoVerificacion).toHaveBeenCalledTimes(1);
     expect(mockMailer.enviarCodigoVerificacion).toHaveBeenCalledWith(
-      mockDbRow.correo,
+      mockDbEmpleado.correo,
       expect.stringMatching(/^\d{6}$/)
     );
   });
 
   it("returns 502 if sending the email fails", async () => {
     mockPool.query
-      .mockResolvedValueOnce({ rows: [mockDbRow], rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [mockDbEmpleado], rowCount: 1 })
       .mockResolvedValueOnce({ rows: [], rowCount: 1 });
     mockBcrypt.compareSync.mockReturnValue(true);
     mockMailer.enviarCodigoVerificacion.mockRejectedValue(new Error("SMTP down"));

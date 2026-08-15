@@ -246,7 +246,7 @@ export async function POST(request: NextRequest) {
 
       for (const p of prepared) {
         const stock = await client.query(
-          `SELECT cantidad_disponible FROM bodega_producto WHERE id_bodega = $1 AND id_producto = $2`,
+          `SELECT cantidad_disponible FROM bodega_producto WHERE id_bodega = $1 AND id_producto = $2 FOR UPDATE`,
           [p.id_bodega, p.id_producto]
         );
         const disponible = stock.rowCount && stock.rows[0] ? Number(stock.rows[0].cantidad_disponible) : 0;

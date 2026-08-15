@@ -9,6 +9,18 @@ import {
 
 const TEST_SECRET = "test-jwt-secret-for-unit-tests";
 
+// NODE_ENV está declarado como readonly en los tipos de Next, así que mutamos
+// process.env a través de un tipo "mutable" solo en los casos que lo necesitan.
+type MutableEnv = { NODE_ENV?: string };
+
+function setNodeEnv(value: string) {
+  (process.env as MutableEnv).NODE_ENV = value;
+}
+
+function unsetNodeEnv() {
+  delete (process.env as MutableEnv).NODE_ENV;
+}
+
 beforeAll(() => {
   process.env.JWT_SECRET = TEST_SECRET;
 });
@@ -30,20 +42,21 @@ describe("getJwtSecret", () => {
 
   it("returns the dev fallback when NODE_ENV=development and no secret set", () => {
     delete process.env.JWT_SECRET;
-    process.env.NODE_ENV = "development";
+    setNodeEnv("development");
     expect(getJwtSecret()).toBe("deposito_san_miguel_secret_key_dev");
     process.env.JWT_SECRET = TEST_SECRET;
-    delete process.env.NODE_ENV;
+    unsetNodeEnv();
   });
 
   it("throws when no JWT_SECRET and not in development", () => {
     const prev = process.env.JWT_SECRET;
     const prevNodeEnv = process.env.NODE_ENV;
     delete process.env.JWT_SECRET;
-    process.env.NODE_ENV = "production";
+    setNodeEnv("production");
     expect(() => getJwtSecret()).toThrow("JWT_SECRET is required");
     process.env.JWT_SECRET = prev;
-    process.env.NODE_ENV = prevNodeEnv;
+    if (prevNodeEnv === undefined) unsetNodeEnv();
+    else setNodeEnv(prevNodeEnv);
   });
 });
 

@@ -2,6 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { AUTH_COOKIE, signAuthToken, verifyPassword } from "@/lib/auth";
 import { apiError } from "@/lib/api-error";
+import { TIPOS_USUARIO } from "@/lib/roles";
+import { enviarCodigoVerificacion } from "@/lib/mailer";
+import {
+  enmascararCorreo,
+  fechaExpiracion,
+  generarCodigo,
+  hashCodigo,
+  signPreToken,
+} from "@/lib/verificacion";
 import {
   clearFailedLogins,
   getClientIp,

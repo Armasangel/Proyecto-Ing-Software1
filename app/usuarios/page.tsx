@@ -35,26 +35,12 @@ const TIPO_META: Record<
     bg: "rgba(88,166,255,.12)",
     border: "rgba(88,166,255,.35)",
   },
-  COMPRADOR: {
-    label: "Comprador",
-    color: "var(--green)",
-    bg: "rgba(63,185,80,.12)",
-    border: "rgba(63,185,80,.35)",
-  },
-  COMPRADOR_MAYOR: {
-    label: "Comprador mayorista",
-    color: "#c084fc",
-    bg: "rgba(192,132,252,.12)",
-    border: "rgba(192,132,252,.35)",
-  },
 };
 
 const TIPOS_OPCIONES: { value: string; label: string }[] = [
   { value: "", label: "Todos los roles" },
   { value: TIPOS_USUARIO.DUENO, label: "Dueño" },
   { value: TIPOS_USUARIO.EMPLEADO, label: "Colaborador" },
-  { value: TIPOS_USUARIO.COMPRADOR, label: "Comprador" },
-  { value: TIPOS_USUARIO.COMPRADOR_MAYOR, label: "Comprador mayorista" },
 ];
 
 const EMPTY_FORM = {
@@ -62,7 +48,7 @@ const EMPTY_FORM = {
   correo: "",
   telefono: "",
   contrasena: "",
-  tipo_usuario: TIPOS_USUARIO.COMPRADOR,
+  tipo_usuario: TIPOS_USUARIO.EMPLEADO,
 };
 
 // ─── Componente principal ─────────────────────────────────────────────────────
@@ -337,7 +323,7 @@ export default function UsuariosPage() {
               </tr>
             ) : (
               usuarios.map((u) => {
-                const meta = TIPO_META[u.tipo_usuario] ?? TIPO_META.COMPRADOR;
+                const meta = TIPO_META[u.tipo_usuario] ?? TIPO_META.EMPLEADO;
                 const esMismoUsuario = u.id_usuario === usuario.id_usuario;
                 return (
                   <tr
@@ -842,10 +828,6 @@ function rolDescripcion(tipo: string): string {
       return "Acceso total: inventario, reportes, estadísticas, usuarios";
     case "EMPLEADO":
       return "Panel de ventas, facturación, productos y bodegas";
-    case "COMPRADOR":
-      return "Tienda en línea (precios al detalle)";
-    case "COMPRADOR_MAYOR":
-      return "Portal mayorista: pedidos y catálogo mayoreo";
     default:
       return "";
   }

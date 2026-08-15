@@ -39,14 +39,14 @@ describe("LoginPage", () => {
 
   it("shows demo user quick-fill buttons", () => {
     render(<LoginPage />);
-    expect(screen.getByText("Dueño")).toBeInTheDocument();
-    expect(screen.getByText("Colaborador")).toBeInTheDocument();
+    expect(screen.getByText(/Dueño/)).toBeInTheDocument();
+    expect(screen.getByText(/Colaborador/)).toBeInTheDocument();
   });
 
   it("fills email when demo button is clicked", async () => {
     const user = userEvent.setup();
     render(<LoginPage />);
-    await user.click(screen.getByText("Dueño"));
+    await user.click(screen.getByText(/Dueño/));
     const emailInput = screen.getByPlaceholderText("usuario@tienda.com") as HTMLInputElement;
     expect(emailInput.value).toBe("dueno@tienda.com");
   });

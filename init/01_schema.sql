@@ -2,6 +2,12 @@
 --  Este archivo corre AUTOMÁTICAMENTE la primera vez que
 --  Docker crea el contenedor de PostgreSQL.
 --  Si la BD ya existe (volumen tienda_data), NO corre de nuevo.
+--
+--  Schema COMPLETO y consolidado (antes repartido en 02_deudas, 02_ordenes,
+--  03_facturacion_secuencia, 04_detalle_venta_cascade y 05_codigo_verificacion).
+--  Para un despliegue a un servidor nuevo (p. ej. server4you), basta con
+--  ejecutar este archivo una sola vez sobre una base vacía.
+--  No ejecutes los scripts 02-05 por separado: sus tablas ya viven aquí.
 
 -- CATEGORIA
 CREATE TABLE categoria (
@@ -80,6 +86,23 @@ CREATE TABLE usuario (
     CONSTRAINT uq_usuario_telefono  UNIQUE (telefono)
 );
 
+-- CODIGO_VERIFICACION (2FA por correo)
+-- Después de validar usuario y contraseña se genera un código de 6 dígitos
+-- con vencimiento corto; el login solo se completa si el código es correcto.
+CREATE TABLE codigo_verificacion (
+    id_codigo       SERIAL          PRIMARY KEY,
+    id_usuario      INT             NOT NULL REFERENCES usuario(id_usuario) ON DELETE CASCADE,
+    codigo_hash     VARCHAR(255)    NOT NULL,
+    creado_en       TIMESTAMP       NOT NULL DEFAULT NOW(),
+    expira_en       TIMESTAMP       NOT NULL,
+    usado           BOOLEAN         NOT NULL DEFAULT FALSE,
+    intentos        INT             NOT NULL DEFAULT 0
+);
+
+-- Búsqueda rápida de "el código vigente más reciente de este usuario".
+CREATE INDEX idx_codigo_verificacion_usuario
+    ON codigo_verificacion (id_usuario, creado_en DESC);
+
 -- BODEGA
 CREATE TABLE bodega (
     id_bodega       SERIAL          PRIMARY KEY,
@@ -153,6 +176,13 @@ CREATE TABLE pago (
     CONSTRAINT fk_pago_venta FOREIGN KEY (id_venta) REFERENCES venta(id_venta)
 );
 
+--  SECUENCIA para el número correlativo de factura.
+--  El número ya no se genera en JavaScript (podía colisionar en el mismo
+--  milisegundo); nextval() garantiza que nunca repite un valor.
+CREATE SEQUENCE factura_numero_seq
+    START WITH 1
+    INCREMENT BY 1;
+
 -- FACTURA
 CREATE TABLE factura (
     id_factura      SERIAL          PRIMARY KEY,
@@ -164,6 +194,63 @@ CREATE TABLE factura (
     CONSTRAINT uq_factura_numero UNIQUE (numero_factura),
     CONSTRAINT uq_factura_venta  UNIQUE (id_venta),
     CONSTRAINT fk_factura_venta  FOREIGN KEY (id_venta) REFERENCES venta(id_venta)
+);
+
+-- DEUDA (cabecera): el dueño crea la deuda manualmente, especificando qué
+-- productos, cuánto se debe, quién debe y desde cuándo.
+CREATE TABLE deuda (
+    id_deuda            SERIAL          PRIMARY KEY,
+    nombre_deudor       VARCHAR(150)    NOT NULL,
+    telefono_deudor     VARCHAR(20),
+    fecha_inicio        DATE            NOT NULL DEFAULT CURRENT_DATE,
+    monto_total         NUMERIC(12,2)   NOT NULL DEFAULT 0,
+    estado_deuda        VARCHAR(20)     NOT NULL DEFAULT 'PENDIENTE'
+                            CHECK (estado_deuda IN ('PENDIENTE', 'PAGADA')),
+    id_usuario          INT             NOT NULL,
+    fecha_creacion       TIMESTAMP       NOT NULL DEFAULT NOW(),
+    CONSTRAINT fk_deuda_usuario FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario)
+);
+
+-- DEUDA_PRODUCTO (detalle: qué productos componen la deuda)
+CREATE TABLE deuda_producto (
+    id_deuda            INT             NOT NULL,
+    id_producto         INT             NOT NULL,
+    cantidad             NUMERIC(12,3)   NOT NULL,
+    precio_unitario      NUMERIC(10,2)   NOT NULL,  -- snapshot del precio al crear la deuda
+    subtotal             NUMERIC(12,2)   NOT NULL,
+    PRIMARY KEY (id_deuda, id_producto),
+    CONSTRAINT fk_dp_deuda    FOREIGN KEY (id_deuda)    REFERENCES deuda(id_deuda) ON DELETE CASCADE,
+    CONSTRAINT fk_dp_producto FOREIGN KEY (id_producto) REFERENCES producto(id_producto)
+);
+
+CREATE INDEX idx_deuda_estado ON deuda(estado_deuda);
+
+-- ORDEN (órdenes de compra)
+CREATE TABLE orden (
+    id_orden        SERIAL          PRIMARY KEY,
+    id_cliente      INT             NOT NULL,
+    id_usuario      INT,
+    fecha_orden     TIMESTAMP       NOT NULL DEFAULT NOW(),
+    estado          VARCHAR(20)     NOT NULL DEFAULT 'PENDIENTE'
+                        CHECK (estado IN ('PENDIENTE','CONFIRMADO','EN_PREPARACION','ENVIADO','ENTREGADO','CANCELADO')),
+    notas           TEXT,
+    total           NUMERIC(12,2)   NOT NULL DEFAULT 0,
+    CONSTRAINT fk_orden_cliente  FOREIGN KEY (id_cliente) REFERENCES cliente(id_cliente),
+    CONSTRAINT fk_orden_usuario  FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario)
+);
+
+-- DETALLE_ORDEN
+CREATE TABLE detalle_orden (
+    id_detalle      SERIAL          PRIMARY KEY,
+    id_orden        INT             NOT NULL,
+    id_producto     INT             NOT NULL,
+    id_bodega       INT,
+    cantidad        NUMERIC(12,3)   NOT NULL,
+    precio_unitario NUMERIC(10,2)   NOT NULL,
+    subtotal        NUMERIC(12,2)   NOT NULL,
+    CONSTRAINT fk_do_orden    FOREIGN KEY (id_orden)    REFERENCES orden(id_orden) ON DELETE CASCADE,
+    CONSTRAINT fk_do_producto FOREIGN KEY (id_producto) REFERENCES producto(id_producto),
+    CONSTRAINT fk_do_bodega   FOREIGN KEY (id_bodega)   REFERENCES bodega(id_bodega)
 );
 
 --  VISTA: deudores en tiempo real (sin tabla redundante)

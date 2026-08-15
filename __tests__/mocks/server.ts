@@ -1,11 +1,10 @@
-import { setupServer, SetupServerApi } from "msw/node";
+import { setupServer, SetupServer } from "msw/node";
 import { handlers } from "./handlers";
 
-let server: SetupServerApi | null = null;
+let server: SetupServer | null = null;
 
-export function createServer() {
-  if (server) return server;
-  server = setupServer(...handlers);
+export function createServer(): SetupServer {
+  if (!server) server = setupServer(...handlers);
   return server;
 }
 
