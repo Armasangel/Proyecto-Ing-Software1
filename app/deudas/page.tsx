@@ -195,6 +195,139 @@ export default function DeudasPage() {
       });
   }, [deudas]);
 
+  // Muestra el mensaje de alerta cuando una deuda vinculada a un cliente
+  // acaba de bloquearlo o desbloquearlo por deuda.
+  function mostrarAlerta(alerta: Alerta | null) {
+    if (!alerta) return;
+    if (alerta.bloqueado) {
+      setAlertaBloqueo(
+        `⚠️ Este cliente alcanzó su límite de deuda (Q${alerta.limite_deuda?.toFixed(2)}). ` +
+          `Deuda pendiente: Q${alerta.deuda_pendiente.toFixed(2)}. Ya no puede comprar ni hacer pedidos.`
+      );
+    } else if (alerta.cambioEstado) {
+      setAlertaBloqueo("✓ El cliente volvió a estar por debajo de su límite y puede comprar de nuevo.");
+    } else {
+      setAlertaBloqueo("");
+    }
+    cargarClientes();
+  }
+
+  const clienteSeleccionado = clientes.find((c) => String(c.id_cliente) === form.id_cliente);
+
+  function deudaPendienteDe(id_cliente: number): number {
+    return deudas
+      .filter((d) => d.id_cliente === id_cliente && d.estado_deuda === "PENDIENTE")
+      .reduce((acc, d) => acc + Number(d.monto_total), 0);
+  }
+
+  const clientesFiltrados =
+    busquedaCliente.trim() === ""
+      ? []
+      : clientes.filter((c) => c.nombre.toLowerCase().includes(busquedaCliente.trim().toLowerCase()));
+
+  function seleccionarCliente(c: Cliente) {
+    setForm((f) => ({ ...f, id_cliente: String(c.id_cliente) }));
+    setBusquedaCliente(c.nombre);
+    setSugerenciasAbiertas(false);
+  }
+
+  async function crearCliente(): Promise<Cliente | null> {
+    if (!formCliente.nombre.trim()) {
+      setError("El nombre del cliente nuevo es obligatorio");
+      return null;
+    }
+    const limiteInicial =
+      formCliente.limite_deuda === "" ? null : Number(formCliente.limite_deuda);
+    if (limiteInicial !== null && (!Number.isFinite(limiteInicial) || limiteInicial < 0)) {
+      setError("El límite de deuda debe ser un número mayor o igual a 0");
+      return null;
+    }
+    const deudaInicial =
+      formCliente.deuda_inicial === "" ? null : Number(formCliente.deuda_inicial);
+    if (deudaInicial !== null && (!Number.isFinite(deudaInicial) || deudaInicial <= 0)) {
+      setError("La deuda inicial debe ser un número mayor a 0");
+      return null;
+    }
+
+    setGuardandoCliente(true);
+    setError("");
+    const res = await fetch("/api/clientes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        nombre: formCliente.nombre,
+        telefono: formCliente.telefono,
+        correo: formCliente.correo,
+        tipo_cliente: formCliente.tipo_cliente,
+        limite_deuda: limiteInicial,
+      }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || "No se pudo crear el cliente.");
+      setGuardandoCliente(false);
+      return null;
+    }
+    const data = await res.json();
+    const nuevo: Cliente = data.cliente;
+
+    // Si se indicó una deuda inicial (ej. un cliente que ya venía debiendo),
+    // se registra de una vez como una deuda "de arrastre" sin productos. Como
+    // el cliente ya tiene su límite recién asignado, esto puede bloquearlo de
+    // inmediato si la deuda inicial ya lo supera.
+    if (deudaInicial !== null) {
+      const resDeuda = await fetch("/api/deudas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nombre_deudor: nuevo.nombre,
+          telefono_deudor: nuevo.telefono,
+          fecha_inicio: new Date().toISOString().slice(0, 10),
+          id_cliente: nuevo.id_cliente,
+          monto_libre: deudaInicial,
+        }),
+      });
+      if (resDeuda.ok) {
+        const dataDeuda = await resDeuda.json();
+        mostrarAlerta(dataDeuda.alerta);
+        cargarDeudas();
+      } else {
+        const dataErr = await resDeuda.json().catch(() => ({}));
+        setError(
+          `Cliente creado, pero no se pudo registrar la deuda inicial: ${
+            dataErr.error || "error desconocido"
+          }`
+        );
+      }
+    }
+
+    setClientes((prev) => [...prev, nuevo].sort((a, b) => a.nombre.localeCompare(b.nombre)));
+    setLimitesEditando((prev) => ({ ...prev, [nuevo.id_cliente]: nuevo.limite_deuda ?? "" }));
+    setCreandoCliente(false);
+    setFormCliente(clienteFormVacio);
+    setGuardandoCliente(false);
+    return nuevo;
+  }
+
+  async function guardarLimite(id_cliente: number) {
+    setGuardandoLimiteId(id_cliente);
+    setAlertaBloqueo("");
+    const valor = limitesEditando[id_cliente] ?? "";
+    const res = await fetch(`/api/clientes/${id_cliente}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ limite_deuda: valor === "" ? null : valor }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      mostrarAlerta(data.alerta);
+    } else {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || "No se pudo guardar el límite.");
+    }
+    setGuardandoLimiteId(null);
+  }
+
   if (!usuario) {
     return <p style={{ padding: "2rem", color: "var(--muted)" }}>Cargando…</p>;
   }

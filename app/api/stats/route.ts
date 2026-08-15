@@ -32,10 +32,5 @@ export async function GET(req: NextRequest) {
     });
   } catch (error) {
     return apiError("STATS GET", error);
-    console.error("[STATS]", error);
-    return NextResponse.json(
-      { stats: { productos: 0, ventas: 0, pendientes: 0, proveedores: 0, clientesBloqueados: 0 } },
-      { status: 200 }
-    );
   }
 }
