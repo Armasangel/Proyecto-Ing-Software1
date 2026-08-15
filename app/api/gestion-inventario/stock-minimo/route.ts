@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
+import { apiError } from "@/lib/api-error";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { isDuenoTipo, isStaffTipo } from "@/lib/roles";
 
@@ -40,10 +41,7 @@ export async function GET(req: NextRequest) {
     `);
     return NextResponse.json({ alertas: result.rows, total: result.rowCount });
   } catch (error) {
-    return NextResponse.json(
-      { error: "Error al obtener alertas de stock", detalle: String(error) },
-      { status: 500 }
-    );
+    return apiError("STOCK MINIMO GET", error);
   }
 }
 
@@ -125,9 +123,6 @@ export async function PATCH(req: NextRequest) {
       client.release();
     }
   } catch (error) {
-    return NextResponse.json(
-      { error: "Error al actualizar stock mínimo", detalle: String(error) },
-      { status: 500 }
-    );
+    return apiError("STOCK MINIMO PATCH", error);
   }
 }

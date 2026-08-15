@@ -7,19 +7,7 @@ import {
   verifyPassword,
 } from "@/lib/auth";
 
-const TEST_SECRET = "test-jwt-secret-for-unit-tests";
-
-// NODE_ENV está declarado como readonly en los tipos de Next, así que mutamos
-// process.env a través de un tipo "mutable" solo en los casos que lo necesitan.
-type MutableEnv = { NODE_ENV?: string };
-
-function setNodeEnv(value: string) {
-  (process.env as MutableEnv).NODE_ENV = value;
-}
-
-function unsetNodeEnv() {
-  delete (process.env as MutableEnv).NODE_ENV;
-}
+const TEST_SECRET = "test-jwt-secret-for-unit-tests-0123456789";
 
 beforeAll(() => {
   process.env.JWT_SECRET = TEST_SECRET;
@@ -40,23 +28,17 @@ describe("getJwtSecret", () => {
     expect(getJwtSecret()).toBe(TEST_SECRET);
   });
 
-  it("returns the dev fallback when NODE_ENV=development and no secret set", () => {
-    delete process.env.JWT_SECRET;
-    setNodeEnv("development");
-    expect(getJwtSecret()).toBe("deposito_san_miguel_secret_key_dev");
+  it("throws when JWT_SECRET is too short", () => {
+    process.env.JWT_SECRET = "short-secret";
+    expect(() => getJwtSecret()).toThrow("JWT_SECRET must be at least 32 characters");
     process.env.JWT_SECRET = TEST_SECRET;
-    unsetNodeEnv();
   });
 
-  it("throws when no JWT_SECRET and not in development", () => {
+  it("throws when no JWT_SECRET is set", () => {
     const prev = process.env.JWT_SECRET;
-    const prevNodeEnv = process.env.NODE_ENV;
     delete process.env.JWT_SECRET;
-    setNodeEnv("production");
     expect(() => getJwtSecret()).toThrow("JWT_SECRET is required");
     process.env.JWT_SECRET = prev;
-    if (prevNodeEnv === undefined) unsetNodeEnv();
-    else setNodeEnv(prevNodeEnv);
   });
 });
 
@@ -92,7 +74,7 @@ describe("signAuthToken / verifyAuthToken", () => {
 
   it("returns null for a token signed with a different secret", () => {
     const token = signAuthToken(usuario);
-    process.env.JWT_SECRET = "different-secret";
+    process.env.JWT_SECRET = "different-secret-that-is-long-enough-for-tests";
     expect(verifyAuthToken(token)).toBeNull();
     process.env.JWT_SECRET = TEST_SECRET;
   });

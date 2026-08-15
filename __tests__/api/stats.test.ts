@@ -33,17 +33,13 @@ describe("GET /api/stats", () => {
     });
   });
 
-  it("returns zero fallback on DB error", async () => {
+  it("returns a generic 500 on DB error", async () => {
     mockPool.query.mockRejectedValue(new Error("db down"));
     const req = createMockRequest("/api/stats", { user: testUserDueno });
     const res = await GET(req);
     const data = await res.json();
-    expect(res.status).toBe(200);
-    expect(data.stats).toEqual({
-      productos: 0,
-      ventas: 0,
-      pendientes: 0,
-      proveedores: 0,
-    });
+    expect(res.status).toBe(500);
+    expect(data.error).toBe("Error interno del servidor");
+    expect(data.stats).toBeUndefined();
   });
 });

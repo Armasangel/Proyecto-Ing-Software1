@@ -388,12 +388,22 @@ export default function EstadisticasPage() {
       rows.push(["Categoría", "Ingresos", "Unidades"]);
       exportData.ingresos_por_categoria.forEach((c) => rows.push([c.nombre_categoria, c.total_ingresos, c.total_unidades]));
 
-      const XLSX = await import("xlsx");
-      const worksheet = XLSX.utils.aoa_to_sheet(rows);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "Reporte");
+      const ExcelJS = await import("exceljs");
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet("Reporte");
+      worksheet.addRows(rows.filter((r) => r.length > 0));
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
       const fechaHoy = new Date().toISOString().slice(0, 10);
-      XLSX.writeFile(workbook, `reporte-${tipo === "todo" ? "completo" : periodo}-${fechaHoy}.xlsx`);
+      a.download = `reporte-${tipo === "todo" ? "completo" : periodo}-${fechaHoy}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
     } catch (e) {
       setError(String(e));
     } finally {

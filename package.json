@@ -14,13 +14,13 @@
   "dependencies": {
     "@types/nodemailer": "^8.0.0",
     "bcryptjs": "^2.4.3",
+    "exceljs": "^4.4.0",
     "jsonwebtoken": "^9.0.3",
     "next": "14.2.35",
-    "nodemailer": "^8.0.9",
+    "nodemailer": "^9.0.5",
     "pg": "^8.11.5",
     "react": "^18",
-    "react-dom": "^18",
-    "xlsx": "^0.18.5"
+    "react-dom": "^18"
   },
   "devDependencies": {
     "@swc/jest": "^0.2.39",

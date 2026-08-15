@@ -1,12 +1,27 @@
 import bcrypt from "bcryptjs";
 import { POST } from "@/app/api/login/route";
 import { createMockRequest, testUserDueno, testUserEmpleado } from "@/__tests__/utils/api-test-utils";
-import { resetLoginRateLimitStore } from "@/lib/login-rate-limit";
+import {
+  clearFailedLogins,
+  isLoginRateLimited,
+  recordFailedLogin,
+  resetLoginRateLimitStore,
+} from "@/lib/login-rate-limit";
 
 jest.mock("bcryptjs");
 
 jest.mock("@/lib/db", () => ({
   pool: { query: jest.fn(), connect: jest.fn() },
+}));
+
+// El rate-limit real se prueba en __tests__/lib/login-rate-limit.test.ts.
+// Aquí se mockea para verificar solo la integración de la ruta con el módulo.
+jest.mock("@/lib/login-rate-limit", () => ({
+  ...jest.requireActual("@/lib/login-rate-limit"),
+  isLoginRateLimited: jest.fn(),
+  recordFailedLogin: jest.fn(),
+  clearFailedLogins: jest.fn(),
+  resetLoginRateLimitStore: jest.fn(),
 }));
 
 jest.mock("@/lib/mailer", () => ({
@@ -46,6 +61,7 @@ describe("POST /api/login", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     resetLoginRateLimitStore();
+    (isLoginRateLimited as jest.Mock).mockResolvedValue(false);
   });
 
   it("returns 400 when username is missing", async () => {
@@ -140,44 +156,38 @@ describe("POST /api/login", () => {
     expect(res.status).toBe(502);
   });
 
-  it("blocks the 6th failed login from the same IP within 1 minute", async () => {
-    mockPool.query.mockResolvedValue({ rows: [mockDbRow], rowCount: 1 });
-    mockBcrypt.compareSync.mockReturnValue(false);
-
-    for (let i = 0; i < 5; i++) {
-      const res = await POST(failedLoginRequest());
-      expect(res.status).toBe(401);
-    }
-
+  it("returns 429 when the rate limiter marks the IP as blocked", async () => {
+    (isLoginRateLimited as jest.Mock).mockResolvedValue(true);
     const blocked = await POST(failedLoginRequest());
     const data = await blocked.json();
     expect(blocked.status).toBe(429);
     expect(data.error).toBe("Demasiados intentos. Intenta de nuevo en un minuto.");
   });
 
-  it("does not rate-limit a different IP after another IP is blocked", async () => {
+  it("passes the client IP from x-forwarded-for to the rate limiter", async () => {
     mockPool.query.mockResolvedValue({ rows: [mockDbRow], rowCount: 1 });
     mockBcrypt.compareSync.mockReturnValue(false);
 
-    for (let i = 0; i < 5; i++) {
-      await POST(failedLoginRequest("203.0.113.10"));
-    }
+    await POST(failedLoginRequest("203.0.113.50"));
+    expect(isLoginRateLimited).toHaveBeenCalledWith("203.0.113.50");
+    expect(recordFailedLogin).toHaveBeenCalledWith("203.0.113.50");
+  });
 
-    const blocked = await POST(failedLoginRequest("203.0.113.10"));
-    expect(blocked.status).toBe(429);
+  it("records a failed login when the password is wrong", async () => {
+    mockPool.query.mockResolvedValue({ rows: [mockDbRow], rowCount: 1 });
+    mockBcrypt.compareSync.mockReturnValue(false);
 
-    const otherIp = await POST(failedLoginRequest("198.51.100.20"));
-    expect(otherIp.status).toBe(401);
+    await POST(failedLoginRequest());
+    expect(recordFailedLogin).toHaveBeenCalledTimes(1);
+    expect(recordFailedLogin).toHaveBeenCalledWith("203.0.113.10");
   });
 
   it("clears failed attempts after a successful login", async () => {
     mockPool.query.mockResolvedValue({ rows: [mockDbRow], rowCount: 1 });
     mockBcrypt.compareSync.mockReturnValue(false);
 
-    for (let i = 0; i < 3; i++) {
-      const res = await POST(failedLoginRequest());
-      expect(res.status).toBe(401);
-    }
+    await POST(failedLoginRequest());
+    expect(recordFailedLogin).toHaveBeenCalledTimes(1);
 
     mockBcrypt.compareSync.mockReturnValue(true);
     const success = await POST(
@@ -188,9 +198,6 @@ describe("POST /api/login", () => {
       })
     );
     expect(success.status).toBe(200);
-
-    mockBcrypt.compareSync.mockReturnValue(false);
-    const afterClear = await POST(failedLoginRequest());
-    expect(afterClear.status).toBe(401);
+    expect(clearFailedLogins).toHaveBeenCalledWith("203.0.113.10");
   });
 });

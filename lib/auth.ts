@@ -3,6 +3,8 @@ import bcrypt from "bcryptjs";
 
 export const AUTH_COOKIE = "auth_token";
 
+export const JWT_SECRET_MIN_LENGTH = 32;
+
 export type AuthUsuario = {
   id_usuario: number
   nombre: string
@@ -12,11 +14,11 @@ export type AuthUsuario = {
 
 export function getJwtSecret(): string {
   const fromEnv = process.env.JWT_SECRET;
-  if (fromEnv) return fromEnv;
-  if (process.env.NODE_ENV === "development") {
-    return "deposito_san_miguel_secret_key_dev";
+  if (!fromEnv) throw new Error("JWT_SECRET is required");
+  if (fromEnv.length < JWT_SECRET_MIN_LENGTH) {
+    throw new Error(`JWT_SECRET must be at least ${JWT_SECRET_MIN_LENGTH} characters`);
   }
-  throw new Error("JWT_SECRET is required");
+  return fromEnv;
 }
 
 export function signAuthToken(usuario: AuthUsuario): string {

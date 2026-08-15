@@ -271,6 +271,14 @@ WHERE v.estado_venta != 'PAGADO'
 GROUP BY v.id_venta, c.nombre, c.correo, v.fecha_venta, v.fecha_limite_pago, v.total
 HAVING v.total - COALESCE(SUM(p.monto), 0) > 0;
 
+--  TABLA DE RATE-LIMIT DE LOGIN (compartida entre instancias vía Postgres)
+CREATE TABLE login_intento (
+    ip              VARCHAR(45)     PRIMARY KEY,
+    intentos        INT             NOT NULL DEFAULT 0,
+    bloqueado_hasta TIMESTAMP,
+    ultimo_intento  TIMESTAMP       NOT NULL DEFAULT NOW()
+);
+
 --  DATOS DE PRUEBA
 INSERT INTO categoria (nombre_categoria) VALUES ('Abarrotes'), ('Lácteos'), ('Bebidas');
 INSERT INTO marca (nombre_marca) VALUES ('Genérico'), ('La Mariposa'), ('Dos Pinos');

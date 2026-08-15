@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
+import { apiError } from "@/lib/api-error";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { isStaffTipo } from "@/lib/roles";
 
@@ -26,10 +27,6 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("[STATS]", error);
-    return NextResponse.json(
-      { stats: { productos: 0, ventas: 0, pendientes: 0, proveedores: 0 } },
-      { status: 200 }
-    );
+    return apiError("STATS GET", error);
   }
 }
