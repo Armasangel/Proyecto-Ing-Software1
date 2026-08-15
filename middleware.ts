@@ -2,7 +2,11 @@
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { AUTH_COOKIE } from "./lib/auth";
+
+// Constantes definidas localmente (y no importadas desde lib/auth) para evitar
+// empaquetar jsonwebtoken/bcryptjs en el bundle de Edge Runtime.
+const AUTH_COOKIE = "auth_token";
+const JWT_SECRET_MIN_LENGTH = 32;
 
 const PROTECTED_PREFIXES = [
   "/dashboard",
@@ -79,15 +83,10 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // Verificar JWT (firma + expiración)
-  const secret =
-    process.env.JWT_SECRET ||
-    (process.env.NODE_ENV === "development"
-      ? "deposito_san_miguel_secret_key_dev"
-      : null);
-
-  if (!secret) {
-    // En producción sin secret configurado, bloquear por seguridad
+  // Verificar JWT (firma + expiración). Exigir un secreto fuerte: sin él, el
+  // middleware bloquea el acceso por seguridad (fail closed).
+  const secret = process.env.JWT_SECRET;
+  if (!secret || secret.length < JWT_SECRET_MIN_LENGTH) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 

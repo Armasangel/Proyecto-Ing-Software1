@@ -28,7 +28,7 @@ describe("DashboardPage", () => {
 
   it("shows loading state before session resolves", () => {
     server.use(
-      rest.get("/api/sesion", () => new Promise(() => {}))
+      rest.get("/api/sesion", () => new Promise<void>(() => {}))
     );
     render(<DashboardPage />);
     expect(screen.getByText("Cargando…")).toBeInTheDocument();

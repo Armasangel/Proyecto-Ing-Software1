@@ -39,8 +39,6 @@ export function createMockRequest(
   });
 }
 
-export { createAuthToken } from "@/lib/auth";
-
 export type MockQueryResult = { rows: Record<string, unknown>[]; rowCount: number | null };
 
 export function mockQueryResult(rows: Record<string, unknown>[]): MockQueryResult {

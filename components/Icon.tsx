@@ -18,7 +18,14 @@ export type IconName =
   | "report"
   | "bill"
   | "money-bag"
-  | "debt";
+  | "debt"
+  | "pencil"
+  | "trash"
+  | "box"
+  | "transfer"
+  | "setting"
+  | "close"
+  | "ticket";
 
 type Props = {
   name: IconName;

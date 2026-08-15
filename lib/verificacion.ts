@@ -66,3 +66,12 @@ export function verifyPreToken(token: string): number | null {
     return null;
   }
 }
+
+// Muestra el correo parcialmente oculto en el paso 2, ej. "ma***@tienda.com",
+// para confirmarle al usuario a dónde llegó el código sin exponerlo entero.
+export function enmascararCorreo(correo: string): string {
+  const [usuario, dominio] = correo.split("@");
+  if (!dominio) return correo;
+  const visible = usuario.slice(0, 2);
+  return `${visible}${"*".repeat(Math.max(usuario.length - 2, 1))}@${dominio}`;
+}
