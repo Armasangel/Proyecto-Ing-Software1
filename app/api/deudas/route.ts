@@ -3,7 +3,7 @@ import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { isStaffTipo, TIPOS_USUARIO } from "@/lib/roles";
 import { apiError, unauthorizedError, validationError } from "@/lib/api-error";
-import { recalcularBloqueoCliente } from "@/lib/deuda-alertas";
+import { recalcularBloqueoCliente, verificarLimiteAntesDeDeuda } from "@/lib/deuda-alertas";
 
 function esDueno(usuario: { tipo_usuario: string } | null) {
   return usuario?.tipo_usuario === TIPOS_USUARIO.DUENO;
@@ -148,6 +148,21 @@ export async function POST(req: NextRequest) {
       });
     } else if (montoLibreNum !== null) {
       montoTotal = montoLibreNum;
+    }
+
+    // Antes de registrar la deuda, si está ligada a un cliente y es por
+    // productos (compra nueva, no un monto_libre de arrastre), verificamos
+    // que el cliente no esté ya bloqueado y que esta deuda no lo lleve a
+    // alcanzar o superar su límite. El monto_libre queda exento porque se usa
+    // para registrar deuda ya existente (ej. un cliente que se da de alta
+    // con deuda previa), que puede legítimamente ya superar el límite recién
+    // asignado.
+    if (idClienteNum !== null && tieneProductos) {
+      const verificacion = await verificarLimiteAntesDeDeuda(client, idClienteNum, montoTotal);
+      if (!verificacion.permitido) {
+        await client.query("ROLLBACK");
+        return validationError(verificacion.motivo || "No se puede registrar esta deuda.");
+      }
     }
 
     const deudaRes = await client.query(

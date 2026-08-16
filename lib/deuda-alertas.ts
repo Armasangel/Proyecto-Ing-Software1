@@ -13,6 +13,71 @@
 
 import { PoolClient } from "pg";
 
+export type ResultadoVerificacionLimite = {
+  permitido: boolean;
+  motivo: string | null;
+  deuda_pendiente_actual: number;
+  limite_deuda: number | null;
+};
+
+// Se corre ANTES de insertar una deuda nueva ligada a un cliente (deudas por
+// compra de productos, no las de "monto_libre"/arrastre). Bloquea la
+// operación si el cliente ya está bloqueado por deuda, o si la deuda nueva
+// haría que su deuda pendiente alcance o supere su límite individual.
+// Usa el mismo criterio (>=) que recalcularBloqueoCliente para que ambas
+// funciones sean consistentes entre sí.
+export async function verificarLimiteAntesDeDeuda(
+  client: PoolClient,
+  id_cliente: number,
+  montoNuevo: number
+): Promise<ResultadoVerificacionLimite> {
+  const clienteRes = await client.query(
+    `SELECT nombre, limite_deuda, estado_cliente FROM cliente WHERE id_cliente = $1 FOR UPDATE`,
+    [id_cliente]
+  );
+  if (clienteRes.rowCount === 0) {
+    throw new Error(`Cliente ${id_cliente} no existe`);
+  }
+  const { nombre, estado_cliente } = clienteRes.rows[0];
+  const limite: number | null =
+    clienteRes.rows[0].limite_deuda === null ? null : Number(clienteRes.rows[0].limite_deuda);
+
+  if (estado_cliente === false) {
+    return {
+      permitido: false,
+      motivo: `${nombre} ya alcanzó su límite de deuda y está bloqueado. No puede adquirir más deuda hasta regularizar su situación.`,
+      deuda_pendiente_actual: 0,
+      limite_deuda: limite,
+    };
+  }
+
+  const sumaRes = await client.query(
+    `SELECT COALESCE(SUM(monto_total), 0) AS total
+     FROM deuda
+     WHERE id_cliente = $1 AND estado_deuda = 'PENDIENTE'`,
+    [id_cliente]
+  );
+  const deudaPendienteActual = Number(sumaRes.rows[0].total);
+
+  if (limite !== null && limite > 0 && deudaPendienteActual + montoNuevo >= limite) {
+    return {
+      permitido: false,
+      motivo: `Esta deuda (Q${montoNuevo.toFixed(2)}) haría que ${nombre} alcance o supere su límite de deuda (Q${limite.toFixed(
+        2
+      )}). Deuda pendiente actual: Q${deudaPendienteActual.toFixed(2)}.`,
+      deuda_pendiente_actual: deudaPendienteActual,
+      limite_deuda: limite,
+    };
+  }
+
+  return {
+    permitido: true,
+    motivo: null,
+    deuda_pendiente_actual: deudaPendienteActual,
+    limite_deuda: limite,
+  };
+}
+
 export type ResultadoAlertaDeuda = {
   id_cliente: number;
   deuda_pendiente: number;

@@ -357,6 +357,59 @@ export async function GET(req: NextRequest) {
       kardexParams
     );
 
+    // ── 15. Deudas / deudores ─────────────────────────────────────────────────
+    //    A diferencia de las demás secciones, esto NO se filtra por el periodo
+    //    seleccionado: refleja el estado actual de la deuda del negocio (quién
+    //    debe y cuánto ahora mismo), no la deuda generada durante el periodo.
+    //    Un "deudor" se identifica por id_cliente cuando la deuda está
+    //    vinculada a un cliente, o por su nombre (normalizado) cuando no lo
+    //    está — mismo criterio que usa la página de Deudas en el frontend.
+    const resumenDeudasQ = await pool.query<{
+      deuda_pendiente_total: string;
+      cantidad_deudores: string;
+      cantidad_deudas_pendientes: string;
+    }>(
+      `SELECT
+         COALESCE(SUM(monto_total), 0)::numeric AS deuda_pendiente_total,
+         COUNT(DISTINCT COALESCE(id_cliente::text, 'n:' || lower(trim(nombre_deudor))))::int AS cantidad_deudores,
+         COUNT(*)::int AS cantidad_deudas_pendientes
+       FROM deuda
+       WHERE estado_deuda = 'PENDIENTE'`
+    );
+
+    const clientesBloqueadosQ = await pool.query<{ n: string }>(
+      `SELECT COUNT(*)::int AS n FROM cliente WHERE estado_cliente = FALSE AND limite_deuda IS NOT NULL`
+    );
+
+    const topDeudoresQ = await pool.query<{
+      id_cliente: string | null;
+      nombre: string;
+      telefono: string | null;
+      limite_deuda: string | null;
+      puede_comprar: boolean;
+      deuda_pendiente: string;
+      cantidad_deudas: string;
+    }>(
+      `SELECT
+         MIN(d.id_cliente)::text                                AS id_cliente,
+         MIN(COALESCE(c.nombre, d.nombre_deudor))                AS nombre,
+         MIN(d.telefono_deudor)                                  AS telefono,
+         MAX(c.limite_deuda)::numeric                            AS limite_deuda,
+         BOOL_AND(COALESCE(c.estado_cliente, TRUE))              AS puede_comprar,
+         SUM(d.monto_total)::numeric                             AS deuda_pendiente,
+         COUNT(*)::int                                           AS cantidad_deudas
+       FROM deuda d
+       LEFT JOIN cliente c ON c.id_cliente = d.id_cliente
+       WHERE d.estado_deuda = 'PENDIENTE'
+       GROUP BY COALESCE(d.id_cliente::text, 'n:' || lower(trim(d.nombre_deudor)))
+       ORDER BY deuda_pendiente DESC
+       LIMIT 10`
+    );
+
+    const resumenDeudas = resumenDeudasQ.rows[0];
+    const deudaPendienteTotal = Number(resumenDeudas?.deuda_pendiente_total ?? 0);
+    const cantidadDeudores = Number(resumenDeudas?.cantidad_deudores ?? 0);
+
     // ─── Respuesta ────────────────────────────────────────────────────────────
     const resumen = resumenQ.rows[0];
 
@@ -457,6 +510,26 @@ export async function GET(req: NextRequest) {
         total_movimientos: Number(r.total_movimientos),
         total_unidades:    Number(r.total_unidades),
       })),
+
+      deudas: {
+        resumen: {
+          deuda_pendiente_total:      deudaPendienteTotal,
+          cantidad_deudores:          cantidadDeudores,
+          cantidad_deudas_pendientes: Number(resumenDeudas?.cantidad_deudas_pendientes ?? 0),
+          clientes_bloqueados:        Number(clientesBloqueadosQ.rows[0]?.n ?? 0),
+          deuda_promedio_por_deudor:
+            cantidadDeudores > 0 ? Math.round((deudaPendienteTotal / cantidadDeudores) * 100) / 100 : 0,
+        },
+        top_deudores: topDeudoresQ.rows.map((r) => ({
+          id_cliente:      r.id_cliente !== null ? Number(r.id_cliente) : null,
+          nombre:          r.nombre,
+          telefono:        r.telefono,
+          limite_deuda:    r.limite_deuda !== null ? Number(r.limite_deuda) : null,
+          puede_comprar:   r.id_cliente !== null ? r.puede_comprar : null,
+          deuda_pendiente: Number(r.deuda_pendiente),
+          cantidad_deudas: Number(r.cantidad_deudas),
+        })),
+      },
     });
 
   } catch (error) {

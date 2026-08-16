@@ -76,6 +76,24 @@ type EstadisticasData = {
     total_movimientos: number;
     total_unidades: number;
   }[];
+  deudas: {
+    resumen: {
+      deuda_pendiente_total: number;
+      cantidad_deudores: number;
+      cantidad_deudas_pendientes: number;
+      clientes_bloqueados: number;
+      deuda_promedio_por_deudor: number;
+    };
+    top_deudores: {
+      id_cliente: number | null;
+      nombre: string;
+      telefono: string | null;
+      limite_deuda: number | null;
+      puede_comprar: boolean | null;
+      deuda_pendiente: number;
+      cantidad_deudas: number;
+    }[];
+  };
 };
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
@@ -388,6 +406,24 @@ export default function EstadisticasPage() {
       rows.push(["Categoría", "Ingresos", "Unidades"]);
       exportData.ingresos_por_categoria.forEach((c) => rows.push([c.nombre_categoria, c.total_ingresos, c.total_unidades]));
 
+      addSection("Deudas y deudores (estado actual)");
+      rows.push(["Deuda pendiente total", exportData.deudas.resumen.deuda_pendiente_total]);
+      rows.push(["Deudores activos", exportData.deudas.resumen.cantidad_deudores]);
+      rows.push(["Deudas pendientes", exportData.deudas.resumen.cantidad_deudas_pendientes]);
+      rows.push(["Clientes bloqueados por deuda", exportData.deudas.resumen.clientes_bloqueados]);
+      rows.push(["Deuda promedio por deudor", exportData.deudas.resumen.deuda_promedio_por_deudor]);
+      rows.push([]);
+      rows.push(["Top deudores", "Teléfono", "Deuda pendiente", "Límite", "Estado"]);
+      exportData.deudas.top_deudores.forEach((d) =>
+        rows.push([
+          d.nombre,
+          d.telefono ?? "",
+          d.deuda_pendiente,
+          d.limite_deuda ?? "",
+          d.id_cliente === null ? "Sin vincular" : d.puede_comprar ? "Activo" : "Bloqueado",
+        ])
+      );
+
       const ExcelJS = await import("exceljs");
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet("Reporte");
@@ -663,6 +699,63 @@ export default function EstadisticasPage() {
                       </div>
                     </div>
                   ))}
+                </div>
+              )}
+            </Card>
+          </div>
+
+          {/* Fila 7 — Deudas y deudores (estado actual, no filtrado por periodo) */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+            <div style={s.statsGrid}>
+              <StatCard icon="money-bag" label="Deuda pendiente"       value={q(data.deudas.resumen.deuda_pendiente_total)} sub={`${data.deudas.resumen.cantidad_deudas_pendientes} deuda${data.deudas.resumen.cantidad_deudas_pendientes !== 1 ? "s" : ""} sin pagar`} />
+              <StatCard icon="ticket"   label="Deudores activos"       value={data.deudas.resumen.cantidad_deudores.toLocaleString("es-GT")} sub="con deuda pendiente" />
+              <StatCard icon="close"    label="Clientes bloqueados"    value={data.deudas.resumen.clientes_bloqueados.toLocaleString("es-GT")} sub="alcanzaron su límite de deuda" />
+              <StatCard icon="bill"     label="Deuda promedio"         value={q(data.deudas.resumen.deuda_promedio_por_deudor)} sub="por deudor" />
+            </div>
+
+            <Card title="Top deudores (deuda pendiente actual)">
+              {data.deudas.top_deudores.length === 0 ? <EmptyChart label="No hay deudas pendientes" /> : (
+                <div style={{ overflowX: "auto" }}>
+                  <table style={s.table}>
+                    <thead>
+                      <tr>
+                        <th style={s.th}>#</th>
+                        <th style={s.th}>Persona</th>
+                        <th style={s.th}>Estado</th>
+                        <th style={{ ...s.th, textAlign: "right" }}>Deuda pendiente</th>
+                        <th style={{ ...s.th, textAlign: "right" }}>Deudas</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.deudas.top_deudores.map((d, i) => (
+                        <tr key={d.id_cliente ?? d.nombre} style={{ borderTop: "1px solid var(--border)" }}>
+                          <td style={{ ...s.td, color: i === 0 ? "var(--accent)" : "var(--muted)", fontWeight: i === 0 ? 700 : 400, width: 28 }}>
+                            {i === 0 ? <Icon name="increase" variant="dark" size={16} /> : i + 1}
+                          </td>
+                          <td style={s.td}>
+                            <div style={{ fontWeight: 500, fontSize: "0.85rem" }}>{d.nombre}</div>
+                            {d.telefono && <div style={{ fontSize: "0.72rem", color: "var(--muted)" }}>{d.telefono}</div>}
+                          </td>
+                          <td style={s.td}>
+                            {d.id_cliente === null ? (
+                              <span style={{ fontSize: "0.78rem", color: "var(--muted)" }}>Sin vincular</span>
+                            ) : (
+                              <span style={{ fontSize: "0.78rem", fontWeight: 600, color: d.puede_comprar ? "var(--green)" : "var(--red)" }}>
+                                {d.puede_comprar ? "Activo" : "Bloqueado"}
+                              </span>
+                            )}
+                          </td>
+                          <td style={{ ...s.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                            {q(d.deuda_pendiente)}
+                            {d.limite_deuda !== null && (
+                              <div style={{ fontSize: "0.7rem", color: "var(--muted)" }}>límite {q(d.limite_deuda)}</div>
+                            )}
+                          </td>
+                          <td style={{ ...s.td, textAlign: "right" }}>{d.cantidad_deudas}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </Card>
