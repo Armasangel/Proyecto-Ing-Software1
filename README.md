@@ -56,6 +56,18 @@ Eso es todo. Docker levanta automáticamente:
 > docker compose up
 > ```
 
+Para correr la suite de tests (Jest 29 + React Testing Library + MSW v1) dentro de Docker:
+
+```bash
+# Una vez (levanta la BD si hace falta)
+docker compose run --rm test
+
+# Si la app ya está corriendo
+docker compose exec app npm test
+```
+
+Si cambiaste dependencias, reconstruye la imagen: `docker compose build --no-cache app`.
+
 ---
 
 ## 🔐 Usuarios de prueba
