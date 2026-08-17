@@ -133,7 +133,7 @@ El responsable del repo debe activar estas reglas en **Settings → Branches**:
 ### Comandos
 
 ```bash
-# Ejecutar toda la suite
+# Ejecutar toda la suite (local)
 npm test
 
 # Modo watch (re-ejecuta al cambiar archivos)
@@ -141,7 +141,15 @@ npm run test:watch
 
 # Reporte de cobertura
 npm run test:coverage
+
+# Suite dentro de Docker (levanta la BD si hace falta)
+docker compose run --rm test
+
+# Suite contra un contenedor app que ya está corriendo
+docker compose exec app npm test
 ```
+
+Jest 29, React Testing Library y MSW v1 se instalan en la imagen (`npm ci` con `NODE_ENV=development`). Si cambiaste `package.json`, reconstruye: `docker compose build --no-cache app`.
 
 ### Convenciones
 
@@ -184,6 +192,9 @@ docker compose up
 
 # Ver logs
 docker compose logs -f app
+
+# Correr tests en Docker
+docker compose run --rm test
 
 # Bajar contenedores
 docker compose down

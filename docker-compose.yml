@@ -22,6 +22,23 @@ services:
         condition: service_healthy
     command: npm run dev
 
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - NODE_ENV=test
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET no está definido — copia .env.example a .env}
+      - DATABASE_URL=postgresql://dsm_user:dsm_password@db:5432/deposito_san_miguel
+    volumes:
+      - .:/app
+      - /app/node_modules
+    depends_on:
+      db:
+        condition: service_healthy
+    command: npm test -- --ci
+    profiles: ["test"]
+
   db:
     image: postgres:16-alpine
     environment:

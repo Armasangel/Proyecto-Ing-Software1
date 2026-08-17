@@ -3,7 +3,9 @@ FROM node:22-alpine
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm install
+# NODE_ENV=development so npm ci keeps Jest / RTL / MSW (devDependencies)
+ENV NODE_ENV=development
+RUN npm ci
 
 COPY . .
 
