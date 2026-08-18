@@ -73,8 +73,10 @@ type StockActualizado = {
 };
 
 type TabKey = "stock" | "operaciones" | "kardex" | "bodegas";
+type PageSize = 10 | 50;
 
 const EMPTY_BODEGA_FORM = { nombre_bodega: "", ubicacion: "" };
+const PAGE_SIZES: PageSize[] = [10, 50];
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
@@ -94,15 +96,22 @@ export default function InventarioPage() {
   const [soloBajoMinimo, setSoloBajoMinimo] = useState(false);
   const [incluirInactivos, setIncluirInactivos] = useState(false);
 
+  // Búsqueda (independiente por pestaña)
+  const [qStock, setQStock] = useState("");
+  const [qKardex, setQKardex] = useState("");
+  const [qBodegas, setQBodegas] = useState("");
+
+  // Paginación
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState<PageSize>(10);
+
   // Stock
   const [stock, setStock] = useState<StockRow[]>([]);
   const [resumen, setResumen] = useState<{ filas: number; bajo_minimo: number } | null>(null);
-  const [loadingStock, setLoadingStock] = useState(false);
   const [minEdits, setMinEdits] = useState<Record<string, string>>({});
 
   // Kardex
   const [kardex, setKardex] = useState<KardexRow[]>([]);
-  const [loadingKardex, setLoadingKardex] = useState(false);
 
   // Operaciones: Entrada
   const [entradaForm, setEntradaForm] = useState({ id_bodega: "", id_producto: "", cantidad: "", tipo_ingreso: "UNIDADES", descripcion: "" });
@@ -149,7 +158,7 @@ export default function InventarioPage() {
     const p = new URLSearchParams();
     if (filtroBodega) p.set("id_bodega", filtroBodega);
     if (filtroProducto) p.set("id_producto", filtroProducto);
-    p.set("limit", "200");
+    p.set("limit", "500");
     return `?${p.toString()}`;
   }, [filtroBodega, filtroProducto]);
 
@@ -171,7 +180,6 @@ export default function InventarioPage() {
   }, []);
 
   const cargarStock = useCallback(async () => {
-    setLoadingStock(true);
     try {
       const r = await fetch(`/api/gestion-inventario${stockQuery}`);
       const d = await r.json();
@@ -179,18 +187,15 @@ export default function InventarioPage() {
       setStock(d.stock || []);
       setResumen(d.resumen || null);
     } catch (e) { showToast(String(e), "err"); }
-    finally { setLoadingStock(false); }
   }, [stockQuery]);
 
   const cargarKardex = useCallback(async () => {
-    setLoadingKardex(true);
     try {
       const r = await fetch(`/api/gestion-inventario/kardex${kardexQuery}`);
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || "Error al cargar kardex");
       setKardex(d.movimientos || []);
     } catch (e) { showToast(String(e), "err"); }
-    finally { setLoadingKardex(false); }
   }, [kardexQuery]);
 
   useEffect(() => {
@@ -204,6 +209,50 @@ export default function InventarioPage() {
     if (!usuario || tab !== "kardex") return;
     cargarKardex();
   }, [usuario, tab, cargarKardex]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [tab, qStock, qKardex, qBodegas, filtroBodega, filtroProducto, soloBajoMinimo, incluirInactivos, perPage]);
+
+  const stockFiltrado = useMemo(
+    () =>
+      stock.filter((r) =>
+        matchesQuery(
+          qStock,
+          r.nombre_bodega,
+          r.ubicacion,
+          r.codigo_producto,
+          r.nombre_producto,
+          r.nombre_categoria,
+          r.nombre_marca
+        )
+      ),
+    [stock, qStock]
+  );
+
+  const kardexFiltrado = useMemo(
+    () =>
+      kardex.filter((m) =>
+        matchesQuery(
+          qKardex,
+          m.nombre_bodega,
+          m.codigo_producto,
+          m.nombre_producto,
+          m.descripcion,
+          m.tipo_movimiento
+        )
+      ),
+    [kardex, qKardex]
+  );
+
+  const bodegasFiltradas = useMemo(
+    () => bodegas.filter((b) => matchesQuery(qBodegas, b.nombre_bodega, b.ubicacion, b.id_bodega)),
+    [bodegas, qBodegas]
+  );
+
+  const stockPage = useMemo(() => paginate(stockFiltrado, page, perPage), [stockFiltrado, page, perPage]);
+  const kardexPage = useMemo(() => paginate(kardexFiltrado, page, perPage), [kardexFiltrado, page, perPage]);
+  const bodegasPage = useMemo(() => paginate(bodegasFiltradas, page, perPage), [bodegasFiltradas, page, perPage]);
 
   // ── Operaciones ────────────────────────────────────────────────────────────
 
@@ -334,26 +383,33 @@ export default function InventarioPage() {
             ))}
           </div>
 
-          {/* Filtros comunes (stock y kardex) */}
+          {/* Búsqueda + filtros en fila (stock y kardex) */}
           {(tab === "stock" || tab === "kardex") && (
-            <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginTop: "1rem" }}>
-              <select value={filtroBodega} onChange={e => setFiltroBodega(e.target.value)} style={s.select}>
-                <option value="">Todas las bodegas</option>
-                {bodegasSimple.map(b => <option key={b.id_bodega} value={b.id_bodega}>{b.nombre_bodega}</option>)}
-              </select>
-              <select value={filtroProducto} onChange={e => setFiltroProducto(e.target.value)} style={{ ...s.select, minWidth: 260 }}>
-                <option value="">Todos los productos</option>
-                {productos.map(p => <option key={p.id_producto} value={p.id_producto}>[{p.codigo_producto}] {p.nombre_producto}{!p.estado_producto ? " (inactivo)" : ""}</option>)}
-              </select>
+            <div style={s.filterBlock}>
+              <div style={s.toolbar}>
+                <input
+                  type="search"
+                  value={tab === "stock" ? qStock : qKardex}
+                  onChange={(e) => (tab === "stock" ? setQStock(e.target.value) : setQKardex(e.target.value))}
+                  placeholder={tab === "stock" ? "Buscar producto, código, bodega…" : "Buscar movimiento, producto, bodega…"}
+                  aria-label={tab === "stock" ? "Buscar en stock" : "Buscar en kardex"}
+                  style={s.searchInput}
+                />
+                <select value={filtroBodega} onChange={e => setFiltroBodega(e.target.value)} style={s.selectInline} aria-label="Filtrar por bodega">
+                  <option value="">Todas las bodegas</option>
+                  {bodegasSimple.map(b => <option key={b.id_bodega} value={b.id_bodega}>{b.nombre_bodega}</option>)}
+                </select>
+                <select value={filtroProducto} onChange={e => setFiltroProducto(e.target.value)} style={{ ...s.selectInline, minWidth: 220 }} aria-label="Filtrar por producto">
+                  <option value="">Todos los productos</option>
+                  {productos.map(p => <option key={p.id_producto} value={p.id_producto}>[{p.codigo_producto}] {p.nombre_producto}{!p.estado_producto ? " (inactivo)" : ""}</option>)}
+                </select>
+              </div>
               {tab === "stock" && (
-                <>
+                <div style={s.checkRow}>
                   <label style={s.check}><input type="checkbox" checked={soloBajoMinimo} onChange={e => setSoloBajoMinimo(e.target.checked)} style={{ accentColor: "var(--accent)" }} /> Solo bajo mínimo</label>
                   <label style={s.check}><input type="checkbox" checked={incluirInactivos} onChange={e => setIncluirInactivos(e.target.checked)} style={{ accentColor: "var(--accent)" }} /> Incluir inactivos</label>
-                </>
+                </div>
               )}
-              <button type="button" onClick={() => tab === "stock" ? cargarStock() : cargarKardex()} style={s.btnGhost} disabled={loadingStock || loadingKardex}>
-                {(loadingStock || loadingKardex) ? "Actualizando…" : "Actualizar"}
-              </button>
             </div>
           )}
         </div>
@@ -362,49 +418,59 @@ export default function InventarioPage() {
             TAB: STOCK
         ══════════════════════════════════════════════════════════════════ */}
         {tab === "stock" && (
-          <div style={{ ...s.card, padding: 0, overflow: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 980 }}>
-              <thead>
-                <tr style={{ background: "var(--surface2)" }}>
-                  <th style={s.th}>Bodega</th>
-                  <th style={s.th}>Producto</th>
-                  <th style={{ ...s.th, textAlign: "right" }}>Stock</th>
-                  <th style={{ ...s.th, textAlign: "right" }}>Mínimo</th>
-                  <th style={s.th}>Alerta</th>
-                  <th style={s.th}>Última act.</th>
-                  <th style={s.th}>Guardar mínimo</th>
-                </tr>
-              </thead>
-              <tbody>
-                {stock.length === 0 ? (
-                  <tr><td colSpan={7} style={{ ...s.td, textAlign: "center", padding: "2rem", color: "var(--muted)" }}>No hay filas para estos filtros.</td></tr>
-                ) : stock.map(r => {
-                  const key = `${r.id_bodega}:${r.id_producto}`;
-                  const minVal = minEdits[key] ?? String(r.stock_minimo);
-                  return (
-                    <tr key={key} style={{ borderTop: "1px solid var(--border)" }}>
-                      <td style={s.td}>
-                        <div style={{ fontWeight: 600 }}>{r.nombre_bodega}</div>
-                        <div style={{ fontSize: "0.78rem", color: "var(--muted)" }}>{r.ubicacion || "—"}</div>
-                      </td>
-                      <td style={s.td}>
-                        <div style={{ fontWeight: 600 }}><code style={s.code}>{r.codigo_producto}</code> {r.nombre_producto}</div>
-                        <div style={{ fontSize: "0.78rem", color: "var(--muted)" }}>{r.nombre_categoria} · {r.nombre_marca} · {r.unidad_medida}{!r.estado_producto ? " · inactivo" : ""}</div>
-                      </td>
-                      <td style={{ ...s.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{Number(r.cantidad_disponible).toFixed(3)}</td>
-                      <td style={{ ...s.td, textAlign: "right" }}>
-                        <input value={minVal} onChange={e => setMinEdits(m => ({ ...m, [key]: e.target.value }))} style={{ ...s.select, padding: "0.45rem 0.55rem", maxWidth: 120, textAlign: "right" }} />
-                      </td>
-                      <td style={s.td}>{r.bajo_minimo ? <span style={s.badgeWarn}>Bajo mínimo</span> : <span style={s.badgeOk}>OK</span>}</td>
-                      <td style={{ ...s.td, fontSize: "0.82rem", color: "var(--muted)" }}>{new Date(r.ultima_actualizacion).toLocaleString("es-GT")}</td>
-                      <td style={s.td}>
-                        <button type="button" style={s.btnPrimary} onClick={() => void patchMinimo(r.id_bodega, r.id_producto)}>Guardar</button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div style={{ ...s.card, padding: 0, overflow: "hidden" }}>
+            <div style={{ overflow: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 980 }}>
+                <thead>
+                  <tr style={{ background: "var(--surface2)" }}>
+                    <th style={s.th}>Bodega</th>
+                    <th style={s.th}>Producto</th>
+                    <th style={{ ...s.th, textAlign: "right" }}>Stock</th>
+                    <th style={{ ...s.th, textAlign: "right" }}>Mínimo</th>
+                    <th style={s.th}>Alerta</th>
+                    <th style={s.th}>Última act.</th>
+                    <th style={s.th}>Guardar mínimo</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stockPage.slice.length === 0 ? (
+                    <tr><td colSpan={7} style={{ ...s.td, textAlign: "center", padding: "2rem", color: "var(--muted)" }}>{qStock.trim() ? "Ningún resultado para esa búsqueda." : "No hay filas para estos filtros."}</td></tr>
+                  ) : stockPage.slice.map(r => {
+                    const key = `${r.id_bodega}:${r.id_producto}`;
+                    const minVal = minEdits[key] ?? String(r.stock_minimo);
+                    return (
+                      <tr key={key} style={{ borderTop: "1px solid var(--border)" }}>
+                        <td style={s.td}>
+                          <div style={{ fontWeight: 600 }}>{r.nombre_bodega}</div>
+                          <div style={{ fontSize: "0.78rem", color: "var(--muted)" }}>{r.ubicacion || "—"}</div>
+                        </td>
+                        <td style={s.td}>
+                          <div style={{ fontWeight: 600 }}><code style={s.code}>{r.codigo_producto}</code> {r.nombre_producto}</div>
+                          <div style={{ fontSize: "0.78rem", color: "var(--muted)" }}>{r.nombre_categoria} · {r.nombre_marca} · {r.unidad_medida}{!r.estado_producto ? " · inactivo" : ""}</div>
+                        </td>
+                        <td style={{ ...s.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{Number(r.cantidad_disponible).toFixed(3)}</td>
+                        <td style={{ ...s.td, textAlign: "right" }}>
+                          <input value={minVal} onChange={e => setMinEdits(m => ({ ...m, [key]: e.target.value }))} style={{ ...s.select, padding: "0.45rem 0.55rem", maxWidth: 120, textAlign: "right" }} />
+                        </td>
+                        <td style={s.td}>{r.bajo_minimo ? <span style={s.badgeWarn}>Bajo mínimo</span> : <span style={s.badgeOk}>OK</span>}</td>
+                        <td style={{ ...s.td, fontSize: "0.82rem", color: "var(--muted)" }}>{new Date(r.ultima_actualizacion).toLocaleString("es-GT")}</td>
+                        <td style={s.td}>
+                          <button type="button" style={s.btnPrimary} onClick={() => void patchMinimo(r.id_bodega, r.id_producto)}>Guardar</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <PaginationBar
+              total={stockPage.total}
+              page={stockPage.safePage}
+              perPage={perPage}
+              onPage={setPage}
+              onPerPage={setPerPage}
+              noun="filas"
+            />
           </div>
         )}
 
@@ -541,33 +607,43 @@ export default function InventarioPage() {
             TAB: KARDEX
         ══════════════════════════════════════════════════════════════════ */}
         {tab === "kardex" && (
-          <div style={{ ...s.card, padding: 0, overflow: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 900 }}>
-              <thead>
-                <tr style={{ background: "var(--surface2)" }}>
-                  <th style={s.th}>Fecha</th>
-                  <th style={s.th}>Tipo</th>
-                  <th style={s.th}>Bodega</th>
-                  <th style={s.th}>Producto</th>
-                  <th style={{ ...s.th, textAlign: "right" }}>Cantidad</th>
-                  <th style={s.th}>Descripción</th>
-                </tr>
-              </thead>
-              <tbody>
-                {kardex.length === 0 ? (
-                  <tr><td colSpan={6} style={{ ...s.td, textAlign: "center", padding: "2rem", color: "var(--muted)" }}>No hay movimientos para estos filtros.</td></tr>
-                ) : kardex.map(m => (
-                  <tr key={m.id_kardex} style={{ borderTop: "1px solid var(--border)" }}>
-                    <td style={{ ...s.td, fontSize: "0.82rem", color: "var(--muted)", whiteSpace: "nowrap" }}>{new Date(m.fecha_movimiento).toLocaleString("es-GT")}</td>
-                    <td style={s.td}><span style={tipoBadge(m.tipo_movimiento)}>{m.tipo_movimiento}</span></td>
-                    <td style={s.td}><div style={{ fontWeight: 600 }}>{m.nombre_bodega}</div></td>
-                    <td style={s.td}><div style={{ fontWeight: 600 }}><code style={s.code}>{m.codigo_producto}</code> {m.nombre_producto}</div><div style={{ fontSize: "0.78rem", color: "var(--muted)" }}>{m.unidad_medida}</div></td>
-                    <td style={{ ...s.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{Number(m.cantidad).toFixed(3)}</td>
-                    <td style={{ ...s.td, color: "var(--muted)", fontSize: "0.88rem" }}>{m.descripcion || "—"}</td>
+          <div style={{ ...s.card, padding: 0, overflow: "hidden" }}>
+            <div style={{ overflow: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 900 }}>
+                <thead>
+                  <tr style={{ background: "var(--surface2)" }}>
+                    <th style={s.th}>Fecha</th>
+                    <th style={s.th}>Tipo</th>
+                    <th style={s.th}>Bodega</th>
+                    <th style={s.th}>Producto</th>
+                    <th style={{ ...s.th, textAlign: "right" }}>Cantidad</th>
+                    <th style={s.th}>Descripción</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {kardexPage.slice.length === 0 ? (
+                    <tr><td colSpan={6} style={{ ...s.td, textAlign: "center", padding: "2rem", color: "var(--muted)" }}>{qKardex.trim() ? "Ningún resultado para esa búsqueda." : "No hay movimientos para estos filtros."}</td></tr>
+                  ) : kardexPage.slice.map(m => (
+                    <tr key={m.id_kardex} style={{ borderTop: "1px solid var(--border)" }}>
+                      <td style={{ ...s.td, fontSize: "0.82rem", color: "var(--muted)", whiteSpace: "nowrap" }}>{new Date(m.fecha_movimiento).toLocaleString("es-GT")}</td>
+                      <td style={s.td}><span style={tipoBadge(m.tipo_movimiento)}>{m.tipo_movimiento}</span></td>
+                      <td style={s.td}><div style={{ fontWeight: 600 }}>{m.nombre_bodega}</div></td>
+                      <td style={s.td}><div style={{ fontWeight: 600 }}><code style={s.code}>{m.codigo_producto}</code> {m.nombre_producto}</div><div style={{ fontSize: "0.78rem", color: "var(--muted)" }}>{m.unidad_medida}</div></td>
+                      <td style={{ ...s.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{Number(m.cantidad).toFixed(3)}</td>
+                      <td style={{ ...s.td, color: "var(--muted)", fontSize: "0.88rem" }}>{m.descripcion || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <PaginationBar
+              total={kardexPage.total}
+              page={kardexPage.safePage}
+              perPage={perPage}
+              onPage={setPage}
+              onPerPage={setPerPage}
+              noun="movimientos"
+            />
           </div>
         )}
 
@@ -576,42 +652,59 @@ export default function InventarioPage() {
         ══════════════════════════════════════════════════════════════════ */}
         {tab === "bodegas" && (
           <>
-            <div style={{ display: "flex", gap: "0.75rem", marginBottom: "0.25rem" }}>
+            <div style={{ ...s.toolbar, marginTop: 0 }}>
+              <input
+                type="search"
+                value={qBodegas}
+                onChange={(e) => setQBodegas(e.target.value)}
+                placeholder="Buscar bodega o ubicación…"
+                aria-label="Buscar bodegas"
+                style={s.searchInput}
+              />
               <button type="button" onClick={abrirCrearBodega} style={s.btnPrimary}>+ Nueva bodega</button>
-              <button type="button" onClick={() => cargarBodegas()} style={s.btnGhost}>Actualizar</button>
             </div>
-            <div style={{ ...s.card, padding: 0, overflow: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead>
-                  <tr style={{ background: "var(--surface2)" }}>
-                    <th style={s.th}>ID</th>
-                    <th style={s.th}>Nombre</th>
-                    <th style={s.th}>Ubicación</th>
-                    <th style={{ ...s.th, textAlign: "right" }}>Productos</th>
-                    <th style={{ ...s.th, textAlign: "right" }}>Stock total</th>
-                    <th style={{ ...s.th, textAlign: "center" }}>Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {bodegas.length === 0 ? (
-                    <tr><td colSpan={6} style={{ ...s.td, textAlign: "center", padding: "2rem", color: "var(--muted)" }}>No hay bodegas registradas.</td></tr>
-                  ) : bodegas.map((b, i) => (
-                    <tr key={b.id_bodega} style={{ background: i % 2 === 0 ? "var(--surface2)" : "var(--surface)" }}>
-                      <td style={{ ...s.td, color: "var(--muted)", fontFamily: "monospace" }}>#{b.id_bodega}</td>
-                      <td style={{ ...s.td, fontWeight: 600 }}>{b.nombre_bodega}</td>
-                      <td style={{ ...s.td, color: "var(--muted)" }}>{b.ubicacion || "—"}</td>
-                      <td style={{ ...s.td, textAlign: "right" }}>{b.total_productos}</td>
-                      <td style={{ ...s.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{Number(b.stock_total).toLocaleString("es-GT", { maximumFractionDigits: 3 })}</td>
-                      <td style={{ ...s.td, textAlign: "center" }}>
-                        <div style={{ display: "flex", gap: "0.4rem", justifyContent: "center" }}>
-                          <button type="button" onClick={() => abrirEditarBodega(b)} style={s.btnEdit} title="Editar">✏️</button>
-                          <button type="button" onClick={() => setConfirmDeleteBodega(b.id_bodega)} style={s.btnDel} title="Eliminar">🗑️</button>
-                        </div>
-                      </td>
+            <div style={{ ...s.card, padding: 0, overflow: "hidden" }}>
+              <div style={{ overflow: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr style={{ background: "var(--surface2)" }}>
+                      <th style={s.th}>ID</th>
+                      <th style={s.th}>Nombre</th>
+                      <th style={s.th}>Ubicación</th>
+                      <th style={{ ...s.th, textAlign: "right" }}>Productos</th>
+                      <th style={{ ...s.th, textAlign: "right" }}>Stock total</th>
+                      <th style={{ ...s.th, textAlign: "center" }}>Acciones</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {bodegasPage.slice.length === 0 ? (
+                      <tr><td colSpan={6} style={{ ...s.td, textAlign: "center", padding: "2rem", color: "var(--muted)" }}>{qBodegas.trim() ? "Ningún resultado para esa búsqueda." : "No hay bodegas registradas."}</td></tr>
+                    ) : bodegasPage.slice.map((b, i) => (
+                      <tr key={b.id_bodega} style={{ background: i % 2 === 0 ? "var(--surface2)" : "var(--surface)" }}>
+                        <td style={{ ...s.td, color: "var(--muted)", fontFamily: "monospace" }}>#{b.id_bodega}</td>
+                        <td style={{ ...s.td, fontWeight: 600 }}>{b.nombre_bodega}</td>
+                        <td style={{ ...s.td, color: "var(--muted)" }}>{b.ubicacion || "—"}</td>
+                        <td style={{ ...s.td, textAlign: "right" }}>{b.total_productos}</td>
+                        <td style={{ ...s.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{Number(b.stock_total).toLocaleString("es-GT", { maximumFractionDigits: 3 })}</td>
+                        <td style={{ ...s.td, textAlign: "center" }}>
+                          <div style={{ display: "flex", gap: "0.4rem", justifyContent: "center" }}>
+                            <button type="button" onClick={() => abrirEditarBodega(b)} style={s.btnEdit} title="Editar">✏️</button>
+                            <button type="button" onClick={() => setConfirmDeleteBodega(b.id_bodega)} style={s.btnDel} title="Eliminar">🗑️</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <PaginationBar
+                total={bodegasPage.total}
+                page={bodegasPage.safePage}
+                perPage={perPage}
+                onPage={setPage}
+                onPerPage={setPerPage}
+                noun="bodegas"
+              />
             </div>
           </>
         )}
@@ -673,6 +766,91 @@ export default function InventarioPage() {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+function matchesQuery(query: string, ...fields: Array<string | number | null | undefined>) {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  return fields.some((f) => String(f ?? "").toLowerCase().includes(q));
+}
+
+function paginate<T>(items: T[], page: number, perPage: number) {
+  const total = items.length;
+  const totalPages = Math.max(1, Math.ceil(total / perPage) || 1);
+  const safePage = Math.min(Math.max(1, page), totalPages);
+  const start = (safePage - 1) * perPage;
+  return {
+    slice: items.slice(start, start + perPage),
+    total,
+    totalPages,
+    safePage,
+  };
+}
+
+function PaginationBar({
+  total,
+  page,
+  perPage,
+  onPage,
+  onPerPage,
+  noun,
+}: {
+  total: number;
+  page: number;
+  perPage: PageSize;
+  onPage: (p: number) => void;
+  onPerPage: (n: PageSize) => void;
+  noun: string;
+}) {
+  const totalPages = Math.max(1, Math.ceil(total / perPage) || 1);
+  const from = total === 0 ? 0 : (page - 1) * perPage + 1;
+  const to = Math.min(page * perPage, total);
+  const prevDisabled = page <= 1;
+  const nextDisabled = page >= totalPages || total === 0;
+
+  return (
+    <div style={s.pager} role="navigation" aria-label="Paginación">
+      <span style={s.pagerMeta}>
+        {total === 0 ? `Sin ${noun}` : `Mostrando ${from}–${to} de ${total} ${noun}`}
+      </span>
+      <div style={s.pagerControls}>
+        <label style={s.pagerSize}>
+          Por página
+          <select
+            value={perPage}
+            onChange={(e) => onPerPage(Number(e.target.value) as PageSize)}
+            style={s.pagerSelect}
+            aria-label="Resultados por página"
+          >
+            {PAGE_SIZES.map((n) => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="button"
+          style={{ ...s.pagerBtn, opacity: prevDisabled ? 0.45 : 1, cursor: prevDisabled ? "not-allowed" : "pointer" }}
+          disabled={prevDisabled}
+          onClick={() => onPage(page - 1)}
+          aria-label="Página anterior"
+        >
+          Anterior
+        </button>
+        <span style={s.pagerPage} aria-live="polite">
+          {page} / {totalPages}
+        </span>
+        <button
+          type="button"
+          style={{ ...s.pagerBtn, opacity: nextDisabled ? 0.45 : 1, cursor: nextDisabled ? "not-allowed" : "pointer" }}
+          disabled={nextDisabled}
+          onClick={() => onPage(page + 1)}
+          aria-label="Página siguiente"
+        >
+          Siguiente
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function tipoBadge(tipo: KardexRow["tipo_movimiento"]): CSSProperties {
   if (tipo === "ENTRADA") return { ...pill, background: "rgba(63,185,80,.12)", borderColor: "rgba(63,185,80,.35)", color: "var(--green)" };
   if (tipo === "SALIDA")  return { ...pill, background: "rgba(248,81,73,.10)", borderColor: "rgba(248,81,73,.30)", color: "var(--red)" };
@@ -687,8 +865,19 @@ const s: Record<string, CSSProperties> = {
   card: { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "1rem" },
   tabBtn: { border: "1px solid var(--border)", background: "transparent", color: "var(--muted)", borderRadius: 999, padding: "0.45rem 0.85rem", cursor: "pointer", fontSize: "0.85rem" },
   select: { background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "0.55rem 0.75rem", color: "var(--text)", fontSize: "0.9rem", outline: "none", width: "100%" },
-  check: { display: "flex", alignItems: "center", gap: "0.45rem", color: "var(--muted)", fontSize: "0.85rem", userSelect: "none" } as CSSProperties,
-  btnGhost: { border: "1px solid var(--border)", background: "transparent", color: "var(--text)", borderRadius: 10, padding: "0.55rem 0.85rem", cursor: "pointer", fontSize: "0.85rem" },
+  selectInline: { background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "0.55rem 0.75rem", color: "var(--text)", fontSize: "0.9rem", outline: "none", minWidth: 180, maxWidth: 280, flex: "0 1 auto" },
+  filterBlock: { display: "flex", flexDirection: "column", gap: "0.65rem", marginTop: "1rem" },
+  toolbar: { display: "flex", flexDirection: "row", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" },
+  checkRow: { display: "flex", flexDirection: "row", alignItems: "center", gap: "1.25rem", flexWrap: "nowrap" },
+  searchInput: { flex: "1 1 240px", minWidth: 200, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "0.55rem 0.75rem", color: "var(--text)", fontSize: "0.9rem", outline: "none" },
+  pager: { display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: "0.75rem", padding: "0.75rem 0.85rem", borderTop: "1px solid var(--border)", background: "var(--surface2)" },
+  pagerMeta: { color: "var(--muted)", fontSize: "0.82rem" },
+  pagerControls: { display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" },
+  pagerSize: { display: "flex", alignItems: "center", gap: "0.4rem", color: "var(--muted)", fontSize: "0.82rem", userSelect: "none" } as CSSProperties,
+  pagerSelect: { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "0.4rem 0.5rem", color: "var(--text)", fontSize: "0.82rem", outline: "none", minWidth: 72 },
+  pagerBtn: { border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)", borderRadius: 8, padding: "0.4rem 0.75rem", fontSize: "0.82rem", whiteSpace: "nowrap" } as CSSProperties,
+  pagerPage: { fontSize: "0.82rem", color: "var(--muted)", minWidth: 72, textAlign: "center" } as CSSProperties,
+  check: { display: "flex", alignItems: "center", gap: "0.45rem", color: "var(--muted)", fontSize: "0.85rem", userSelect: "none", cursor: "pointer", whiteSpace: "nowrap" } as CSSProperties,
   btnPrimary: { background: "var(--accent)", color: "#eff5ff", border: "none", borderRadius: 10, padding: "0.65rem 0.9rem", fontWeight: 700, cursor: "pointer", fontSize: "0.88rem", whiteSpace: "nowrap" } as CSSProperties,
   btnSecondary: { background: "transparent", color: "var(--muted)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "0.6rem 1.2rem", fontSize: "0.88rem", cursor: "pointer" },
   btnEdit: { background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "0.3rem 0.5rem", cursor: "pointer", fontSize: "0.85rem" },
