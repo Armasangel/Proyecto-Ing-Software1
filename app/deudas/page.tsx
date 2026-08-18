@@ -299,7 +299,7 @@ export default function DeudasPage() {
   if (usuario.tipo_usuario !== "DUENO") {
     return (
       <StaffShell usuario={usuario} title="Deudas" subtitle="">
-        <p style={{ color: "var(--muted)" }}>No tenés permiso para ver esta página.</p>
+        <p style={{ color: "var(--muted)" }}>No tienes permiso para ver esta página.</p>
       </StaffShell>
     );
   }
@@ -337,7 +337,7 @@ export default function DeudasPage() {
     setAlertaBloqueo("");
 
     if (!clienteSeleccionado) {
-      setError("Seleccioná (o creá) el cliente al que se le asigna la deuda.");
+      setError("Selecciona (o crea) el cliente al que se le asigna la deuda.");
       return;
     }
 
@@ -573,7 +573,7 @@ export default function DeudasPage() {
     <StaffShell
       usuario={usuario}
       title="Deudas"
-      subtitle="Registrá y llevá el control de las deudas pendientes"
+      subtitle="Registra y controla las deudas pendientes"
     >
       {mensaje && (
         <p style={{ color: "#52b788", marginBottom: "1rem", fontWeight: 600 }}>{mensaje}</p>
@@ -669,7 +669,7 @@ export default function DeudasPage() {
                   <div style={{ position: "relative", flex: 1 }}>
                     <input
                       style={inputStyle}
-                      placeholder="Escribí el nombre para buscar…"
+                      placeholder="Escribe el nombre para buscar…"
                       value={busquedaCliente}
                       onChange={(e) => {
                         setBusquedaCliente(e.target.value);
@@ -698,7 +698,7 @@ export default function DeudasPage() {
                       >
                         {clientesFiltrados.length === 0 && (
                           <div style={{ padding: "0.5rem 0.7rem", fontSize: "0.85rem", color: "var(--muted)" }}>
-                            Sin resultados — probá &quot;+ Cliente nuevo&quot;.
+                            Sin resultados — prueba &quot;+ Cliente nuevo&quot;.
                           </div>
                         )}
                         {clientesFiltrados.slice(0, 8).map((c) => (
@@ -791,7 +791,7 @@ export default function DeudasPage() {
                     value={linea.id_producto}
                     onChange={(e) => actualizarLinea(idx, "id_producto", e.target.value)}
                   >
-                    <option value="">Seleccioná un producto…</option>
+                    <option value="">Seleccionar un producto…</option>
                     {productos.map((p) => (
                       <option key={p.id_producto} value={p.id_producto}>
                         {p.nombre_producto} (Q{Number(p.precio_unitario).toFixed(2)}/{p.unidad_medida})
@@ -1099,7 +1099,7 @@ export default function DeudasPage() {
       {tab === "limites" && (
         <>
           <p style={{ color: "var(--muted)", marginBottom: "1rem", maxWidth: 640 }}>
-            Definí el límite de deuda de cada cliente. Al llegar (o superar) ese monto en deudas
+            Define el límite de deuda de cada cliente. Al llegar (o superar) ese monto en deudas
             pendientes, el cliente queda bloqueado automáticamente para comprar o hacer pedidos —
             se desbloquea solo cuando su deuda pendiente vuelve a bajar del límite.
           </p>

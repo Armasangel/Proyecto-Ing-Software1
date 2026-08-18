@@ -45,7 +45,7 @@ export default function ProveedoresPage() {
   if (usuario.tipo_usuario !== "DUENO") {
     return (
       <StaffShell usuario={usuario} title="Gestión de Proveedores" subtitle="">
-        <p style={{ color: "var(--muted)" }}>No tenés permiso para ver esta página.</p>
+        <p style={{ color: "var(--muted)" }}>No tienes permiso para ver esta página.</p>
       </StaffShell>
     );
   }

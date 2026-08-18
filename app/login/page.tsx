@@ -162,7 +162,7 @@ export default function LoginPage() {
 
           <div style={s.formHeader}>
             <h2 style={s.formTitle}>
-              {paso === "credenciales" ? "Bienvenido de vuelta" : "Verificá tu identidad"}
+              {paso === "credenciales" ? "Bienvenido de vuelta" : "Verifica tu identidad"}
             </h2>
             <p style={s.formSub}>
               {paso === "credenciales"

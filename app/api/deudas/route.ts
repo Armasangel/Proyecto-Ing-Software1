@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
       : Number(monto_libre);
 
   if (!tieneProductos && montoLibreNum === null) {
-    return validationError("Agregá al menos un producto o un monto inicial de deuda");
+    return validationError("Agrega al menos un producto o un monto inicial de deuda");
   }
   if (montoLibreNum !== null && (!Number.isFinite(montoLibreNum) || montoLibreNum <= 0)) {
     return validationError("El monto inicial de deuda debe ser mayor a 0");
