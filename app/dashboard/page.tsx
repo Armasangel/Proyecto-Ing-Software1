@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { StaffShell } from "@/components/StaffShell";
 import { useStaffSession } from "@/hooks/useStaffSession";
@@ -15,17 +15,27 @@ export default function DashboardPage() {
     ventas: 0,
     pendientes: 0,
     proveedores: 0,
+    clientesBloqueados: 0,
   });
+  const [statsError, setStatsError] = useState(false);
 
-  useEffect(() => {
+  const loadStats = useCallback(() => {
     if (!usuario) return;
     fetch("/api/stats")
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.stats) setStats(d.stats);
+      .then(async (r) => {
+        const d = await r.json();
+        if (!r.ok || !d.stats) throw new Error("stats unavailable");
+        setStats(d.stats);
+        setStatsError(false);
       })
-      .catch(() => {});
+      .catch(() => {
+        setStatsError(true);
+      });
   }, [usuario]);
+
+  useEffect(() => {
+    loadStats();
+  }, [loadStats]);
 
   if (!usuario) {
     return (
@@ -80,45 +90,77 @@ export default function DashboardPage() {
     >
       {/* ── Stat cards ── */}
       <div style={s.statsGrid}>
-        {STATS_CONFIG.map((stat) => (
-          <div key={stat.label} style={{ ...s.statCard, background: stat.bg }}>
-            <div style={{ ...s.statIconWrap, background: stat.iconBg }}>
-              <Icon name={stat.icon as IconName} variant="dark" size={24} />
+        {statsError ? (
+          <div style={s.statsErrorCard}>
+            <div style={s.statsErrorTitle}>No se pudieron cargar las estadísticas</div>
+            <div style={s.statsErrorBody}>
+              Los contadores no están disponibles.
             </div>
-            <div style={{ ...s.statValue, color: stat.valueColor }}>
-              {stat.value.toLocaleString("es-GT")}
+            <button type="button" onClick={loadStats} style={s.statsErrorBtn}>
+              Reintentar
+            </button>
+            <div style={s.statsErrorHint}>
+              También puedes recargar la página. Si el problema continúa, contacta al
+              administrador.
             </div>
-            <div style={s.statLabel}>{stat.label}</div>
           </div>
-        ))}
+        ) : (
+          STATS_CONFIG.map((stat) => (
+            <div key={stat.label} style={{ ...s.statCard, background: stat.bg }}>
+              <div style={{ ...s.statIconWrap, background: stat.iconBg }}>
+                <Icon name={stat.icon as IconName} variant="dark" size={24} />
+              </div>
+              <div style={{ ...s.statValue, color: stat.valueColor }}>
+                {stat.value.toLocaleString("es-GT")}
+              </div>
+              <div style={s.statLabel}>{stat.label}</div>
+            </div>
+          ))
+        )}
       </div>
 
       {/* ── Notification card (matches reference image) ── */}
-      <div style={s.notifRow}>
-        <div style={s.notifCard}>
-          <div style={s.notifDot} />
-          <div>
-            <div style={s.notifTitle}>Sistema activo</div>
-            <div style={s.notifSub}>
-              Inventario y ventas funcionando correctamente
-            </div>
-          </div>
-        </div>
-        {stats.pendientes > 0 && (
-          <div style={s.alertCard}>
-            <span style={{ fontSize: "1.1rem" }}>⚠️</span>
+      {!statsError && (
+        <div style={s.notifRow}>
+          <div style={s.notifCard}>
+            <div style={s.notifDot} />
             <div>
-              <div style={s.alertTitle}>
-                {stats.pendientes} venta{stats.pendientes !== 1 ? "s" : ""} pendiente
-                {stats.pendientes !== 1 ? "s" : ""}
+              <div style={s.notifTitle}>Sistema activo</div>
+              <div style={s.notifSub}>
+                Inventario y ventas funcionando correctamente
               </div>
-              <Link href="/ventas" style={s.alertLink}>
-                Ver detalles →
-              </Link>
             </div>
           </div>
-        )}
-      </div>
+          {stats.pendientes > 0 && (
+            <div style={s.alertCard}>
+              <span style={{ fontSize: "1.1rem" }}>⚠️</span>
+              <div>
+                <div style={s.alertTitle}>
+                  {stats.pendientes} venta{stats.pendientes !== 1 ? "s" : ""} pendiente
+                  {stats.pendientes !== 1 ? "s" : ""}
+                </div>
+                <Link href="/ventas" style={s.alertLink}>
+                  Ver detalles →
+                </Link>
+              </div>
+            </div>
+          )}
+          {stats.clientesBloqueados > 0 && (
+            <div style={s.alertCard}>
+              <span style={{ fontSize: "1.1rem" }}>🔒</span>
+              <div>
+                <div style={s.alertTitle}>
+                  {stats.clientesBloqueados} cliente{stats.clientesBloqueados !== 1 ? "s" : ""}{" "}
+                  bloqueado{stats.clientesBloqueados !== 1 ? "s" : ""} por deuda
+                </div>
+                <Link href="/deudas" style={s.alertLink}>
+                  Ver en Deudas →
+                </Link>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </StaffShell>
   );
 }
@@ -164,6 +206,55 @@ const s: Record<string, React.CSSProperties> = {
     fontSize: "0.8rem",
     color: "#5a6495",
     fontWeight: 500,
+  },
+
+  statsErrorCard: {
+    gridColumn: "1 / -1",
+    borderRadius: 14,
+    padding: "2.25rem 1.5rem",
+    border: "1px solid #C5CEED",
+    background: "#EEF1FB",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    textAlign: "center",
+    gap: "0.65rem",
+    boxShadow: "0 2px 8px rgba(29, 36, 202, 0.06)",
+    minHeight: 180,
+  },
+
+  statsErrorTitle: {
+    fontFamily: "var(--font-head)",
+    fontWeight: 700,
+    color: "#201658",
+    fontSize: "1.05rem",
+  },
+
+  statsErrorBody: {
+    fontSize: "0.88rem",
+    color: "#5a6495",
+    maxWidth: 420,
+    lineHeight: 1.45,
+  },
+
+  statsErrorBtn: {
+    marginTop: "0.25rem",
+    background: "transparent",
+    border: "1px solid #1D24CA",
+    color: "#1D24CA",
+    fontWeight: 600,
+    fontSize: "0.85rem",
+    borderRadius: 8,
+    padding: "0.5rem 1.1rem",
+    cursor: "pointer",
+  },
+
+  statsErrorHint: {
+    fontSize: "0.78rem",
+    color: "#5a6495",
+    maxWidth: 420,
+    lineHeight: 1.4,
   },
 
   /* Quick actions */

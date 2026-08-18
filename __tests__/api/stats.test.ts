@@ -21,7 +21,8 @@ describe("GET /api/stats", () => {
       .mockResolvedValueOnce({ rows: [{ n: 5 }] })
       .mockResolvedValueOnce({ rows: [{ n: 10 }] })
       .mockResolvedValueOnce({ rows: [{ n: 2 }] })
-      .mockResolvedValueOnce({ rows: [{ n: 3 }] });
+      .mockResolvedValueOnce({ rows: [{ n: 3 }] })
+      .mockResolvedValueOnce({ rows: [{ n: 1 }] });
     const req = createMockRequest("/api/stats", { user: testUserDueno });
     const res = await GET(req);
     const data = await res.json();
@@ -30,20 +31,17 @@ describe("GET /api/stats", () => {
       ventas: 10,
       pendientes: 2,
       proveedores: 3,
+      clientesBloqueados: 1,
     });
   });
 
-  it("returns zero fallback on DB error", async () => {
+  it("returns a generic 500 on DB error", async () => {
     mockPool.query.mockRejectedValue(new Error("db down"));
     const req = createMockRequest("/api/stats", { user: testUserDueno });
     const res = await GET(req);
     const data = await res.json();
-    expect(res.status).toBe(200);
-    expect(data.stats).toEqual({
-      productos: 0,
-      ventas: 0,
-      pendientes: 0,
-      proveedores: 0,
-    });
+    expect(res.status).toBe(500);
+    expect(data.error).toBe("Error interno del servidor");
+    expect(data.stats).toBeUndefined();
   });
 });

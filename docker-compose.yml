@@ -9,8 +9,10 @@ services:
       - "3001:3000"
     environment:
       - NODE_ENV=development
-      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET no está definido — copia .env.example a .env}
+      - JWT_SECRET=deposito_san_miguel_dev_secret_cambia_en_produccion
       - DATABASE_URL=postgresql://dsm_user:dsm_password@db:5432/deposito_san_miguel
+      - GMAIL_USER=${GMAIL_USER}
+      - GMAIL_APP_PASSWORD=${GMAIL_APP_PASSWORD}
     volumes:
       - .:/app
       - /app/node_modules
@@ -19,6 +21,23 @@ services:
       db:
         condition: service_healthy
     command: npm run dev
+
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - NODE_ENV=test
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET no está definido — copia .env.example a .env}
+      - DATABASE_URL=postgresql://dsm_user:dsm_password@db:5432/deposito_san_miguel
+    volumes:
+      - .:/app
+      - /app/node_modules
+    depends_on:
+      db:
+        condition: service_healthy
+    command: npm test -- --ci
+    profiles: ["test"]
 
   db:
     image: postgres:16-alpine

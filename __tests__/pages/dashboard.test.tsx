@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { rest } from "msw";
 import { setupServer } from "msw/node";
 
@@ -28,7 +29,7 @@ describe("DashboardPage", () => {
 
   it("shows loading state before session resolves", () => {
     server.use(
-      rest.get("/api/sesion", () => new Promise(() => {}))
+      rest.get("/api/sesion", () => new Promise<void>(() => {}))
     );
     render(<DashboardPage />);
     expect(screen.getByText("Cargando…")).toBeInTheDocument();
@@ -110,5 +111,60 @@ describe("DashboardPage", () => {
       expect(screen.getAllByText("Dashboard").length).toBeGreaterThanOrEqual(1);
     });
     expect(screen.queryByText("Ver detalles →")).not.toBeInTheDocument();
+  });
+
+  it("shows an error card instead of silent zeros when stats return 500", async () => {
+    server.use(
+      rest.get("/api/sesion", (_req, res, ctx) =>
+        res(ctx.json({ usuario: mockUsuario }))
+      ),
+      rest.get("/api/stats", (_req, res, ctx) =>
+        res(ctx.status(500), ctx.json({ error: "Error interno del servidor" }))
+      )
+    );
+    render(<DashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("No se pudieron cargar las estadísticas")).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole("button", { name: "Reintentar" })).toBeInTheDocument();
+    expect(
+      screen.getByText(/También puedes recargar la página/)
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Productos activos")).not.toBeInTheDocument();
+    expect(screen.queryByText("Ventas registradas")).not.toBeInTheDocument();
+    expect(screen.queryByText("Ventas pendientes")).not.toBeInTheDocument();
+    expect(screen.queryByText("Sistema activo")).not.toBeInTheDocument();
+  });
+
+  it("reloads stats after clicking Reintentar on a previous 500", async () => {
+    let fail = true;
+    server.use(
+      rest.get("/api/sesion", (_req, res, ctx) =>
+        res(ctx.json({ usuario: mockUsuario }))
+      ),
+      rest.get("/api/stats", (_req, res, ctx) => {
+        if (fail) {
+          return res(ctx.status(500), ctx.json({ error: "Error interno del servidor" }));
+        }
+        return res(ctx.json({ stats: mockStats }));
+      })
+    );
+    render(<DashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("No se pudieron cargar las estadísticas")).toBeInTheDocument();
+    });
+
+    fail = false;
+    await userEvent.click(screen.getByRole("button", { name: "Reintentar" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("10")).toBeInTheDocument();
+      expect(screen.getByText("Productos activos")).toBeInTheDocument();
+    });
+    expect(screen.queryByText("No se pudieron cargar las estadísticas")).not.toBeInTheDocument();
+    expect(screen.getByText("Sistema activo")).toBeInTheDocument();
   });
 });

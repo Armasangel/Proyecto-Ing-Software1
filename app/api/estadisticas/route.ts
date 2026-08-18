@@ -357,6 +357,227 @@ export async function GET(req: NextRequest) {
       kardexParams
     );
 
+    // ── 15. Deudas / deudores ─────────────────────────────────────────────────
+    //    A diferencia de las demás secciones, esto NO se filtra por el periodo
+    //    seleccionado: refleja el estado actual de la deuda del negocio (quién
+    //    debe y cuánto ahora mismo), no la deuda generada durante el periodo.
+    //    Un "deudor" se identifica por id_cliente cuando la deuda está
+    //    vinculada a un cliente, o por su nombre (normalizado) cuando no lo
+    //    está — mismo criterio que usa la página de Deudas en el frontend.
+    const resumenDeudasQ = await pool.query<{
+      deuda_pendiente_total: string;
+      cantidad_deudores: string;
+      cantidad_deudas_pendientes: string;
+    }>(
+      `SELECT
+         COALESCE(SUM(monto_total), 0)::numeric AS deuda_pendiente_total,
+         COUNT(DISTINCT COALESCE(id_cliente::text, 'n:' || lower(trim(nombre_deudor))))::int AS cantidad_deudores,
+         COUNT(*)::int AS cantidad_deudas_pendientes
+       FROM deuda
+       WHERE estado_deuda = 'PENDIENTE'`
+    );
+
+    const clientesBloqueadosQ = await pool.query<{ n: string }>(
+      `SELECT COUNT(*)::int AS n FROM cliente WHERE estado_cliente = FALSE AND limite_deuda IS NOT NULL`
+    );
+
+    const topDeudoresQ = await pool.query<{
+      id_cliente: string | null;
+      nombre: string;
+      telefono: string | null;
+      limite_deuda: string | null;
+      puede_comprar: boolean;
+      deuda_pendiente: string;
+      cantidad_deudas: string;
+    }>(
+      `SELECT
+         MIN(d.id_cliente)::text                                AS id_cliente,
+         MIN(COALESCE(c.nombre, d.nombre_deudor))                AS nombre,
+         MIN(d.telefono_deudor)                                  AS telefono,
+         MAX(c.limite_deuda)::numeric                            AS limite_deuda,
+         BOOL_AND(COALESCE(c.estado_cliente, TRUE))              AS puede_comprar,
+         SUM(d.monto_total)::numeric                             AS deuda_pendiente,
+         COUNT(*)::int                                           AS cantidad_deudas
+       FROM deuda d
+       LEFT JOIN cliente c ON c.id_cliente = d.id_cliente
+       WHERE d.estado_deuda = 'PENDIENTE'
+       GROUP BY COALESCE(d.id_cliente::text, 'n:' || lower(trim(d.nombre_deudor)))
+       ORDER BY deuda_pendiente DESC
+       LIMIT 10`
+    );
+
+    const resumenDeudas = resumenDeudasQ.rows[0];
+    const deudaPendienteTotal = Number(resumenDeudas?.deuda_pendiente_total ?? 0);
+    const cantidadDeudores = Number(resumenDeudas?.cantidad_deudores ?? 0);
+
+    // ── 16. KPIs de negocio ───────────────────────────────────────────────────
+    //    A diferencia de las secciones descriptivas de arriba, estos números
+    //    están pensados para leerse solos y sugerir una acción concreta al
+    //    dueño (ej. "12 productos bajo su mínimo" → reordenar).
+    //
+    //    16a. Ventas — % de ventas al crédito (con fecha_limite_pago, es decir
+    //    que no se cobraron de inmediato) dentro del periodo.
+    const ventasCreditoQ = await pool.query<{
+      ventas_credito: string;
+      monto_credito: string;
+    }>(
+      `SELECT
+         COUNT(*) FILTER (WHERE v.fecha_limite_pago IS NOT NULL)::int              AS ventas_credito,
+         COALESCE(SUM(v.total) FILTER (WHERE v.fecha_limite_pago IS NOT NULL), 0)::numeric AS monto_credito
+       FROM venta v
+       WHERE ${fechaWhere}
+         AND v.estado_venta != 'CANCELADO'`,
+      fechaParams
+    );
+
+    //    16b. Inventario — stock bajo el mínimo (accionable: reordenar ya).
+    const stockBajoMinimoQ = await pool.query<{
+      id_producto: string;
+      nombre_producto: string;
+      nombre_bodega: string;
+      cantidad_disponible: string;
+      stock_minimo: string;
+    }>(
+      `SELECT
+         p.id_producto::text,
+         p.nombre_producto,
+         b.nombre_bodega,
+         bp.cantidad_disponible,
+         bp.stock_minimo
+       FROM bodega_producto bp
+       JOIN producto p ON p.id_producto = bp.id_producto
+       JOIN bodega   b ON b.id_bodega   = bp.id_bodega
+       WHERE p.estado_producto = TRUE
+         AND bp.stock_minimo > 0
+         AND bp.cantidad_disponible <= bp.stock_minimo
+       ORDER BY (bp.cantidad_disponible - bp.stock_minimo) ASC
+       LIMIT 10`
+    );
+    const stockBajoMinimoTotalQ = await pool.query<{ n: string }>(
+      `SELECT COUNT(*)::int AS n
+       FROM bodega_producto bp
+       JOIN producto p ON p.id_producto = bp.id_producto
+       WHERE p.estado_producto = TRUE
+         AND bp.stock_minimo > 0
+         AND bp.cantidad_disponible <= bp.stock_minimo`
+    );
+
+    //    Rotación de inventario (índice simple): unidades vendidas en el
+    //    periodo / unidades totales que hay ahora mismo en bodega. Un número
+    //    bajo sugiere sobre-stock; uno muy alto, riesgo de quiebre.
+    const unidadesVendidasQ = await pool.query<{ unidades: string }>(
+      `SELECT COALESCE(SUM(dv.cantidad), 0)::numeric AS unidades
+       FROM detalle_venta dv
+       JOIN venta v ON v.id_venta = dv.id_venta
+       WHERE ${fechaWhere}
+         AND v.estado_venta != 'CANCELADO'`,
+      fechaParams
+    );
+    const stockActualQ = await pool.query<{ stock: string }>(
+      `SELECT COALESCE(SUM(cantidad_disponible), 0)::numeric AS stock FROM bodega_producto`
+    );
+
+    //    Productos sin ninguna salida de bodega durante el periodo (capital
+    //    inmovilizado). Reutiliza kardexWhere/kardexParams (ya definidos
+    //    arriba, en la sección de Top bodegas).
+
+    const sinMovimientoQ = await pool.query<{
+      id_producto: string;
+      nombre_producto: string;
+      nombre_bodega: string;
+      cantidad_disponible: string;
+      valor_inmovilizado: string;
+    }>(
+      `SELECT
+         p.id_producto::text,
+         p.nombre_producto,
+         b.nombre_bodega,
+         bp.cantidad_disponible,
+         (bp.cantidad_disponible * COALESCE(p.precio_unitario, 0))::numeric AS valor_inmovilizado
+       FROM bodega_producto bp
+       JOIN producto p ON p.id_producto = bp.id_producto
+       JOIN bodega   b ON b.id_bodega   = bp.id_bodega
+       WHERE p.estado_producto = TRUE
+         AND bp.cantidad_disponible > 0
+         AND NOT EXISTS (
+           SELECT 1 FROM kardex k
+           WHERE k.id_bodega = bp.id_bodega
+             AND k.id_producto = bp.id_producto
+             AND k.tipo_movimiento = 'SALIDA'
+             AND ${kardexWhere}
+         )
+       ORDER BY valor_inmovilizado DESC
+       LIMIT 10`,
+      kardexParams
+    );
+    const sinMovimientoTotalQ = await pool.query<{ n: string }>(
+      `SELECT COUNT(*)::int AS n
+       FROM bodega_producto bp
+       JOIN producto p ON p.id_producto = bp.id_producto
+       WHERE p.estado_producto = TRUE
+         AND bp.cantidad_disponible > 0
+         AND NOT EXISTS (
+           SELECT 1 FROM kardex k
+           WHERE k.id_bodega = bp.id_bodega
+             AND k.id_producto = bp.id_producto
+             AND k.tipo_movimiento = 'SALIDA'
+             AND ${kardexWhere}
+         )`,
+      kardexParams
+    );
+
+    //    16c. Clientes y deuda — cartera vencida y tasa de recuperación.
+    //    No se filtra por periodo (igual que la sección "deudas" de arriba):
+    //    refleja la salud actual de toda la cartera, no solo lo generado en
+    //    el rango de fechas elegido.
+    const carteraQ = await pool.query<{
+      pendiente_total: string;
+      pendiente_bloqueados: string;
+      pagado_total: string;
+      generado_total: string;
+    }>(
+      `SELECT
+         COALESCE(SUM(monto_total) FILTER (WHERE estado_deuda = 'PENDIENTE'), 0)::numeric AS pendiente_total,
+         COALESCE(SUM(monto_total) FILTER (
+           WHERE estado_deuda = 'PENDIENTE'
+             AND id_cliente IN (SELECT id_cliente FROM cliente WHERE estado_cliente = FALSE)
+         ), 0)::numeric AS pendiente_bloqueados,
+         COALESCE(SUM(monto_total) FILTER (WHERE estado_deuda = 'PAGADA'), 0)::numeric AS pagado_total,
+         COALESCE(SUM(monto_total), 0)::numeric AS generado_total
+       FROM deuda`
+    );
+
+    //    16d. Operación — ventas sin cobrar/entregar todavía y % de cancelación.
+    const ventasPendientesQ = await pool.query<{ n: string; monto: string }>(
+      `SELECT
+         COUNT(*)::int                          AS n,
+         COALESCE(SUM(v.total), 0)::numeric     AS monto
+       FROM venta v
+       WHERE ${fechaWhere}
+         AND v.estado_venta NOT IN ('PAGADO', 'CANCELADO')`,
+      fechaParams
+    );
+
+    //    Pedidos (tabla `orden`, ligados a cliente) pendientes en el periodo.
+    let ordenWhere: string;
+    let ordenParams: unknown[];
+    if (periodo === "custom") {
+      ordenWhere = `o.fecha_orden >= $1::date AND o.fecha_orden < ($2::date + INTERVAL '1 day')`;
+      ordenParams = [desde, hasta];
+    } else {
+      ordenWhere = `o.fecha_orden >= NOW() - INTERVAL '${INTERVALOS[periodo]}'`;
+      ordenParams = [];
+    }
+    const pedidosPendientesQ = await pool.query<{ n: string; monto: string }>(
+      `SELECT
+         COUNT(*)::int                      AS n,
+         COALESCE(SUM(o.total), 0)::numeric AS monto
+       FROM orden o
+       WHERE ${ordenWhere}
+         AND o.estado NOT IN ('ENTREGADO', 'CANCELADO')`,
+      ordenParams
+    );
+
     // ─── Respuesta ────────────────────────────────────────────────────────────
     const resumen = resumenQ.rows[0];
 
@@ -457,6 +678,87 @@ export async function GET(req: NextRequest) {
         total_movimientos: Number(r.total_movimientos),
         total_unidades:    Number(r.total_unidades),
       })),
+
+      deudas: {
+        resumen: {
+          deuda_pendiente_total:      deudaPendienteTotal,
+          cantidad_deudores:          cantidadDeudores,
+          cantidad_deudas_pendientes: Number(resumenDeudas?.cantidad_deudas_pendientes ?? 0),
+          clientes_bloqueados:        Number(clientesBloqueadosQ.rows[0]?.n ?? 0),
+          deuda_promedio_por_deudor:
+            cantidadDeudores > 0 ? Math.round((deudaPendienteTotal / cantidadDeudores) * 100) / 100 : 0,
+        },
+        top_deudores: topDeudoresQ.rows.map((r) => ({
+          id_cliente:      r.id_cliente !== null ? Number(r.id_cliente) : null,
+          nombre:          r.nombre,
+          telefono:        r.telefono,
+          limite_deuda:    r.limite_deuda !== null ? Number(r.limite_deuda) : null,
+          puede_comprar:   r.id_cliente !== null ? r.puede_comprar : null,
+          deuda_pendiente: Number(r.deuda_pendiente),
+          cantidad_deudas: Number(r.cantidad_deudas),
+        })),
+      },
+
+      kpis: (() => {
+        const ventasCredito   = ventasCreditoQ.rows[0];
+        const ventasCreditoN  = Number(ventasCredito?.ventas_credito ?? 0);
+        const totalVentasKpi  = Number(resumen?.total_ventas ?? 0);
+        const ventasCanceladasKpi = Number(resumen?.ventas_canceladas ?? 0);
+
+        const unidadesVendidas = Number(unidadesVendidasQ.rows[0]?.unidades ?? 0);
+        const stockActual      = Number(stockActualQ.rows[0]?.stock ?? 0);
+
+        const cartera = carteraQ.rows[0];
+        const pendienteTotal      = Number(cartera?.pendiente_total ?? 0);
+        const pendienteBloqueados = Number(cartera?.pendiente_bloqueados ?? 0);
+        const pagadoTotal         = Number(cartera?.pagado_total ?? 0);
+        const generadoTotal       = Number(cartera?.generado_total ?? 0);
+
+        const totalVentasConCanceladas = totalVentasKpi + ventasCanceladasKpi;
+
+        return {
+          ventas: {
+            ticket_promedio:      Number(resumen?.ticket_promedio ?? 0),
+            ventas_credito:       ventasCreditoN,
+            monto_credito:        Number(ventasCredito?.monto_credito ?? 0),
+            pct_ventas_credito:   totalVentasKpi > 0 ? Math.round((ventasCreditoN / totalVentasKpi) * 1000) / 10 : 0,
+          },
+          inventario: {
+            productos_bajo_minimo:       Number(stockBajoMinimoTotalQ.rows[0]?.n ?? 0),
+            detalle_bajo_minimo: stockBajoMinimoQ.rows.map((r) => ({
+              id_producto:         Number(r.id_producto),
+              nombre_producto:     r.nombre_producto,
+              nombre_bodega:       r.nombre_bodega,
+              cantidad_disponible: Number(r.cantidad_disponible),
+              stock_minimo:        Number(r.stock_minimo),
+            })),
+            rotacion_inventario: stockActual > 0 ? Math.round((unidadesVendidas / stockActual) * 100) / 100 : 0,
+            productos_sin_movimiento:       Number(sinMovimientoTotalQ.rows[0]?.n ?? 0),
+            detalle_sin_movimiento: sinMovimientoQ.rows.map((r) => ({
+              id_producto:         Number(r.id_producto),
+              nombre_producto:     r.nombre_producto,
+              nombre_bodega:       r.nombre_bodega,
+              cantidad_disponible: Number(r.cantidad_disponible),
+              valor_inmovilizado:  Number(r.valor_inmovilizado),
+            })),
+          },
+          deuda: {
+            pct_cartera_vencida:    pendienteTotal > 0 ? Math.round((pendienteBloqueados / pendienteTotal) * 1000) / 10 : 0,
+            tasa_recuperacion:      generadoTotal > 0 ? Math.round((pagadoTotal / generadoTotal) * 1000) / 10 : 0,
+            deuda_pendiente_bloqueados: pendienteBloqueados,
+          },
+          operacion: {
+            ventas_pendientes:       Number(ventasPendientesQ.rows[0]?.n ?? 0),
+            monto_ventas_pendientes: Number(ventasPendientesQ.rows[0]?.monto ?? 0),
+            pct_cancelacion:
+              totalVentasConCanceladas > 0
+                ? Math.round((ventasCanceladasKpi / totalVentasConCanceladas) * 1000) / 10
+                : 0,
+            pedidos_pendientes:       Number(pedidosPendientesQ.rows[0]?.n ?? 0),
+            monto_pedidos_pendientes: Number(pedidosPendientesQ.rows[0]?.monto ?? 0),
+          },
+        };
+      })(),
     });
 
   } catch (error) {

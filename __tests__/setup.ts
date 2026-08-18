@@ -17,6 +17,12 @@ globalThis.Headers = nodeFetch.Headers;
 globalThis.Request = nodeFetch.Request;
 globalThis.Response = nodeFetch.Response;
 
+// Garantiza un JWT_SECRET válido (>= 32 caracteres) en todos los tests,
+// incluso si otro archivo de tests lo borró o sobrescribió antes.
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
+  process.env.JWT_SECRET = "test-jwt-secret-for-unit-tests-0123456789";
+}
+
 // Next.js NextResponse.json relies on Response.json static method
 if (typeof globalThis.Response.json !== "function") {
   (globalThis.Response as any).json = (body: any, init?: any) => {

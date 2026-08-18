@@ -124,6 +124,12 @@ export default function VentasPage() {
     }
   }, []);
 
+  const cargarClientes = useCallback(async () => {
+    const r = await fetch("/api/clientes", { cache: "no-store" });
+    const d = await r.json();
+    setClientes(d.clientes || []);
+  }, []);
+
   useEffect(() => {
     if (!usuario) return;
     if (usuario.tipo_usuario === TIPOS_USUARIO.DUENO) {
@@ -131,7 +137,7 @@ export default function VentasPage() {
       return;
     }
     if (usuario.tipo_usuario !== TIPOS_USUARIO.EMPLEADO) return;
-    fetch("/api/clientes").then((r) => r.json()).then((d) => setClientes(d.clientes || []));
+    cargarClientes();
     fetch("/api/productos").then((r) => r.json()).then((d) => setProductos(d.productos || []));
     fetch("/api/bodegas").then((r) => r.json()).then((d) => setBodegas(d.bodegas || []));
     fetch("/api/gestion-inventario").then((r) => r.json()).then((d) => {
@@ -142,7 +148,26 @@ export default function VentasPage() {
       })));
     });
     cargarVentas();
-  }, [usuario, cargarVentas, router]);
+  }, [usuario, cargarVentas, cargarClientes, router]);
+
+  // Si el colaborador deja la pestaña de Ventas abierta y el dueño bloquea
+  // (o desbloquea) a un cliente por deuda mientras tanto, esto refresca la
+  // lista al volver — así nunca queda desactualizada.
+  useEffect(() => {
+    if (!usuario || usuario.tipo_usuario !== TIPOS_USUARIO.EMPLEADO) return;
+    function onFocus() {
+      cargarClientes();
+    }
+    function onVisibility() {
+      if (document.visibilityState === "visible") cargarClientes();
+    }
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [usuario, cargarClientes]);
 
   const productoPorId = useMemo(() => {
     const m = new Map<number, Producto>();

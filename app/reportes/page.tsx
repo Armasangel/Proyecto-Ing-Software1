@@ -76,6 +76,63 @@ type EstadisticasData = {
     total_movimientos: number;
     total_unidades: number;
   }[];
+  deudas: {
+    resumen: {
+      deuda_pendiente_total: number;
+      cantidad_deudores: number;
+      cantidad_deudas_pendientes: number;
+      clientes_bloqueados: number;
+      deuda_promedio_por_deudor: number;
+    };
+    top_deudores: {
+      id_cliente: number | null;
+      nombre: string;
+      telefono: string | null;
+      limite_deuda: number | null;
+      puede_comprar: boolean | null;
+      deuda_pendiente: number;
+      cantidad_deudas: number;
+    }[];
+  };
+  kpis: {
+    ventas: {
+      ticket_promedio: number;
+      ventas_credito: number;
+      monto_credito: number;
+      pct_ventas_credito: number;
+    };
+    inventario: {
+      productos_bajo_minimo: number;
+      detalle_bajo_minimo: {
+        id_producto: number;
+        nombre_producto: string;
+        nombre_bodega: string;
+        cantidad_disponible: number;
+        stock_minimo: number;
+      }[];
+      rotacion_inventario: number;
+      productos_sin_movimiento: number;
+      detalle_sin_movimiento: {
+        id_producto: number;
+        nombre_producto: string;
+        nombre_bodega: string;
+        cantidad_disponible: number;
+        valor_inmovilizado: number;
+      }[];
+    };
+    deuda: {
+      pct_cartera_vencida: number;
+      tasa_recuperacion: number;
+      deuda_pendiente_bloqueados: number;
+    };
+    operacion: {
+      ventas_pendientes: number;
+      monto_ventas_pendientes: number;
+      pct_cancelacion: number;
+      pedidos_pendientes: number;
+      monto_pedidos_pendientes: number;
+    };
+  };
 };
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
@@ -353,52 +410,88 @@ export default function EstadisticasPage() {
       if (!res.ok) throw new Error(json.error || "Error al exportar");
       const exportData = json as EstadisticasData;
 
-      const rows: string[] = [];
-      const csvLine = (arr: (string | number)[]) => arr.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",");
-      const addSection = (titulo: string) => { rows.push(""); rows.push(titulo); };
+      const rows: (string | number)[][] = [];
+      const addSection = (titulo: string) => { rows.push([]); rows.push([titulo]); };
 
-      rows.push(csvLine(["Reporte de estadísticas", tipo === "todo" ? "Todo el histórico" : `Periodo: ${exportData.periodo.tipo}`]));
+      rows.push(["Reporte de estadísticas", tipo === "todo" ? "Todo el histórico" : `Periodo: ${exportData.periodo.tipo}`]);
 
       addSection("Resumen");
-      rows.push(csvLine(["Ventas totales", exportData.resumen.total_ventas]));
-      rows.push(csvLine(["Ingresos totales", exportData.resumen.ingresos_totales]));
-      rows.push(csvLine(["Ticket promedio", exportData.resumen.ticket_promedio]));
-      rows.push(csvLine(["Ventas canceladas", exportData.resumen.ventas_canceladas]));
+      rows.push(["Ventas totales", exportData.resumen.total_ventas]);
+      rows.push(["Ingresos totales", exportData.resumen.ingresos_totales]);
+      rows.push(["Ticket promedio", exportData.resumen.ticket_promedio]);
+      rows.push(["Ventas canceladas", exportData.resumen.ventas_canceladas]);
 
       addSection("Resumen de ventas");
-      rows.push(csvLine(["Ticket promedio", exportData.estadisticas_descriptivas.media]));
-      rows.push(csvLine(["Ticket típico", exportData.estadisticas_descriptivas.mediana]));
-      rows.push(csvLine(["Monto más común", exportData.estadisticas_descriptivas.moda.join(" / ")]));
-      rows.push(csvLine(["Qué tanto varían tus ventas", exportData.estadisticas_descriptivas.desviacion_estandar]));
-      rows.push(csvLine(["Ticket mínimo", exportData.estadisticas_descriptivas.min_total]));
-      rows.push(csvLine(["Ticket máximo", exportData.estadisticas_descriptivas.max_total]));
+      rows.push(["Ticket promedio", exportData.estadisticas_descriptivas.media]);
+      rows.push(["Ticket típico", exportData.estadisticas_descriptivas.mediana]);
+      rows.push(["Monto más común", exportData.estadisticas_descriptivas.moda.join(" / ")]);
+      rows.push(["Qué tanto varían tus ventas", exportData.estadisticas_descriptivas.desviacion_estandar]);
+      rows.push(["Ticket mínimo", exportData.estadisticas_descriptivas.min_total]);
+      rows.push(["Ticket máximo", exportData.estadisticas_descriptivas.max_total]);
 
       addSection("Ventas por día");
-      rows.push(csvLine(["Fecha", "Total", "Cantidad"]));
-      exportData.ventas_por_dia.forEach((d) => rows.push(csvLine([d.fecha, d.total_dia, d.cantidad])));
+      rows.push(["Fecha", "Total", "Cantidad"]);
+      exportData.ventas_por_dia.forEach((d) => rows.push([d.fecha, d.total_dia, d.cantidad]));
 
       addSection("Top productos");
-      rows.push(csvLine(["Producto", "Código", "Categoría", "Marca", "Unidades", "Ingresos", "Veces vendido"]));
-      exportData.top_productos.forEach((p) => rows.push(csvLine([p.nombre_producto, p.codigo_producto, p.nombre_categoria, p.nombre_marca, p.total_unidades, p.total_ingresos, p.veces_vendido])));
+      rows.push(["Producto", "Código", "Categoría", "Marca", "Unidades", "Ingresos", "Veces vendido"]);
+      exportData.top_productos.forEach((p) => rows.push([p.nombre_producto, p.codigo_producto, p.nombre_categoria, p.nombre_marca, p.total_unidades, p.total_ingresos, p.veces_vendido]));
 
       addSection("Top clientes");
-      rows.push(csvLine(["Nombre", "Correo", "Total compras", "Cantidad pedidos"]));
-      exportData.top_clientes.forEach((c) => rows.push(csvLine([c.nombre, c.correo, c.total_compras, c.cantidad_pedidos])));
+      rows.push(["Nombre", "Correo", "Total compras", "Cantidad pedidos"]);
+      exportData.top_clientes.forEach((c) => rows.push([c.nombre, c.correo, c.total_compras, c.cantidad_pedidos]));
 
       addSection("Ingresos por categoría");
-      rows.push(csvLine(["Categoría", "Ingresos", "Unidades"]));
-      exportData.ingresos_por_categoria.forEach((c) => rows.push(csvLine([c.nombre_categoria, c.total_ingresos, c.total_unidades])));
+      rows.push(["Categoría", "Ingresos", "Unidades"]);
+      exportData.ingresos_por_categoria.forEach((c) => rows.push([c.nombre_categoria, c.total_ingresos, c.total_unidades]));
 
-      const csvContent = "\uFEFF" + rows.join("\n");
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      addSection("KPIs de negocio");
+      rows.push(["% ventas al crédito", `${exportData.kpis.ventas.pct_ventas_credito}%`]);
+      rows.push(["Monto vendido al crédito", exportData.kpis.ventas.monto_credito]);
+      rows.push(["Productos bajo su mínimo", exportData.kpis.inventario.productos_bajo_minimo]);
+      rows.push(["Rotación de inventario", exportData.kpis.inventario.rotacion_inventario]);
+      rows.push(["Productos sin movimiento", exportData.kpis.inventario.productos_sin_movimiento]);
+      rows.push(["% cartera vencida", `${exportData.kpis.deuda.pct_cartera_vencida}%`]);
+      rows.push(["Tasa de recuperación de deuda", `${exportData.kpis.deuda.tasa_recuperacion}%`]);
+      rows.push(["Ventas sin cerrar (sin cobrar/entregar)", exportData.kpis.operacion.ventas_pendientes]);
+      rows.push(["Monto de ventas sin cerrar", exportData.kpis.operacion.monto_ventas_pendientes]);
+      rows.push(["Pedidos pendientes", exportData.kpis.operacion.pedidos_pendientes]);
+      rows.push(["% cancelación de ventas", `${exportData.kpis.operacion.pct_cancelacion}%`]);
+      rows.push([]);
+
+      addSection("Deudas y deudores (estado actual)");
+      rows.push(["Deuda pendiente total", exportData.deudas.resumen.deuda_pendiente_total]);
+      rows.push(["Deudores activos", exportData.deudas.resumen.cantidad_deudores]);
+      rows.push(["Deudas pendientes", exportData.deudas.resumen.cantidad_deudas_pendientes]);
+      rows.push(["Clientes bloqueados por deuda", exportData.deudas.resumen.clientes_bloqueados]);
+      rows.push(["Deuda promedio por deudor", exportData.deudas.resumen.deuda_promedio_por_deudor]);
+      rows.push([]);
+      rows.push(["Top deudores", "Teléfono", "Deuda pendiente", "Límite", "Estado"]);
+      exportData.deudas.top_deudores.forEach((d) =>
+        rows.push([
+          d.nombre,
+          d.telefono ?? "",
+          d.deuda_pendiente,
+          d.limite_deuda ?? "",
+          d.id_cliente === null ? "Sin vincular" : d.puede_comprar ? "Activo" : "Bloqueado",
+        ])
+      );
+
+      const ExcelJS = await import("exceljs");
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet("Reporte");
+      worksheet.addRows(rows.filter((r) => r.length > 0));
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      const fechaHoy = new Date().toISOString().slice(0, 10);
       a.href = url;
-      a.download = `reporte-${tipo === "todo" ? "completo" : periodo}-${fechaHoy}.csv`;
-      document.body.appendChild(a);
+      const fechaHoy = new Date().toISOString().slice(0, 10);
+      a.download = `reporte-${tipo === "todo" ? "completo" : periodo}-${fechaHoy}.xlsx`;
       a.click();
-      document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (e) {
       setError(String(e));
@@ -479,6 +572,95 @@ export default function EstadisticasPage() {
       {/* ── Contenido ── */}
       {data && (
         <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+
+          {/* Fila 0 — KPIs de negocio: números pensados para actuar, no solo describir */}
+          <Card title="KPIs de negocio">
+            <div style={{ display: "flex", flexDirection: "column", gap: "1.1rem" }}>
+
+              <div>
+                <div style={s.kpiGroupLabel}>Ventas</div>
+                <div style={s.statsGrid}>
+                  <StatCard icon="money-bag" label="Ventas al crédito" value={`${data.kpis.ventas.pct_ventas_credito}%`} sub={`${data.kpis.ventas.ventas_credito} venta${data.kpis.ventas.ventas_credito !== 1 ? "s" : ""} · ${q(data.kpis.ventas.monto_credito)} sin cobrar de inmediato`} />
+                </div>
+              </div>
+
+              <div>
+                <div style={s.kpiGroupLabel}>Inventario</div>
+                <div style={s.statsGrid}>
+                  <StatCard icon="inventory" label="Bajo su mínimo"      value={data.kpis.inventario.productos_bajo_minimo.toLocaleString("es-GT")} sub="productos que ya tocan reordenar" />
+                  <StatCard icon="transfer"  label="Rotación de inventario" value={data.kpis.inventario.rotacion_inventario.toLocaleString("es-GT")} sub="unidades vendidas / stock actual" />
+                  <StatCard icon="box"       label="Sin movimiento"     value={data.kpis.inventario.productos_sin_movimiento.toLocaleString("es-GT")} sub="sin salidas de bodega en el periodo" />
+                </div>
+              </div>
+
+              <div>
+                <div style={s.kpiGroupLabel}>Clientes y deuda</div>
+                <div style={s.statsGrid}>
+                  <StatCard icon="lockout" label="Cartera vencida"          value={`${data.kpis.deuda.pct_cartera_vencida}%`} sub={`${q(data.kpis.deuda.deuda_pendiente_bloqueados)} en clientes ya bloqueados`} />
+                  <StatCard icon="debt"    label="Tasa de recuperación"     value={`${data.kpis.deuda.tasa_recuperacion}%`}   sub="deuda pagada / deuda generada (histórico)" />
+                </div>
+              </div>
+
+              <div>
+                <div style={s.kpiGroupLabel}>Operación</div>
+                <div style={s.statsGrid}>
+                  <StatCard icon="shopping-cart" label="Ventas sin cerrar" value={data.kpis.operacion.ventas_pendientes.toLocaleString("es-GT")} sub={`${q(data.kpis.operacion.monto_ventas_pendientes)} sin cobrar/entregar`} />
+                  <StatCard icon="hand-truck"    label="Pedidos pendientes" value={data.kpis.operacion.pedidos_pendientes.toLocaleString("es-GT")} sub={`${q(data.kpis.operacion.monto_pedidos_pendientes)} en pedidos abiertos`} />
+                  <StatCard icon="close"         label="% cancelación"     value={`${data.kpis.operacion.pct_cancelacion}%`} sub="de las ventas del periodo" />
+                </div>
+              </div>
+
+              {(data.kpis.inventario.detalle_bajo_minimo.length > 0 || data.kpis.inventario.detalle_sin_movimiento.length > 0) && (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "1rem" }}>
+                  {data.kpis.inventario.detalle_bajo_minimo.length > 0 && (
+                    <div>
+                      <div style={s.kpiGroupLabel}>Productos bajo su mínimo</div>
+                      <div style={{ overflowX: "auto" }}>
+                        <table style={s.table}>
+                          <thead><tr><th style={s.th}>Producto</th><th style={{ ...s.th, textAlign: "right" }}>Disponible</th><th style={{ ...s.th, textAlign: "right" }}>Mínimo</th></tr></thead>
+                          <tbody>
+                            {data.kpis.inventario.detalle_bajo_minimo.map((d) => (
+                              <tr key={`${d.id_producto}-${d.nombre_bodega}`} style={{ borderTop: "1px solid var(--border)" }}>
+                                <td style={s.td}>
+                                  <div style={{ fontWeight: 500, fontSize: "0.85rem" }}>{d.nombre_producto}</div>
+                                  <div style={{ fontSize: "0.72rem", color: "var(--muted)" }}>{d.nombre_bodega}</div>
+                                </td>
+                                <td style={{ ...s.td, textAlign: "right", color: "var(--red)", fontWeight: 600 }}>{d.cantidad_disponible}</td>
+                                <td style={{ ...s.td, textAlign: "right", color: "var(--muted)" }}>{d.stock_minimo}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {data.kpis.inventario.detalle_sin_movimiento.length > 0 && (
+                    <div>
+                      <div style={s.kpiGroupLabel}>Mayor capital inmovilizado</div>
+                      <div style={{ overflowX: "auto" }}>
+                        <table style={s.table}>
+                          <thead><tr><th style={s.th}>Producto</th><th style={{ ...s.th, textAlign: "right" }}>Stock</th><th style={{ ...s.th, textAlign: "right" }}>Valor</th></tr></thead>
+                          <tbody>
+                            {data.kpis.inventario.detalle_sin_movimiento.map((d) => (
+                              <tr key={`${d.id_producto}-${d.nombre_bodega}`} style={{ borderTop: "1px solid var(--border)" }}>
+                                <td style={s.td}>
+                                  <div style={{ fontWeight: 500, fontSize: "0.85rem" }}>{d.nombre_producto}</div>
+                                  <div style={{ fontSize: "0.72rem", color: "var(--muted)" }}>{d.nombre_bodega}</div>
+                                </td>
+                                <td style={{ ...s.td, textAlign: "right", color: "var(--muted)" }}>{d.cantidad_disponible}</td>
+                                <td style={{ ...s.td, textAlign: "right", fontWeight: 600 }}>{q(d.valor_inmovilizado)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </Card>
 
           {/* Fila 1 — Tarjetas de resumen */}
           <div style={s.statsGrid}>
@@ -664,6 +846,63 @@ export default function EstadisticasPage() {
             </Card>
           </div>
 
+          {/* Fila 7 — Deudas y deudores (estado actual, no filtrado por periodo) */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+            <div style={s.statsGrid}>
+              <StatCard icon="money-bag" label="Deuda pendiente"       value={q(data.deudas.resumen.deuda_pendiente_total)} sub={`${data.deudas.resumen.cantidad_deudas_pendientes} deuda${data.deudas.resumen.cantidad_deudas_pendientes !== 1 ? "s" : ""} sin pagar`} />
+              <StatCard icon="ticket"   label="Deudores activos"       value={data.deudas.resumen.cantidad_deudores.toLocaleString("es-GT")} sub="con deuda pendiente" />
+              <StatCard icon="close"    label="Clientes bloqueados"    value={data.deudas.resumen.clientes_bloqueados.toLocaleString("es-GT")} sub="alcanzaron su límite de deuda" />
+              <StatCard icon="bill"     label="Deuda promedio"         value={q(data.deudas.resumen.deuda_promedio_por_deudor)} sub="por deudor" />
+            </div>
+
+            <Card title="Top deudores (deuda pendiente actual)">
+              {data.deudas.top_deudores.length === 0 ? <EmptyChart label="No hay deudas pendientes" /> : (
+                <div style={{ overflowX: "auto" }}>
+                  <table style={s.table}>
+                    <thead>
+                      <tr>
+                        <th style={s.th}>#</th>
+                        <th style={s.th}>Persona</th>
+                        <th style={s.th}>Estado</th>
+                        <th style={{ ...s.th, textAlign: "right" }}>Deuda pendiente</th>
+                        <th style={{ ...s.th, textAlign: "right" }}>Deudas</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.deudas.top_deudores.map((d, i) => (
+                        <tr key={d.id_cliente ?? d.nombre} style={{ borderTop: "1px solid var(--border)" }}>
+                          <td style={{ ...s.td, color: i === 0 ? "var(--accent)" : "var(--muted)", fontWeight: i === 0 ? 700 : 400, width: 28 }}>
+                            {i === 0 ? <Icon name="increase" variant="dark" size={16} /> : i + 1}
+                          </td>
+                          <td style={s.td}>
+                            <div style={{ fontWeight: 500, fontSize: "0.85rem" }}>{d.nombre}</div>
+                            {d.telefono && <div style={{ fontSize: "0.72rem", color: "var(--muted)" }}>{d.telefono}</div>}
+                          </td>
+                          <td style={s.td}>
+                            {d.id_cliente === null ? (
+                              <span style={{ fontSize: "0.78rem", color: "var(--muted)" }}>Sin vincular</span>
+                            ) : (
+                              <span style={{ fontSize: "0.78rem", fontWeight: 600, color: d.puede_comprar ? "var(--green)" : "var(--red)" }}>
+                                {d.puede_comprar ? "Activo" : "Bloqueado"}
+                              </span>
+                            )}
+                          </td>
+                          <td style={{ ...s.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                            {q(d.deuda_pendiente)}
+                            {d.limite_deuda !== null && (
+                              <div style={{ fontSize: "0.7rem", color: "var(--muted)" }}>límite {q(d.limite_deuda)}</div>
+                            )}
+                          </td>
+                          <td style={{ ...s.td, textAlign: "right" }}>{d.cantidad_deudas}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
+          </div>
+
         </div>
       )}
     </StaffShell>
@@ -684,6 +923,7 @@ const s: Record<string, CSSProperties> = {
   emptyIconWrap: { width: 72, height: 72, borderRadius: 16, background: "var(--surface2)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center" },
   skeleton: { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, opacity: 0.5 },
   statsGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "1rem" },
+  kpiGroupLabel: { fontSize: "0.75rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: "0.5rem" } as CSSProperties,
   statCard: { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "1.1rem 1.25rem" },
   statCardTop: { display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" },
   statIconWrap: { width: 28, height: 28, borderRadius: 6, background: "var(--surface2)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },

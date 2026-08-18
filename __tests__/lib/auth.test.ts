@@ -7,7 +7,7 @@ import {
   verifyPassword,
 } from "@/lib/auth";
 
-const TEST_SECRET = "test-jwt-secret-for-unit-tests";
+const TEST_SECRET = "test-jwt-secret-for-unit-tests-0123456789";
 
 beforeAll(() => {
   process.env.JWT_SECRET = TEST_SECRET;
@@ -28,22 +28,17 @@ describe("getJwtSecret", () => {
     expect(getJwtSecret()).toBe(TEST_SECRET);
   });
 
-  it("returns the dev fallback when NODE_ENV=development and no secret set", () => {
-    delete process.env.JWT_SECRET;
-    process.env.NODE_ENV = "development";
-    expect(getJwtSecret()).toBe("deposito_san_miguel_secret_key_dev");
+  it("throws when JWT_SECRET is too short", () => {
+    process.env.JWT_SECRET = "short-secret";
+    expect(() => getJwtSecret()).toThrow("JWT_SECRET must be at least 32 characters");
     process.env.JWT_SECRET = TEST_SECRET;
-    delete process.env.NODE_ENV;
   });
 
-  it("throws when no JWT_SECRET and not in development", () => {
+  it("throws when no JWT_SECRET is set", () => {
     const prev = process.env.JWT_SECRET;
-    const prevNodeEnv = process.env.NODE_ENV;
     delete process.env.JWT_SECRET;
-    process.env.NODE_ENV = "production";
     expect(() => getJwtSecret()).toThrow("JWT_SECRET is required");
     process.env.JWT_SECRET = prev;
-    process.env.NODE_ENV = prevNodeEnv;
   });
 });
 
@@ -79,7 +74,7 @@ describe("signAuthToken / verifyAuthToken", () => {
 
   it("returns null for a token signed with a different secret", () => {
     const token = signAuthToken(usuario);
-    process.env.JWT_SECRET = "different-secret";
+    process.env.JWT_SECRET = "different-secret-that-is-long-enough-for-tests";
     expect(verifyAuthToken(token)).toBeNull();
     process.env.JWT_SECRET = TEST_SECRET;
   });

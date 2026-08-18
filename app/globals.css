@@ -4,35 +4,33 @@
   margin: 0;
   padding: 0;
 }
-
 :root {
-  /* ── Nueva paleta Tienda San Miguel ── */
-  --bg:        #ffffff;        /* Fondo principal — crema cálido */
-  --surface:   #ffffff;        /* Cards y paneles elevados */
-  --surface2:  #EEF1FB;        /* Superficies secundarias — azul muy claro */
-  --border:    #C5CEED;        /* Bordes suaves */
-  --accent:    #1D24CA;        /* Azul eléctrico — CTA principal */
-  --accent2:   #201658;        /* Azul marino profundo — hover/dark */
-  --accent-light: #98ABEE;     /* Azul lavanda — badges, chips, highlights */
-  --green:     #1a477a;        /* Verde éxito */
-  --red:       #2b53c0;        /* Rojo error */
-  --blue:      #1D24CA;        /* Alias azul */
-  --text:      #201658;        /* Texto principal — marino oscuro */
-  --muted:     #5a6495;        /* Texto secundario — marino medio */
+  /* ── Paleta Tienda San Miguel (verde + neutros) ── */
+  --bg:        #ffffff;
+  --surface:   #ffffff;
+  --surface2:  #F8FAFC;
+  --border:    #E2E8F0;
+  --accent:    #22C55E;
+  --accent2:   #15803D;
+  --accent-light: #BBF7D0;
+  --warm:      #F59E0B;
+  --green:     #16A34A;
+  --red:       #DC2626;
+  --blue:      #2563EB;
+  --text:      #1E293B;
+  --muted:     #64748B;
   --font-head: 'Syne', sans-serif;
   --font-body: 'DM Sans', sans-serif;
   --radius:    10px;
-  --shadow:    0 4px 24px rgba(29, 36, 202, 0.12);
-
+  --shadow:    0 4px 24px rgba(15, 23, 42, 0.08);
   /* Variables de sidebar (usadas en StaffShell) */
-  --sidebar-bg:      #201658;
-  --sidebar-text:    #F9E8C9;
-  --sidebar-muted:   #98ABEE;
-  --sidebar-hover:   rgba(152, 171, 238, 0.18);
-  --sidebar-active:  rgba(152, 171, 238, 0.28);
-  --sidebar-border:  rgba(152, 171, 238, 0.2);
+  --sidebar-bg:      #1E293B;
+  --sidebar-text:    #F1F5F9;
+  --sidebar-muted:   #94A3B8;
+  --sidebar-hover:   rgba(34, 197, 94, 0.12);
+  --sidebar-active:  rgba(34, 197, 94, 0.20);
+  --sidebar-border:  rgba(148, 163, 184, 0.2);
 }
-
 [data-theme="light"] {
   --bg:       #f6f8fa;
   --surface:  #ffffff;
@@ -42,7 +40,6 @@
   --muted:    #656d76;
   --shadow:   0 4px 24px rgba(0, 0, 0, .10);
 }
-
 body {
   background: var(--bg);
   color: var(--text);
@@ -52,7 +49,6 @@ body {
   min-height: 100vh;
   transition: background 0.2s, color 0.2s;
 }
-
 a {
   color: var(--accent);
   text-decoration: none;
@@ -60,7 +56,6 @@ a {
 a:hover {
   text-decoration: underline;
 }
-
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: var(--accent-light); border-radius: 3px; }
