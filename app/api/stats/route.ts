@@ -31,6 +31,6 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (error) {
-    return apiError("STATS GET", error);
+    return apiError("STATS GET", error, 500);
   }
 }
