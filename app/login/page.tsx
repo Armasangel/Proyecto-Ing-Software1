@@ -315,7 +315,7 @@ const s: Record<string, React.CSSProperties> = {
   /* Fondo sólido oscuro, sin gradientes raros */
   brand: {
     flex: "0 0 42%",
-    background: "#150f3a",
+    background: "#1E293B",
     display: "flex",
     alignItems: "center",
     padding: "3rem",
@@ -362,7 +362,7 @@ const s: Record<string, React.CSSProperties> = {
 
   brandDesc: {
     fontSize: "0.92rem",
-    color: "rgba(152, 171, 238, 0.8)",
+    color: "rgba(226, 232, 240, 0.85)",
     lineHeight: 1.65,
     margin: 0,
   },
