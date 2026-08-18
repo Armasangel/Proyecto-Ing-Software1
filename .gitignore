@@ -10,7 +10,7 @@ build/
 # ── Variables de entorno locales (Docker usa env en docker-compose) ──────
 .env
 .env.*
-.env.example
+!.env.example
 
 # ── Logs y depuración ──────────────────────────────────────────────────────
 npm-debug.log*
