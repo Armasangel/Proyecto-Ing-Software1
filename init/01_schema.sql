@@ -1,13 +1,14 @@
 --  init/01_schema.sql
---  Este archivo corre AUTOMÁTICAMENTE la primera vez que
---  Docker crea el contenedor de PostgreSQL.
---  Si la BD ya existe (volumen tienda_data), NO corre de nuevo.
+--  Schema CONSOLIDADO de la base de datos: tablas, secuencias, vista,
+--  índices y datos de prueba en un SOLO archivo.
 --
---  Schema COMPLETO y consolidado (antes repartido en 02_deudas, 02_ordenes,
---  03_facturacion_secuencia, 04_detalle_venta_cascade y 05_codigo_verificacion).
---  Para un despliegue a un servidor nuevo (p. ej. server4you), basta con
---  ejecutar este archivo una sola vez sobre una base vacía.
---  No ejecutes los scripts 02-05 por separado: sus tablas ya viven aquí.
+--  Corre AUTOMÁTICAMENTE la primera vez que Docker crea el contenedor de
+--  PostgreSQL (docker-entrypoint-initdb.d). Para desplegar a un servidor
+--  nuevo (p. ej. server4you), basta con ejecutar este archivo una sola vez
+--  sobre una base vacía.
+--
+--  Se unificaron aquí los antiguos scripts 02_ordenes, 03_facturacion,
+--  04_detalle_venta, 05_codigo_verificacion, 03_indices y 03_datos_venta.
 
 -- CATEGORIA
 CREATE TABLE categoria (
@@ -70,6 +71,7 @@ CREATE TABLE cliente (
                         CHECK (tipo_cliente IN ('MINORISTA', 'MAYORISTA')),
     estado_cliente  BOOLEAN         NOT NULL DEFAULT TRUE,
     nit_cliente     VARCHAR(20)     NOT NULL DEFAULT 'CF',
+    limite_deuda    NUMERIC(12,2),
     CONSTRAINT uq_cliente_correo UNIQUE (correo)
 );
 
@@ -207,6 +209,8 @@ CREATE TABLE deuda (
     estado_deuda        VARCHAR(20)     NOT NULL DEFAULT 'PENDIENTE'
                             CHECK (estado_deuda IN ('PENDIENTE', 'PAGADA')),
     id_usuario          INT             NOT NULL,
+    id_cliente          INT             REFERENCES cliente(id_cliente),
+    fecha_limite_pago   DATE,
     fecha_creacion       TIMESTAMP       NOT NULL DEFAULT NOW(),
     CONSTRAINT fk_deuda_usuario FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario)
 );
@@ -222,8 +226,6 @@ CREATE TABLE deuda_producto (
     CONSTRAINT fk_dp_deuda    FOREIGN KEY (id_deuda)    REFERENCES deuda(id_deuda) ON DELETE CASCADE,
     CONSTRAINT fk_dp_producto FOREIGN KEY (id_producto) REFERENCES producto(id_producto)
 );
-
-CREATE INDEX idx_deuda_estado ON deuda(estado_deuda);
 
 -- ORDEN (órdenes de compra)
 CREATE TABLE orden (
@@ -279,7 +281,48 @@ CREATE TABLE login_intento (
     ultimo_intento  TIMESTAMP       NOT NULL DEFAULT NOW()
 );
 
+-- ──────────────────────────────────────────────────────────────────────────
+--  ÍNDICES
+--  Diseñados según los patrones de WHERE/JOIN/ORDER BY reales del código:
+--    - app/api/gestion-inventario/kardex/route.ts (filtro por bodega+producto+tipo+fecha, orden por fecha)
+--    - lib/historial-ventas.ts (filtro por fecha/cliente/total, EXISTS sobre detalle_venta por id_venta+id_producto)
+-- ──────────────────────────────────────────────────────────────────────────
+
+-- KARDEX: calza con el filtro id_bodega + id_producto + ORDER BY fecha DESC
+-- del endpoint GET /api/gestion-inventario/kardex.
+CREATE INDEX IF NOT EXISTS idx_kardex_bodega_producto_fecha
+    ON kardex (id_bodega, id_producto, fecha_movimiento DESC);
+
+-- Calza con el filtro por tipo_movimiento combinado con rango de fecha.
+CREATE INDEX IF NOT EXISTS idx_kardex_tipo_fecha
+    ON kardex (tipo_movimiento, fecha_movimiento DESC);
+
+-- VENTA: el historial se ordena y filtra por fecha_venta (day/week/month/year).
+CREATE INDEX IF NOT EXISTS idx_venta_fecha
+    ON venta (fecha_venta DESC);
+
+-- Filtro por id_cliente en historial-ventas.ts.
+CREATE INDEX IF NOT EXISTS idx_venta_cliente
+    ON venta (id_cliente);
+
+-- DETALLE_VENTA: el FK id_venta no tiene índice automático en Postgres; se usa
+-- constantemente en EXISTS (dv.id_venta = v.id_venta AND dv.id_producto = $x).
+CREATE INDEX IF NOT EXISTS idx_detalle_venta_venta_producto
+    ON detalle_venta (id_venta, id_producto);
+
+-- Reportes que filtran directo por producto sin pasar primero por id_venta.
+CREATE INDEX IF NOT EXISTS idx_detalle_venta_producto
+    ON detalle_venta (id_producto);
+
+-- DEUDAS: consultas por estado, cliente vinculado y fecha límite.
+CREATE INDEX IF NOT EXISTS idx_deuda_estado ON deuda(estado_deuda);
+CREATE INDEX IF NOT EXISTS idx_deuda_cliente ON deuda(id_cliente);
+CREATE INDEX IF NOT EXISTS idx_deuda_fecha_limite ON deuda(fecha_limite_pago);
+
+-- ──────────────────────────────────────────────────────────────────────────
 --  DATOS DE PRUEBA
+-- ──────────────────────────────────────────────────────────────────────────
+
 INSERT INTO categoria (nombre_categoria) VALUES ('Abarrotes'), ('Lácteos'), ('Bebidas');
 INSERT INTO marca (nombre_marca) VALUES ('Genérico'), ('La Mariposa'), ('Dos Pinos');
 INSERT INTO bodega (nombre_bodega, ubicacion) VALUES ('Bodega Principal', 'Zona 1, Guatemala');
@@ -302,4 +345,147 @@ INSERT INTO cliente (nombre, correo, telefono, tipo_cliente) VALUES
   ('Maria Comprador', 'maria@gmail.com', '50209876543', 'MINORISTA'),
   ('Pedro Mayorista', 'pedro@gmail.com', '50205555555', 'MAYORISTA');
 
-  
+-- ── Más productos (para que "top productos" e "ingresos por categoría"
+--    tengan variedad — usamos la categoría Bebidas que ya existía sin uso) ──
+INSERT INTO producto (codigo_producto, nombre_producto, precio_unitario, precio_mayoreo, unidad_medida, id_categoria, id_marca)
+VALUES
+  ('FRI-001', 'Frijol 1 libra',        6.00,  5.00, 'libra',   1, 1),
+  ('BEB-001', 'Coca-Cola 1.5L',       12.00, 10.00, 'unidad',  3, 1),
+  ('BEB-002', 'Agua pura 600ml',       4.00,  3.25, 'unidad',  3, 1),
+  ('LEC-002', 'Yogurt Dos Pinos 1L',   8.50,  7.00, 'unidad',  2, 3)
+ON CONFLICT (codigo_producto) DO NOTHING;
+
+INSERT INTO bodega_producto (id_bodega, id_producto, cantidad_disponible, stock_minimo)
+SELECT 1, p.id_producto, 100, 15
+FROM producto p
+WHERE p.codigo_producto IN ('FRI-001', 'BEB-001', 'BEB-002', 'LEC-002')
+ON CONFLICT (id_bodega, id_producto) DO NOTHING;
+
+-- ── Más clientes (para "top clientes") ──────────────────────────────────
+INSERT INTO cliente (nombre, correo, telefono, tipo_cliente) VALUES
+  ('Lucia Rodriguez',  'lucia.rodriguez@gmail.com', '50201112222', 'MINORISTA'),
+  ('Jorge Estrada',    'jorge.estrada@gmail.com',   '50203334444', 'MINORISTA'),
+  ('Distribuidora Sol','ventas@disol.com',          '50205556666', 'MAYORISTA'),
+  ('Ana Morales',      'ana.morales@gmail.com',     '50207778888', 'MINORISTA')
+ON CONFLICT (correo) DO NOTHING;
+
+-- ── Generación de ventas de prueba (últimos 365 días) ───────────────────
+-- Solo corre si todavía no hay ventas, para poder re-ejecutar el archivo
+-- sin duplicar datos. La sección de Reportes (app/reportes) necesita ventas
+-- reales para calcular resúmenes, series por día/hora, top de
+-- productos/clientes, ingresos por categoría y salidas de kardex por bodega.
+DO $$
+DECLARE
+  v_id_venta       INT;
+  v_id_cliente     INT;
+  v_tipo_cliente   VARCHAR(20);
+  v_id_empleado    INT;
+  v_id_bodega      INT := (SELECT id_bodega FROM bodega ORDER BY id_bodega LIMIT 1);
+  v_fecha          TIMESTAMP;
+  v_estado         VARCHAR(20);
+  v_tipo_entrega   VARCHAR(20);
+  v_total          NUMERIC(12,2);
+  v_num_items      INT;
+  v_id_producto    INT;
+  v_precio         NUMERIC(10,2);
+  v_cantidad       NUMERIC(12,3);
+  v_subtotal       NUMERIC(12,2);
+  v_roll           NUMERIC;
+  v_hora           INT;
+  i                INT;
+  j                INT;
+  n_ventas         INT := 180;
+  numero_fact      INT := 1000;
+BEGIN
+  IF EXISTS (SELECT 1 FROM venta) THEN
+    RAISE NOTICE 'Ya existen ventas, se omite la generación de datos de prueba.';
+    RETURN;
+  END IF;
+
+  FOR i IN 1..n_ventas LOOP
+    -- Cliente al azar
+    SELECT id_cliente, tipo_cliente INTO v_id_cliente, v_tipo_cliente
+    FROM cliente ORDER BY random() LIMIT 1;
+
+    -- Empleado al azar (puede ser NULL para ventas en línea)
+    v_roll := random();
+    IF v_roll < 0.75 THEN
+      SELECT id_usuario INTO v_id_empleado FROM usuario ORDER BY random() LIMIT 1;
+    ELSE
+      v_id_empleado := NULL;
+    END IF;
+
+    -- Fecha dentro de los últimos 365 días, con hora concentrada en horario
+    -- de tienda (8-20h) para que "actividad por hora" tenga forma realista.
+    v_hora := 8 + floor(random() * 13)::int; -- 8..20
+    v_fecha := (NOW() - (random() * INTERVAL '365 days'))::date
+                + (v_hora || ' hours')::interval
+                + (floor(random() * 60) || ' minutes')::interval;
+
+    -- Estado ponderado
+    v_roll := random();
+    v_estado := CASE
+      WHEN v_roll < 0.50 THEN 'PAGADO'
+      WHEN v_roll < 0.70 THEN 'ENTREGADO'
+      WHEN v_roll < 0.82 THEN 'CONFIRMADO'
+      WHEN v_roll < 0.94 THEN 'PENDIENTE'
+      ELSE 'CANCELADO'
+    END;
+
+    v_tipo_entrega := CASE WHEN random() < 0.7 THEN 'EN_TIENDA' ELSE 'DOMICILIO' END;
+
+    -- Crear venta (total se actualiza luego de insertar el detalle)
+    INSERT INTO venta (id_cliente, id_empleado, fecha_venta, estado_venta, tipo_venta, tipo_entrega, direccion_entrega, enlinea, total)
+    VALUES (
+      v_id_cliente, v_id_empleado, v_fecha, v_estado, v_tipo_cliente, v_tipo_entrega,
+      CASE WHEN v_tipo_entrega = 'DOMICILIO' THEN 'Zona ' || (1 + floor(random()*20))::text || ', Guatemala' ELSE NULL END,
+      random() < 0.3,
+      0
+    )
+    RETURNING id_venta INTO v_id_venta;
+
+    -- 1 a 4 productos por venta
+    v_total := 0;
+    v_num_items := 1 + floor(random() * 4)::int;
+
+    FOR j IN 1..v_num_items LOOP
+      SELECT id_producto INTO v_id_producto FROM producto ORDER BY random() LIMIT 1;
+      v_cantidad := round((1 + random() * 9)::numeric, CASE WHEN random() < 0.5 THEN 0 ELSE 2 END);
+
+      SELECT CASE WHEN v_tipo_cliente = 'MAYORISTA' THEN precio_mayoreo ELSE precio_unitario END
+      INTO v_precio FROM producto WHERE id_producto = v_id_producto;
+
+      v_subtotal := round(v_precio * v_cantidad, 2);
+      v_total := v_total + v_subtotal;
+
+      INSERT INTO detalle_venta (id_venta, id_producto, cantidad, precio_unitario, subtotal)
+      VALUES (v_id_venta, v_id_producto, v_cantidad, v_precio, v_subtotal);
+
+      -- Salida de kardex correspondiente (para "top bodegas")
+      INSERT INTO kardex (id_bodega, id_producto, fecha_movimiento, tipo_movimiento, cantidad, descripcion)
+      VALUES (v_id_bodega, v_id_producto, v_fecha, 'SALIDA', v_cantidad, 'Venta #' || v_id_venta)
+      ON CONFLICT DO NOTHING;
+    END LOOP;
+
+    UPDATE venta SET total = v_total WHERE id_venta = v_id_venta;
+
+    -- Pago para ventas PAGADO
+    IF v_estado = 'PAGADO' THEN
+      INSERT INTO pago (id_venta, fecha_pago, monto, metodo)
+      VALUES (
+        v_id_venta, v_fecha + INTERVAL '5 minutes', v_total,
+        (ARRAY['TARJETA','EFECTIVO','TRANSFERENCIA'])[1 + floor(random()*3)]
+      );
+    END IF;
+
+    -- Factura para ventas PAGADO o ENTREGADO
+    IF v_estado IN ('PAGADO', 'ENTREGADO') THEN
+      numero_fact := numero_fact + 1;
+      INSERT INTO factura (id_venta, numero_factura, nombre_cliente, nit_cliente, total_factura)
+      SELECT v_id_venta, 'FAC-' || numero_fact::text, c.nombre, c.nit_cliente, v_total
+      FROM cliente c WHERE c.id_cliente = v_id_cliente;
+    END IF;
+  END LOOP;
+
+  RAISE NOTICE 'Generadas % ventas de prueba con su detalle, kardex, pagos y facturas.', n_ventas;
+END $$;

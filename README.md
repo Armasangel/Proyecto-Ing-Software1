@@ -2,7 +2,7 @@
 ### Sistema de Gestión de Inventario y Ventas
 
 Proyecto desarrollado para la clase de Ingeniería de Software 1.  
-Sistema web para apoyar la gestión de inventario, ventas y pedidos de un negocio mayorista.
+Sistema web para apoyar la gestión de inventario, ventas, deudas y pedidos de un negocio mayorista.
 
 ---
 
@@ -30,9 +30,9 @@ Sistema web para apoyar la gestión de inventario, ventas y pedidos de un negoci
 git clone <url-del-repo>
 cd <nombre-del-repo>
 
-# 2. Configura las variables de entorno (ver sección "Configuración")
+# 2. Configura las variables de entorno
 cp .env.example .env
-# ...completa .env
+# ...completa JWT_SECRET, GMAIL_USER y GMAIL_APP_PASSWORD
 
 # 3. Levanta todo con Docker (primera vez tarda ~2 min)
 docker compose up --build
@@ -70,7 +70,21 @@ Si cambiaste dependencias, reconstruye la imagen: `docker compose build --no-cac
 
 ---
 
-## 🔐 Usuarios de prueba
+## 🔐 Configuración (`.env`)
+
+Copia `.env.example` a `.env` y completa estos valores:
+
+| Variable | Descripción |
+|---|---|
+| `JWT_SECRET` | Secreto para firmar los tokens (mínimo 32 caracteres). Cámbialo en producción. |
+| `GMAIL_USER` | Correo Gmail que envía los códigos de verificación 2FA. |
+| `GMAIL_APP_PASSWORD` | Contraseña de aplicación de Gmail (16 caracteres en grupos de 4). |
+
+`DATABASE_URL` **no** va en `.env`: está fija en `docker-compose.yml`.
+
+---
+
+## 🔑 Usuarios de prueba
 
 La base de datos se inicializa con estos usuarios. Contraseña para todos: **`password123`**
 
@@ -94,11 +108,7 @@ lo manda por correo, y el login solo se completa con el código correcto. El **d
 
 El envío usa **Gmail SMTP** (gratis, con contraseña de aplicación). Para configurarlo:
 
-1. Copia `.env.example` a `.env` y completa:
-   ```
-   GMAIL_USER=tu_correo@gmail.com
-   GMAIL_APP_PASSWORD=xxxx xxxx xxxx xxxx
-   ```
+1. Copia `.env.example` a `.env` y completa `GMAIL_USER` y `GMAIL_APP_PASSWORD`.
 2. `GMAIL_APP_PASSWORD` NO es la contraseña de tu cuenta. Se genera así:
    - Activa la verificación en 2 pasos de Google en tu cuenta.
    - Entra a https://myaccount.google.com/apppasswords
@@ -116,10 +126,63 @@ El envío usa **Gmail SMTP** (gratis, con contraseña de aplicación). Para conf
 |---|---|
 | Frontend + Backend | Next.js 14 (App Router) |
 | Base de datos | PostgreSQL 16 |
-| Autenticación | JWT (jsonwebtoken + bcryptjs) |
+| Autenticación | JWT (jsonwebtoken + bcryptjs) + 2FA por correo |
 | ORM / Queries | pg (node-postgres) |
+| Tests | Jest 29 + React Testing Library + MSW |
 | Contenedores | Docker + Docker Compose |
 | Admin BD | pgAdmin 4 |
+
+---
+
+## 👥 Roles y módulos
+
+El sistema diferencia dos roles con permisos distintos:
+
+| Módulo | Ruta | Dueño | Colaborador |
+|---|---|---|---|
+| Dashboard (KPIs) | `/dashboard` | ✅ | ✅ |
+| Ventas | `/ventas` | — | ✅ |
+| Inventario / bodegas / kardex | `/inventario` | ✅ | — |
+| Catálogo de productos | `/catalogo` | ✅ | — |
+| Productos (maestro) | `/productos` | ✅ | — |
+| Facturación | `/facturacion` | ✅ | ✅ |
+| Reportes / Estadísticas | `/reportes` | ✅ | ✅ |
+| Órdenes de compra | `/ordenes` | ✅ | ✅ |
+| Historial de ventas | `/historial-ventas` | ✅ | — |
+| Deudas | `/deudas` | ✅ | — |
+| Proveedores | `/proveedores` | ✅ | — |
+| Usuarios | `/usuarios` | ✅ | — |
+
+---
+
+## 📋 Funcionalidades implementadas
+
+### Autenticación y seguridad
+- [x] Login con JWT y sesión persistente en cookie HttpOnly
+- [x] **2FA** por código de correo para colaboradores
+- [x] Rate-limit de intentos de login (tabla compartida en Postgres)
+- [x] Middleware Edge con verificación de firma del token (Web Crypto API)
+
+### Inventario y catálogo
+- [x] Productos: alta, edición, baja y precios (unitario / mayoreo)
+- [x] Categorías, marcas, bodegas y proveedores
+- [x] Entradas de inventario (Kardex), ajustes y transferencias entre bodegas
+- [x] Control de stock mínimo con alertas
+
+### Ventas y clientes
+- [x] Registro de ventas con descuento transaccional de stock (concurrencia segura)
+- [x] Facturación con número correlativo atómico (secuencia de Postgres)
+- [x] Historial de ventas con filtros y paginación
+- [x] Gestión de clientes (minorista / mayorista) con límite de deuda y bloqueo automático
+
+### Deudas y órdenes
+- [x] Deudas por productos o monto libre, con alertas y bloqueo por límite
+- [x] Órdenes de compra con estados y detalle
+
+### Reportes
+- [x] Dashboard con KPIs (productos, ventas, pendientes, proveedores, clientes bloqueados)
+- [x] Reportes analíticos por periodo: ingresos, ticket promedio, top productos/clientes,
+      actividad por hora, ingresos por categoría y top deudores
 
 ---
 
@@ -127,23 +190,38 @@ El envío usa **Gmail SMTP** (gratis, con contraseña de aplicación). Para conf
 
 ```
 ├── app/
-│   ├── api/
-│   │   ├── health/        → Verificar conexión a BD
-│   │   ├── login/         → Autenticación + 2FA (paso 1)
+│   ├── api/                  → Rutas del backend (REST)
+│   │   ├── login/            → Autenticación + 2FA (paso 1)
 │   │   ├── login/verificar-codigo → 2FA (paso 2)
-│   │   ├── productos/     → Listado de productos
-│   │   └── sesion/        → Sesión activa del usuario
-│   ├── dashboard/         → Panel principal (post-login)
-│   ├── inventario/        → Vista de inventario por rol
-│   ├── login/             → Página de inicio de sesión
-│   └── page.tsx           → Página de inicio
-├── lib/
-│   ├── auth.ts            → Utilidades JWT y hashing
-│   ├── mailer.ts          → Envío de códigos por Gmail SMTP
-│   └── verificacion.ts    → Códigos 2FA (generar, hashear, pre-token)
+│   │   ├── productos/        → Productos
+│   │   ├── ventas/           → Ventas (+ recientes)
+│   │   ├── facturacion/      → Facturas
+│   │   ├── deudas/           → Deudas
+│   │   ├── ordenes/          → Órdenes de compra
+│   │   ├── gestion-inventario/ → Kardex, ajustes, transferencias, stock mínimo
+│   │   ├── estadisticas/     → Reportes analíticos
+│   │   ├── clientes/ bodegas/ categorias/ marcas/ proveedores/ precios/
+│   │   ├── usuarios/ stats/ sesion/ historial-ventas/ health/ logout/
+│   ├── dashboard/            → Panel principal con KPIs
+│   ├── inventario/           → Stock, entradas, transferencias, ajustes y bodegas
+│   ├── catalogo/             → Catálogo de productos (solo dueño)
+│   ├── productos/            → Catálogo maestro (precios y estados)
+│   ├── ventas/               → Registro de ventas (colaborador)
+│   ├── facturacion/          → Emisión de facturas por venta
+│   ├── historial-ventas/     → Consulta y filtros de ventas
+│   ├── deudas/               → Control de deudas y deudores
+│   ├── ordenes/              → Órdenes de compra
+│   ├── proveedores/          → Gestión de proveedores
+│   ├── reportes/             → Estadísticas y reportes del negocio
+│   ├── usuarios/             → Gestión de usuarios y roles
+│   ├── login/                → Página de inicio de sesión
+│   └── page.tsx              → Redirige a /login
+├── components/               → StaffShell, Icon, VentaToastListener
+├── hooks/                    → useDuenoSession, useStaffSession
+├── lib/                      → auth, db, roles, mailer, verificacion, api-error, ...
 ├── init/
-│   ├── 01_schema.sql      → Schema base + datos de prueba (corre automático en Docker)
-│   └── 02_..–05_..sql     → Migraciones de sprints (ordenas, deudas, factura, 2FA)
+│   └── 01_schema.sql         → Schema + índices + datos de prueba (corre automático)
+├── __tests__/                → Tests (unit, API, integración, páginas, hooks)
 ├── docker-compose.yml
 └── Dockerfile
 ```
@@ -154,10 +232,9 @@ El envío usa **Gmail SMTP** (gratis, con contraseña de aplicación). Para conf
 
 | URL | Descripción |
 |---|---|
-| http://localhost:3001 | Aplicación principal |
+| http://localhost:3001 | Aplicación principal (redirige a /login) |
 | http://localhost:3001/login | Inicio de sesión |
-| http://localhost:3001/gestion-inventario | Gestión de inventario / bodegas (solo dueño) |
-| http://localhost:3001/inventario | Alta/edición de productos (solo dueño) |
+| http://localhost:3001/dashboard | Dashboard con KPIs |
 | http://localhost:3001/api/health | Verificar conexión a PostgreSQL |
 | http://localhost:5050 | pgAdmin (admin@dsm.com / admin123) |
 
@@ -178,33 +255,18 @@ El envío usa **Gmail SMTP** (gratis, con contraseña de aplicación). Para conf
 
 ---
 
-## 📋 Funcionalidades implementadas (Sprint 1)
-
-- [x] **RF1** — Autenticación de usuarios con JWT
-- [x] **RF3** — Consulta de inventario diferenciada por rol
-- [x] Conexión a PostgreSQL desde Next.js
-- [x] Schema completo de base de datos con datos de prueba
-- [x] Sesión persistente con cookies HttpOnly
-- [x] **2FA** — Verificación por código de correo para colaboradores
-
-## 🚧 En desarrollo (próximos sprints)
-
-- [x] **RF2** — Registro de nuevos productos
-- [x] **RF4** — Registro de entrada de inventario (Kardex)
-- [x] **RF6** — Gestión de precios (supervisor)
-- [x] **RF7** — Registro y gestión de clientes
-- [x] **RF9** — Generación de facturas
-
----
-
 ## ⚠️ Notas de desarrollo
 
 - Las contraseñas en `init/01_schema.sql` son hashes bcrypt solo para desarrollo
 - El `JWT_SECRET` en `.env` debe cambiarse en producción
+- El schema está consolidado en un **solo archivo** (`init/01_schema.sql`): tablas,
+  secuencias, vista, índices y datos de prueba. Para desplegar a un servidor nuevo
+  basta con ejecutarlo una sola vez sobre una base vacía.
 - La carpeta `init/` corre **solo la primera vez** que se crea el volumen de Postgres.
-  Si agregas una migración nueva y ya tienes la BD corriendo, aplícala manualmente:
+  Si tu base de datos ya existe (volumen `postgres_data`), para aplicar el schema
+  desde cero tienes que recrear el volumen:
   ```bash
-  docker exec -i proyecto-ing-software1-db-1 psql -U dsm_user -d deposito_san_miguel \
-    < init/05_codigo_verficacion.sql
+  docker compose down -v && docker compose up --build   # ⚠️ borra todos los datos
   ```
-  (o reinicia todo de cero con `docker compose down -v && docker compose up --build` — **borra todos los datos**)  
+- Los tests de integración (`__tests__/integration/`) requieren la base de datos;
+  se ejecutan con el servicio `test` de Docker (`docker compose run --rm test`).
