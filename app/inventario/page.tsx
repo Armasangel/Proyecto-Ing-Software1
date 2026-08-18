@@ -108,12 +108,10 @@ export default function InventarioPage() {
   // Stock
   const [stock, setStock] = useState<StockRow[]>([]);
   const [resumen, setResumen] = useState<{ filas: number; bajo_minimo: number } | null>(null);
-  const [loadingStock, setLoadingStock] = useState(false);
   const [minEdits, setMinEdits] = useState<Record<string, string>>({});
 
   // Kardex
   const [kardex, setKardex] = useState<KardexRow[]>([]);
-  const [loadingKardex, setLoadingKardex] = useState(false);
 
   // Operaciones: Entrada
   const [entradaForm, setEntradaForm] = useState({ id_bodega: "", id_producto: "", cantidad: "", tipo_ingreso: "UNIDADES", descripcion: "" });
@@ -182,7 +180,6 @@ export default function InventarioPage() {
   }, []);
 
   const cargarStock = useCallback(async () => {
-    setLoadingStock(true);
     try {
       const r = await fetch(`/api/gestion-inventario${stockQuery}`);
       const d = await r.json();
@@ -190,18 +187,15 @@ export default function InventarioPage() {
       setStock(d.stock || []);
       setResumen(d.resumen || null);
     } catch (e) { showToast(String(e), "err"); }
-    finally { setLoadingStock(false); }
   }, [stockQuery]);
 
   const cargarKardex = useCallback(async () => {
-    setLoadingKardex(true);
     try {
       const r = await fetch(`/api/gestion-inventario/kardex${kardexQuery}`);
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || "Error al cargar kardex");
       setKardex(d.movimientos || []);
     } catch (e) { showToast(String(e), "err"); }
-    finally { setLoadingKardex(false); }
   }, [kardexQuery]);
 
   useEffect(() => {
@@ -391,32 +385,31 @@ export default function InventarioPage() {
 
           {/* Búsqueda + filtros en fila (stock y kardex) */}
           {(tab === "stock" || tab === "kardex") && (
-            <div style={s.toolbar}>
-              <input
-                type="search"
-                value={tab === "stock" ? qStock : qKardex}
-                onChange={(e) => (tab === "stock" ? setQStock(e.target.value) : setQKardex(e.target.value))}
-                placeholder={tab === "stock" ? "Buscar producto, código, bodega…" : "Buscar movimiento, producto, bodega…"}
-                aria-label={tab === "stock" ? "Buscar en stock" : "Buscar en kardex"}
-                style={s.searchInput}
-              />
-              <select value={filtroBodega} onChange={e => setFiltroBodega(e.target.value)} style={s.selectInline} aria-label="Filtrar por bodega">
-                <option value="">Todas las bodegas</option>
-                {bodegasSimple.map(b => <option key={b.id_bodega} value={b.id_bodega}>{b.nombre_bodega}</option>)}
-              </select>
-              <select value={filtroProducto} onChange={e => setFiltroProducto(e.target.value)} style={{ ...s.selectInline, minWidth: 220 }} aria-label="Filtrar por producto">
-                <option value="">Todos los productos</option>
-                {productos.map(p => <option key={p.id_producto} value={p.id_producto}>[{p.codigo_producto}] {p.nombre_producto}{!p.estado_producto ? " (inactivo)" : ""}</option>)}
-              </select>
+            <div style={s.filterBlock}>
+              <div style={s.toolbar}>
+                <input
+                  type="search"
+                  value={tab === "stock" ? qStock : qKardex}
+                  onChange={(e) => (tab === "stock" ? setQStock(e.target.value) : setQKardex(e.target.value))}
+                  placeholder={tab === "stock" ? "Buscar producto, código, bodega…" : "Buscar movimiento, producto, bodega…"}
+                  aria-label={tab === "stock" ? "Buscar en stock" : "Buscar en kardex"}
+                  style={s.searchInput}
+                />
+                <select value={filtroBodega} onChange={e => setFiltroBodega(e.target.value)} style={s.selectInline} aria-label="Filtrar por bodega">
+                  <option value="">Todas las bodegas</option>
+                  {bodegasSimple.map(b => <option key={b.id_bodega} value={b.id_bodega}>{b.nombre_bodega}</option>)}
+                </select>
+                <select value={filtroProducto} onChange={e => setFiltroProducto(e.target.value)} style={{ ...s.selectInline, minWidth: 220 }} aria-label="Filtrar por producto">
+                  <option value="">Todos los productos</option>
+                  {productos.map(p => <option key={p.id_producto} value={p.id_producto}>[{p.codigo_producto}] {p.nombre_producto}{!p.estado_producto ? " (inactivo)" : ""}</option>)}
+                </select>
+              </div>
               {tab === "stock" && (
-                <>
+                <div style={s.checkRow}>
                   <label style={s.check}><input type="checkbox" checked={soloBajoMinimo} onChange={e => setSoloBajoMinimo(e.target.checked)} style={{ accentColor: "var(--accent)" }} /> Solo bajo mínimo</label>
                   <label style={s.check}><input type="checkbox" checked={incluirInactivos} onChange={e => setIncluirInactivos(e.target.checked)} style={{ accentColor: "var(--accent)" }} /> Incluir inactivos</label>
-                </>
+                </div>
               )}
-              <button type="button" onClick={() => tab === "stock" ? cargarStock() : cargarKardex()} style={s.btnGhost} disabled={loadingStock || loadingKardex}>
-                {(loadingStock || loadingKardex) ? "Actualizando…" : "Actualizar"}
-              </button>
             </div>
           )}
         </div>
@@ -669,7 +662,6 @@ export default function InventarioPage() {
                 style={s.searchInput}
               />
               <button type="button" onClick={abrirCrearBodega} style={s.btnPrimary}>+ Nueva bodega</button>
-              <button type="button" onClick={() => cargarBodegas()} style={s.btnGhost}>Actualizar</button>
             </div>
             <div style={{ ...s.card, padding: 0, overflow: "hidden" }}>
               <div style={{ overflow: "auto" }}>
@@ -874,7 +866,9 @@ const s: Record<string, CSSProperties> = {
   tabBtn: { border: "1px solid var(--border)", background: "transparent", color: "var(--muted)", borderRadius: 999, padding: "0.45rem 0.85rem", cursor: "pointer", fontSize: "0.85rem" },
   select: { background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "0.55rem 0.75rem", color: "var(--text)", fontSize: "0.9rem", outline: "none", width: "100%" },
   selectInline: { background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "0.55rem 0.75rem", color: "var(--text)", fontSize: "0.9rem", outline: "none", minWidth: 180, maxWidth: 280, flex: "0 1 auto" },
-  toolbar: { display: "flex", flexDirection: "row", alignItems: "center", gap: "0.75rem", flexWrap: "wrap", marginTop: "1rem" },
+  filterBlock: { display: "flex", flexDirection: "column", gap: "0.65rem", marginTop: "1rem" },
+  toolbar: { display: "flex", flexDirection: "row", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" },
+  checkRow: { display: "flex", flexDirection: "row", alignItems: "center", gap: "1.25rem", flexWrap: "nowrap" },
   searchInput: { flex: "1 1 240px", minWidth: 200, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "0.55rem 0.75rem", color: "var(--text)", fontSize: "0.9rem", outline: "none" },
   pager: { display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: "0.75rem", padding: "0.75rem 0.85rem", borderTop: "1px solid var(--border)", background: "var(--surface2)" },
   pagerMeta: { color: "var(--muted)", fontSize: "0.82rem" },
@@ -883,8 +877,7 @@ const s: Record<string, CSSProperties> = {
   pagerSelect: { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "0.4rem 0.5rem", color: "var(--text)", fontSize: "0.82rem", outline: "none", minWidth: 72 },
   pagerBtn: { border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)", borderRadius: 8, padding: "0.4rem 0.75rem", fontSize: "0.82rem", whiteSpace: "nowrap" } as CSSProperties,
   pagerPage: { fontSize: "0.82rem", color: "var(--muted)", minWidth: 72, textAlign: "center" } as CSSProperties,
-  check: { display: "flex", alignItems: "center", gap: "0.45rem", color: "var(--muted)", fontSize: "0.85rem", userSelect: "none" } as CSSProperties,
-  btnGhost: { border: "1px solid var(--border)", background: "transparent", color: "var(--text)", borderRadius: 10, padding: "0.55rem 0.85rem", cursor: "pointer", fontSize: "0.85rem" },
+  check: { display: "flex", alignItems: "center", gap: "0.45rem", color: "var(--muted)", fontSize: "0.85rem", userSelect: "none", cursor: "pointer", whiteSpace: "nowrap" } as CSSProperties,
   btnPrimary: { background: "var(--accent)", color: "#eff5ff", border: "none", borderRadius: 10, padding: "0.65rem 0.9rem", fontWeight: 700, cursor: "pointer", fontSize: "0.88rem", whiteSpace: "nowrap" } as CSSProperties,
   btnSecondary: { background: "transparent", color: "var(--muted)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "0.6rem 1.2rem", fontSize: "0.88rem", cursor: "pointer" },
   btnEdit: { background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "0.3rem 0.5rem", cursor: "pointer", fontSize: "0.85rem" },
