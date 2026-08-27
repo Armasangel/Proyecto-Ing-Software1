@@ -20,9 +20,10 @@ type Fila = {
 type Categoria = { id_categoria: number; nombre_categoria: string };
 type Marca = { id_marca: number; nombre_marca: string };
 
+/* Acento por rol — coherente con StaffShell */
 const THEMES = {
-  dueno: { head: "#2d6a4f" },
-  colaborador: { head: "#4c6ef5" },
+  dueno: { head: "bg-mango-600", headText: "text-mango-600" },
+  colaborador: { head: "bg-market-600", headText: "text-market-600" },
 } as const;
 
 const formInicial = {
@@ -111,10 +112,11 @@ export default function ProductosPage() {
   };
 
   if (!usuario) {
-    return <p style={{ padding: "2rem", color: "var(--muted)" }}>Cargando…</p>;
+    return <p className="p-8 text-ink-muted">Cargando…</p>;
   }
 
   const th = THEMES[staffVariantFromTipo(usuario.tipo_usuario)];
+  const exito = mensajeForm.startsWith("✓");
 
   return (
     <StaffShell
@@ -122,62 +124,44 @@ export default function ProductosPage() {
       title="Productos"
       subtitle="Catálogo maestro (precios, categoría y estado)"
     >
-      {error && (
-        <p style={{ color: "var(--red)", marginBottom: "1rem" }}>{error}</p>
-      )}
+      {error && <p className="text-achiote mb-4">{error}</p>}
 
-      <div style={{ marginBottom: "1.25rem" }}>
+      <div className="mb-5">
         <button
           onClick={() => { setMostrarForm(!mostrarForm); setMensajeForm(""); }}
-          style={{
-            background: th.head,
-            color: "#fff",
-            border: "none",
-            borderRadius: 8,
-            padding: "0.55rem 1.2rem",
-            fontSize: "0.9rem",
-            cursor: "pointer",
-            fontWeight: 600,
-          }}
+          className={`${th.head} text-white border-none rounded-control px-5 py-2.5 text-sm font-semibold transition-transform duration-100 active:scale-[0.97] hover:brightness-110`}
         >
           {mostrarForm ? "✕ Cancelar" : "+ Agregar producto"}
         </button>
       </div>
 
       {mostrarForm && (
-        <div style={{
-          background: "var(--surface)",
-          border: "1px solid var(--border)",
-          borderRadius: 12,
-          padding: "1.5rem",
-          marginBottom: "1.5rem",
-          maxWidth: 700,
-        }}>
-          <h3 style={{ margin: "0 0 1rem", fontSize: "1rem" }}>Nuevo producto</h3>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.85rem" }}>
+        <div className="bg-white border border-[var(--border)] rounded-card shadow-warm p-6 mb-6 max-w-[700px]">
+          <h3 className="mb-4 text-base font-semibold text-ink">Nuevo producto</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
             <div>
-              <label style={lbl}>Código *</label>
-              <input name="codigo_producto" value={form.codigo_producto} onChange={handleChange} style={inp} placeholder="Ej: PROD-001" />
+              <label className="block text-[0.8rem] mb-1 text-ink-muted">Código *</label>
+              <input name="codigo_producto" value={form.codigo_producto} onChange={handleChange} className="w-full px-3 py-2 rounded-control border border-[var(--border)] bg-cream/60 text-ink text-sm focus:outline-none focus:ring-2 focus:ring-market/40" placeholder="Ej: PROD-001" />
             </div>
             <div>
-              <label style={lbl}>Nombre *</label>
-              <input name="nombre_producto" value={form.nombre_producto} onChange={handleChange} style={inp} placeholder="Nombre del producto" />
+              <label className="block text-[0.8rem] mb-1 text-ink-muted">Nombre *</label>
+              <input name="nombre_producto" value={form.nombre_producto} onChange={handleChange} className="w-full px-3 py-2 rounded-control border border-[var(--border)] bg-cream/60 text-ink text-sm focus:outline-none focus:ring-2 focus:ring-market/40" placeholder="Nombre del producto" />
             </div>
             <div>
-              <label style={lbl}>Precio unitario</label>
-              <input name="precio_unitario" type="number" value={form.precio_unitario} onChange={handleChange} style={inp} placeholder="0.00" />
+              <label className="block text-[0.8rem] mb-1 text-ink-muted">Precio unitario</label>
+              <input name="precio_unitario" type="number" value={form.precio_unitario} onChange={handleChange} className="w-full px-3 py-2 rounded-control border border-[var(--border)] bg-cream/60 text-ink text-sm focus:outline-none focus:ring-2 focus:ring-market/40" placeholder="0.00" />
             </div>
             <div>
-              <label style={lbl}>Precio mayoreo</label>
-              <input name="precio_mayoreo" type="number" value={form.precio_mayoreo} onChange={handleChange} style={inp} placeholder="0.00" />
+              <label className="block text-[0.8rem] mb-1 text-ink-muted">Precio mayoreo</label>
+              <input name="precio_mayoreo" type="number" value={form.precio_mayoreo} onChange={handleChange} className="w-full px-3 py-2 rounded-control border border-[var(--border)] bg-cream/60 text-ink text-sm focus:outline-none focus:ring-2 focus:ring-market/40" placeholder="0.00" />
             </div>
             <div>
-              <label style={lbl}>Unidad de medida *</label>
-              <input name="unidad_medida" value={form.unidad_medida} onChange={handleChange} style={inp} placeholder="Ej: unidad, caja, kg" />
+              <label className="block text-[0.8rem] mb-1 text-ink-muted">Unidad de medida *</label>
+              <input name="unidad_medida" value={form.unidad_medida} onChange={handleChange} className="w-full px-3 py-2 rounded-control border border-[var(--border)] bg-cream/60 text-ink text-sm focus:outline-none focus:ring-2 focus:ring-market/40" placeholder="Ej: unidad, caja, kg" />
             </div>
             <div>
-              <label style={lbl}>Categoría *</label>
-              <select name="id_categoria" value={form.id_categoria} onChange={handleChange} style={inp}>
+              <label className="block text-[0.8rem] mb-1 text-ink-muted">Categoría *</label>
+              <select name="id_categoria" value={form.id_categoria} onChange={handleChange} className="w-full px-3 py-2 rounded-control border border-[var(--border)] bg-cream/60 text-ink text-sm focus:outline-none focus:ring-2 focus:ring-market/40">
                 <option value="">Seleccionar...</option>
                 {categorias.map((c) => (
                   <option key={c.id_categoria} value={c.id_categoria}>{c.nombre_categoria}</option>
@@ -185,29 +169,29 @@ export default function ProductosPage() {
               </select>
             </div>
             <div>
-              <label style={lbl}>Marca *</label>
-              <select name="id_marca" value={form.id_marca} onChange={handleChange} style={inp}>
+              <label className="block text-[0.8rem] mb-1 text-ink-muted">Marca *</label>
+              <select name="id_marca" value={form.id_marca} onChange={handleChange} className="w-full px-3 py-2 rounded-control border border-[var(--border)] bg-cream/60 text-ink text-sm focus:outline-none focus:ring-2 focus:ring-market/40">
                 <option value="">Seleccionar...</option>
                 {marcas.map((m) => (
                   <option key={m.id_marca} value={m.id_marca}>{m.nombre_marca}</option>
                 ))}
               </select>
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", justifyContent: "center" }}>
-              <label style={{ fontSize: "0.85rem", display: "flex", alignItems: "center", gap: "0.4rem" }}>
-                <input type="checkbox" name="caducidad" checked={form.caducidad} onChange={handleChange} /> Tiene caducidad
+            <div className="flex flex-col gap-2 justify-center">
+              <label className="text-[0.85rem] flex items-center gap-1.5 text-ink">
+                <input type="checkbox" name="caducidad" checked={form.caducidad} onChange={handleChange} className="accent-market" /> Tiene caducidad
               </label>
-              <label style={{ fontSize: "0.85rem", display: "flex", alignItems: "center", gap: "0.4rem" }}>
-                <input type="checkbox" name="exento_iva" checked={form.exento_iva} onChange={handleChange} /> Exento de IVA
+              <label className="text-[0.85rem] flex items-center gap-1.5 text-ink">
+                <input type="checkbox" name="exento_iva" checked={form.exento_iva} onChange={handleChange} className="accent-market" /> Exento de IVA
               </label>
-              <label style={{ fontSize: "0.85rem", display: "flex", alignItems: "center", gap: "0.4rem" }}>
-                <input type="checkbox" name="estado_producto" checked={form.estado_producto} onChange={handleChange} /> Activo
+              <label className="text-[0.85rem] flex items-center gap-1.5 text-ink">
+                <input type="checkbox" name="estado_producto" checked={form.estado_producto} onChange={handleChange} className="accent-market" /> Activo
               </label>
             </div>
           </div>
 
           {mensajeForm && (
-            <p style={{ marginTop: "1rem", color: mensajeForm.startsWith("✓") ? "var(--green)" : "var(--red)", fontSize: "0.9rem" }}>
+            <p className={`mt-4 text-sm font-medium ${exito ? "text-market-600 animate-stamp" : "text-achiote"}`}>
               {mensajeForm}
             </p>
           )}
@@ -215,55 +199,39 @@ export default function ProductosPage() {
           <button
             onClick={handleSubmit}
             disabled={guardando}
-            style={{
-              marginTop: "1.25rem",
-              background: th.head,
-              color: "#fff",
-              border: "none",
-              borderRadius: 8,
-              padding: "0.55rem 1.4rem",
-              fontSize: "0.9rem",
-              cursor: guardando ? "not-allowed" : "pointer",
-              opacity: guardando ? 0.7 : 1,
-              fontWeight: 600,
-            }}
+            className={`${th.head} mt-5 text-white border-none rounded-control px-6 py-2.5 text-sm font-semibold transition-transform duration-100 active:scale-[0.97] hover:brightness-110 disabled:opacity-70 disabled:cursor-not-allowed`}
           >
             {guardando ? "Guardando…" : "Guardar producto"}
           </button>
         </div>
       )}
 
-      <div style={{
-        overflowX: "auto",
-        border: "1px solid var(--border)",
-        borderRadius: 12,
-        background: "var(--surface)",
-      }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}>
+      <div className="overflow-x-auto border border-[var(--border)] rounded-card bg-white shadow-warm">
+        <table className="w-full border-collapse min-w-[760px]">
           <thead>
-            <tr style={{ background: th.head, color: "#fff" }}>
-              <th style={h}>Código</th>
-              <th style={h}>Producto</th>
-              <th style={h}>Categoría</th>
-              <th style={h}>Marca</th>
-              <th style={{ ...h, textAlign: "right" }}>P. unit.</th>
-              <th style={{ ...h, textAlign: "right" }}>P. mayoreo</th>
-              <th style={h}>Estado</th>
+            <tr className={th.head}>
+              <th className="px-3.5 py-2.5 text-left text-[0.82rem] font-semibold text-white">Código</th>
+              <th className="px-3.5 py-2.5 text-left text-[0.82rem] font-semibold text-white">Producto</th>
+              <th className="px-3.5 py-2.5 text-left text-[0.82rem] font-semibold text-white">Categoría</th>
+              <th className="px-3.5 py-2.5 text-left text-[0.82rem] font-semibold text-white">Marca</th>
+              <th className="px-3.5 py-2.5 text-right text-[0.82rem] font-semibold text-white">P. unit.</th>
+              <th className="px-3.5 py-2.5 text-right text-[0.82rem] font-semibold text-white">P. mayoreo</th>
+              <th className="px-3.5 py-2.5 text-left text-[0.82rem] font-semibold text-white">Estado</th>
             </tr>
           </thead>
           <tbody>
             {filas.map((p, i) => (
-              <tr key={p.id_producto} style={{ background: i % 2 === 0 ? "var(--surface2)" : "var(--surface)" }}>
-                <td style={c}>{p.codigo_producto}</td>
-                <td style={c}>{p.nombre_producto}</td>
-                <td style={c}>{p.nombre_categoria}</td>
-                <td style={c}>{p.nombre_marca}</td>
-                <td style={{ ...c, textAlign: "right" }}>Q{Number(p.precio_unitario).toFixed(2)}</td>
-                <td style={{ ...c, textAlign: "right" }}>Q{Number(p.precio_mayoreo).toFixed(2)}</td>
-                <td style={c}>
+              <tr key={p.id_producto} className={i % 2 === 0 ? "bg-cream/40" : "bg-white"}>
+                <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">{p.codigo_producto}</td>
+                <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">{p.nombre_producto}</td>
+                <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">{p.nombre_categoria}</td>
+                <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">{p.nombre_marca}</td>
+                <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)] text-right">Q{Number(p.precio_unitario).toFixed(2)}</td>
+                <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)] text-right">Q{Number(p.precio_mayoreo).toFixed(2)}</td>
+                <td className="px-3.5 py-2.5 text-[0.88rem] border-b border-[var(--border)]">
                   {p.estado_producto
-                    ? <span style={{ color: "var(--green)" }}>Activo</span>
-                    : <span style={{ color: "var(--muted)" }}>Inactivo</span>}
+                    ? <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold bg-market-50 text-market-600">Activo</span>
+                    : <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold bg-ink-faint/20 text-ink-muted">Inactivo</span>}
                 </td>
               </tr>
             ))}
@@ -273,34 +241,3 @@ export default function ProductosPage() {
     </StaffShell>
   );
 }
-
-const h: React.CSSProperties = {
-  padding: "0.65rem 0.85rem",
-  textAlign: "left",
-  fontSize: "0.82rem",
-  fontWeight: 600,
-};
-
-const c: React.CSSProperties = {
-  padding: "0.6rem 0.85rem",
-  fontSize: "0.88rem",
-  borderBottom: "1px solid var(--border)",
-};
-
-const lbl: React.CSSProperties = {
-  display: "block",
-  fontSize: "0.8rem",
-  marginBottom: "0.3rem",
-  color: "var(--muted)",
-};
-
-const inp: React.CSSProperties = {
-  width: "100%",
-  padding: "0.45rem 0.65rem",
-  borderRadius: 6,
-  border: "1px solid var(--border)",
-  background: "var(--surface2)",
-  color: "var(--text)",
-  fontSize: "0.88rem",
-  boxSizing: "border-box",
-};

@@ -1,45 +1,47 @@
 /* app/globals.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
+
 :root {
-  /* ── Paleta Tienda San Miguel (verde + neutros) ── */
-  --bg:        #ffffff;
-  --surface:   #ffffff;
-  --surface2:  #F8FAFC;
-  --border:    #E2E8F0;
-  --accent:    #22C55E;
-  --accent2:   #15803D;
-  --accent-light: #BBF7D0;
-  --warm:      #F59E0B;
-  --green:     #16A34A;
-  --red:       #DC2626;
-  --blue:      #2563EB;
-  --text:      #1E293B;
-  --muted:     #64748B;
-  --font-head: 'Syne', sans-serif;
-  --font-body: 'DM Sans', sans-serif;
-  --radius:    10px;
-  --shadow:    0 4px 24px rgba(15, 23, 42, 0.08);
-  /* Variables de sidebar (usadas en StaffShell) */
-  --sidebar-bg:      #1E293B;
-  --sidebar-text:    #F1F5F9;
-  --sidebar-muted:   #94A3B8;
-  --sidebar-hover:   rgba(34, 197, 94, 0.12);
-  --sidebar-active:  rgba(34, 197, 94, 0.20);
-  --sidebar-border:  rgba(148, 163, 184, 0.2);
+  /* ── Paleta Tienda San Miguel — cálida, inspirada en La Terminal ──
+     Estas mismas variables las siguen usando las páginas que todavía no
+     se migraron a clases de Tailwind, así que actualizarlas aquí ya sube
+     de nivel visualmente TODO el sitio de una vez, sin tocar cada página. */
+  --bg:           #FBF7EF;
+  --surface:      #ffffff;
+  --surface2:     #F5EFE1;
+  --border:       #E6DDC9;
+  --accent:       #4C9A2A;
+  --accent2:      #3B6D11;
+  --accent-light: #EAF3DE;
+  --warm:         #E8A33D;
+  --green:        #4C9A2A;
+  --red:          #E1592A;
+  --blue:         #2563EB;
+  --text:         #3A332B;
+  --muted:        #8A8070;
+  --font-head:    'Syne', sans-serif;
+  --font-body:    'DM Sans', sans-serif;
+  --radius:       12px;
+  --radius-card:  18px;
+  --shadow:       0 6px 20px rgba(80, 60, 20, 0.08);
+
+  /* Variables de sidebar (usadas en StaffShell) — cálido, no slate azulado */
+  --sidebar-bg:      #2A2620;
+  --sidebar-text:    #F5EFE1;
+  --sidebar-muted:   #B5AC9A;
+  --sidebar-hover:   rgba(76, 154, 42, 0.14);
+  --sidebar-active:  rgba(76, 154, 42, 0.22);
+  --sidebar-border:  rgba(181, 172, 154, 0.16);
 }
-[data-theme="light"] {
-  --bg:       #f6f8fa;
-  --surface:  #ffffff;
-  --surface2: #eaeef2;
-  --border:   #d0d7de;
-  --text:     #1f2328;
-  --muted:    #656d76;
-  --shadow:   0 4px 24px rgba(0, 0, 0, .10);
-}
+
 body {
   background: var(--bg);
   color: var(--text);
@@ -47,8 +49,8 @@ body {
   font-size: 15px;
   line-height: 1.6;
   min-height: 100vh;
-  transition: background 0.2s, color 0.2s;
 }
+
 a {
   color: var(--accent);
   text-decoration: none;
@@ -56,6 +58,7 @@ a {
 a:hover {
   text-decoration: underline;
 }
+
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: var(--accent-light); border-radius: 3px; }
