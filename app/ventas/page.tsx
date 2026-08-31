@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { StaffShell } from "@/components/StaffShell";
 import { useStaffSession } from "@/hooks/useStaffSession";
-import { staffVariantFromTipo, TIPOS_USUARIO } from "@/lib/roles";
+import { TIPOS_USUARIO } from "@/lib/roles";
 import { Icon } from "@/components/Icon";
 
 type Cliente = {
@@ -67,17 +67,16 @@ type VentaListada = {
   productos: ProductoVentaRow[];
 };
 
-const ACCENT = {
-  dueno: "#2d6a4f",
-  colaborador: "#4c6ef5",
-} as const;
-
 const ESTADOS = [
   { value: "PAGADO", label: "Pagado" },
   { value: "PENDIENTE", label: "Pendiente" },
   { value: "CONFIRMADO", label: "Confirmado" },
   { value: "ENTREGADO", label: "Entregado" },
 ] as const;
+
+const inputCls =
+  "w-full px-3 py-2.5 rounded-control border border-[var(--border)] bg-cream/60 text-ink text-[0.95rem] outline-none focus:ring-2 focus:ring-market/40 transition-shadow";
+const labelCls = "font-semibold text-[0.88rem] text-ink-muted";
 
 function nuevaLinea(): LineaVenta {
   return {
@@ -195,10 +194,8 @@ export default function VentasPage() {
     return Math.round(t * 100) / 100;
   }, [lineas]);
 
-  if (!usuario) return <p style={{ padding: "2rem", color: "var(--muted)" }}>Cargando…</p>;
-  if (usuario.tipo_usuario !== TIPOS_USUARIO.EMPLEADO) return <p style={{ padding: "2rem", color: "var(--muted)" }}>Redirigiendo…</p>;
-
-  const accent = ACCENT[staffVariantFromTipo(usuario.tipo_usuario)];
+  if (!usuario) return <p className="p-8 text-ink-muted">Cargando…</p>;
+  if (usuario.tipo_usuario !== TIPOS_USUARIO.EMPLEADO) return <p className="p-8 text-ink-muted">Redirigiendo…</p>;
 
   function precioSugerido(p: Producto | undefined): string {
     if (!p) return "";
@@ -252,56 +249,53 @@ export default function VentasPage() {
 
   const puedeEnviar = idCliente && lineas.some((ln) => ln.id_producto && ln.id_bodega && ln.cantidad && Number(ln.cantidad) > 0) && (tipoEntrega === "EN_TIENDA" || direccionEntrega.trim().length > 0);
 
-  const th = { padding: "0.65rem 0.85rem", textAlign: "left" as const, fontSize: "0.82rem", fontWeight: 600 };
-  const td = { padding: "0.6rem 0.85rem", fontSize: "0.88rem", borderBottom: "1px solid var(--border)" };
-
   return (
     <StaffShell usuario={usuario} title="Ventas" subtitle="Registro de ventas y control de transacciones (colaborador)">
-      <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
-        <div style={{ maxWidth: 720, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "1.75rem" }}>
+      <div className="flex flex-col gap-8">
+        <div className="max-w-[720px] bg-white border border-[var(--border)] rounded-card shadow-warm p-7">
 
-          {/* Encabezado del formulario — Icon en lugar de emoji */}
-          <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "1.5rem", borderBottom: `2px solid ${accent}`, paddingBottom: "1rem" }}>
-            <div style={{ width: 48, height: 48, borderRadius: 12, background: `${accent}18`, border: `1px solid ${accent}30`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          {/* Encabezado del formulario */}
+          <div className="flex items-center gap-4 mb-6 border-b-2 border-market pb-4">
+            <div className="w-12 h-12 rounded-control bg-market/10 border border-market/25 flex items-center justify-center shrink-0">
               <Icon name="bill" variant="dark" size={26} />
             </div>
             <div>
-              <p style={{ margin: 0, color: "var(--muted)", fontSize: "0.88rem" }}>
+              <p className="m-0 text-ink-muted text-[0.88rem]">
                 Cada venta guarda la transacción (<code>venta</code>) y los productos (<code>detalle_venta</code>). Cada producto puede salir de una bodega distinta; el inventario se descuenta por bodega y queda trazado en kardex.
               </p>
             </div>
           </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-            <div style={field}>
-              <label style={label}>Cliente *</label>
-              <select value={idCliente} onChange={(e) => { setIdCliente(e.target.value); setError(null); setOkMsg(null); }} style={input}>
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
+              <label className={labelCls}>Cliente *</label>
+              <select value={idCliente} onChange={(e) => { setIdCliente(e.target.value); setError(null); setOkMsg(null); }} className={inputCls}>
                 <option value="">— Selecciona un cliente —</option>
                 {clientes.map((c) => <option key={c.id_cliente} value={c.id_cliente}>{c.nombre} ({c.correo})</option>)}
               </select>
             </div>
 
-            <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
-              <div style={{ ...field, flex: "1 1 200px" }}>
-                <label style={label}>Estado de pago *</label>
-                <select value={estadoPago} onChange={(e) => { setEstadoPago(e.target.value); setError(null); }} style={input}>
+            <div className="flex gap-4 flex-wrap">
+              <div className="flex-1 min-w-[200px] flex flex-col gap-1.5">
+                <label className={labelCls}>Estado de pago *</label>
+                <select value={estadoPago} onChange={(e) => { setEstadoPago(e.target.value); setError(null); }} className={inputCls}>
                   {ESTADOS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
-                <span style={{ fontSize: "0.78rem", color: "var(--muted)" }}>En base de datos: <code>estado_venta</code></span>
+                <span className="text-[0.78rem] text-ink-muted">En base de datos: <code>estado_venta</code></span>
               </div>
-              <div style={{ ...field, flex: "1 1 200px" }}>
-                <label style={label}>Tipo de venta *</label>
-                <select value={tipoVenta} onChange={(e) => { const v = e.target.value; setTipoVenta(v); aplicarPreciosPorTipo(v); setError(null); }} style={input}>
+              <div className="flex-1 min-w-[200px] flex flex-col gap-1.5">
+                <label className={labelCls}>Tipo de venta *</label>
+                <select value={tipoVenta} onChange={(e) => { const v = e.target.value; setTipoVenta(v); aplicarPreciosPorTipo(v); setError(null); }} className={inputCls}>
                   <option value="MINORISTA">Minorista</option>
                   <option value="MAYORISTA">Mayorista</option>
                 </select>
               </div>
             </div>
 
-            <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
-              <div style={{ ...field, flex: "1 1 200px" }}>
-                <label style={label}>Tipo de entrega *</label>
-                <select value={tipoEntrega} onChange={(e) => { setTipoEntrega(e.target.value); setError(null); }} style={input}>
+            <div className="flex gap-4 flex-wrap">
+              <div className="flex-1 min-w-[200px] flex flex-col gap-1.5">
+                <label className={labelCls}>Tipo de entrega *</label>
+                <select value={tipoEntrega} onChange={(e) => { setTipoEntrega(e.target.value); setError(null); }} className={inputCls}>
                   <option value="EN_TIENDA">En tienda</option>
                   <option value="DOMICILIO">Domicilio</option>
                 </select>
@@ -309,55 +303,61 @@ export default function VentasPage() {
             </div>
 
             {tipoEntrega === "DOMICILIO" && (
-              <div style={field}>
-                <label style={label}>Dirección de entrega *</label>
-                <input value={direccionEntrega} onChange={(e) => setDireccionEntrega(e.target.value)} placeholder="Zona, calle, referencias…" style={input} />
+              <div className="flex flex-col gap-1.5">
+                <label className={labelCls}>Dirección de entrega *</label>
+                <input value={direccionEntrega} onChange={(e) => setDireccionEntrega(e.target.value)} placeholder="Zona, calle, referencias…" className={inputCls} />
               </div>
             )}
 
-            <div style={field}>
-              <label style={label}>Fecha límite de pago (opcional)</label>
-              <input type="date" value={fechaLimitePago} onChange={(e) => setFechaLimitePago(e.target.value)} style={input} />
+            <div className="flex flex-col gap-1.5">
+              <label className={labelCls}>Fecha límite de pago (opcional)</label>
+              <input type="date" value={fechaLimitePago} onChange={(e) => setFechaLimitePago(e.target.value)} className={inputCls} />
             </div>
 
-            <div style={{ marginTop: "0.5rem" }}>
-              <div style={{ fontWeight: 600, fontSize: "0.9rem", marginBottom: "0.75rem", color: "var(--text)" }}>Productos</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            <div className="mt-2">
+              <div className="font-semibold text-[0.9rem] mb-3 text-ink">Productos</div>
+              <div className="flex flex-col gap-3">
                 {lineas.map((ln) => {
                   const pSel = ln.id_producto ? productoPorId.get(Number(ln.id_producto)) : undefined;
                   const disponible = stockDisponible(ln.id_producto, ln.id_bodega);
                   return (
-                    <div key={ln.key} style={{ display: "grid", gridTemplateColumns: "1fr 140px 100px 120px auto", gap: "0.5rem", alignItems: "end" }}>
-                      <div style={field}>
-                        <label style={label}>Producto</label>
-                        <select value={ln.id_producto} onChange={(e) => onProductoChange(ln.key, e.target.value)} style={input}>
+                    <div key={ln.key} className="grid gap-2 items-end" style={{ gridTemplateColumns: "1fr 140px 100px 120px auto" }}>
+                      <div className="flex flex-col gap-1.5">
+                        <label className={labelCls}>Producto</label>
+                        <select value={ln.id_producto} onChange={(e) => onProductoChange(ln.key, e.target.value)} className={inputCls}>
                           <option value="">— Producto —</option>
                           {productos.filter((p) => p.estado_producto).map((p) => <option key={p.id_producto} value={p.id_producto}>[{p.codigo_producto}] {p.nombre_producto}</option>)}
                         </select>
                       </div>
-                      <div style={field}>
-                        <label style={label}>Bodega *</label>
-                        <select value={ln.id_bodega} onChange={(e) => { actualizarLinea(ln.key, { id_bodega: e.target.value }); setError(null); setOkMsg(null); }} style={input}>
+                      <div className="flex flex-col gap-1.5">
+                        <label className={labelCls}>Bodega *</label>
+                        <select value={ln.id_bodega} onChange={(e) => { actualizarLinea(ln.key, { id_bodega: e.target.value }); setError(null); setOkMsg(null); }} className={inputCls}>
                           <option value="">— Bodega —</option>
                           {bodegas.map((b) => <option key={b.id_bodega} value={b.id_bodega}>{b.nombre_bodega}</option>)}
                         </select>
                       </div>
-                      <div style={field}>
-                        <label style={label}>Cantidad</label>
-                        <input type="number" min="0.001" step="0.001" value={ln.cantidad} onChange={(e) => actualizarLinea(ln.key, { cantidad: e.target.value })} style={input} />
+                      <div className="flex flex-col gap-1.5">
+                        <label className={labelCls}>Cantidad</label>
+                        <input type="number" min="0.001" step="0.001" value={ln.cantidad} onChange={(e) => actualizarLinea(ln.key, { cantidad: e.target.value })} className={inputCls} />
                       </div>
-                      <div style={field}>
-                        <label style={label}>P. venta</label>
-                        <input type="number" min="0" step="0.01" value={ln.precio_unitario_venta} onChange={(e) => actualizarLinea(ln.key, { precio_unitario_venta: e.target.value })} style={input} />
+                      <div className="flex flex-col gap-1.5">
+                        <label className={labelCls}>P. venta</label>
+                        <input type="number" min="0" step="0.01" value={ln.precio_unitario_venta} onChange={(e) => actualizarLinea(ln.key, { precio_unitario_venta: e.target.value })} className={inputCls} />
                       </div>
-                      <button type="button" onClick={() => setLineas((prev) => prev.length <= 1 ? prev : prev.filter((x) => x.key !== ln.key))} disabled={lineas.length <= 1} style={{ padding: "0.55rem 0.65rem", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--muted)", cursor: lineas.length <= 1 ? "not-allowed" : "pointer", height: 40, display: "flex", alignItems: "center", justifyContent: "center" }} title="Quitar línea">
+                      <button
+                        type="button"
+                        onClick={() => setLineas((prev) => prev.length <= 1 ? prev : prev.filter((x) => x.key !== ln.key))}
+                        disabled={lineas.length <= 1}
+                        title="Quitar línea"
+                        className="h-10 w-10 flex items-center justify-center rounded-control border border-[var(--border)] bg-cream/60 text-ink-muted transition-colors disabled:cursor-not-allowed disabled:opacity-50 enabled:hover:bg-achiote-50 enabled:hover:text-achiote-600"
+                      >
                         <Icon name="close" variant="dark" size={14} />
                       </button>
                       {pSel && (
-                        <span style={{ gridColumn: "1 / -1", fontSize: "0.78rem", color: "var(--muted)" }}>
+                        <span className="col-span-full text-[0.78rem] text-ink-muted">
                           Unidad: {pSel.unidad_medida}
                           {ln.id_bodega && (
-                            <> · Disponible en bodega: <strong style={{ color: disponible > 0 ? "var(--green)" : "var(--red)" }}>{disponible}</strong></>
+                            <> · Disponible en bodega: <strong className={disponible > 0 ? "text-market-600" : "text-achiote-600"}>{disponible}</strong></>
                           )}
                         </span>
                       )}
@@ -365,56 +365,77 @@ export default function VentasPage() {
                   );
                 })}
               </div>
-              <button type="button" onClick={() => setLineas((prev) => [...prev, nuevaLinea()])} style={{ marginTop: "0.75rem", padding: "0.5rem 0.85rem", borderRadius: 8, border: `1px solid ${accent}`, background: "transparent", color: accent, fontWeight: 600, cursor: "pointer", fontSize: "0.88rem" }}>
+              <button
+                type="button"
+                onClick={() => setLineas((prev) => [...prev, nuevaLinea()])}
+                className="mt-3 px-3.5 py-2 rounded-control border border-market bg-transparent text-market-600 font-semibold text-[0.88rem] transition-transform active:scale-[0.97] hover:bg-market-50"
+              >
                 + Agregar producto
               </button>
             </div>
 
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "0.5rem", paddingTop: "1rem", borderTop: "1px solid var(--border)" }}>
-              <span style={{ fontWeight: 700, color: "var(--text)" }}>Total: Q{totalBorrador.toFixed(2)}</span>
-              <button type="button" onClick={handleSubmit} disabled={loadingSubmit || !puedeEnviar} style={{ background: accent, color: "#fff", border: "none", borderRadius: 8, padding: "0.85rem 1.25rem", fontSize: "1rem", fontWeight: 600, cursor: loadingSubmit || !puedeEnviar ? "not-allowed" : "pointer", opacity: loadingSubmit || !puedeEnviar ? 0.55 : 1 }}>
+            <div className="flex justify-between items-center mt-2 pt-4 border-t border-[var(--border)]">
+              <span className="font-bold text-ink">Total: Q{totalBorrador.toFixed(2)}</span>
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={loadingSubmit || !puedeEnviar}
+                className="bg-market text-white border-none rounded-control px-6 py-3.5 text-base font-semibold transition-transform active:scale-[0.97] hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
                 {loadingSubmit ? "Guardando…" : "Registrar venta"}
               </button>
             </div>
           </div>
 
-          {error && <div style={{ marginTop: "1rem", background: "rgba(248,81,73,.12)", border: "1px solid rgba(248,81,73,.3)", borderRadius: 8, padding: "0.75rem 1rem", color: "var(--red)" }}>{error}</div>}
-          {okMsg && <div style={{ marginTop: "1rem", background: "rgba(63,185,80,.12)", border: "1px solid rgba(63,185,80,.35)", borderRadius: 8, padding: "0.75rem 1rem", color: "var(--green)" }}>{okMsg}</div>}
+          {error && (
+            <div className="mt-4 bg-achiote-50 border border-achiote/30 rounded-control px-4 py-3 text-achiote-600">
+              {error}
+            </div>
+          )}
+          {okMsg && (
+            <div key={okMsg} className="mt-4 bg-market-50 border border-market/35 rounded-control px-4 py-3 text-market-600 font-medium flex items-center gap-2 animate-stamp">
+              <span className="inline-flex w-5 h-5 rounded-full bg-market text-white items-center justify-center text-xs shrink-0">✓</span>
+              {okMsg}
+            </div>
+          )}
         </div>
 
         <div>
-          <h2 style={{ fontFamily: "var(--font-head)", fontSize: "1.15rem", marginBottom: "1rem", color: accent }}>Ventas recientes</h2>
+          <h2 className="font-head text-[1.15rem] mb-4 text-market-600">Ventas recientes</h2>
           {loadingLista ? (
-            <p style={{ color: "var(--muted)" }}>Cargando historial…</p>
+            <p className="text-ink-muted">Cargando historial…</p>
           ) : (
-            <div style={{ overflowX: "auto", border: "1px solid var(--border)", borderRadius: 12, background: "var(--surface)" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 920 }}>
+            <div className="overflow-x-auto border border-[var(--border)] rounded-card bg-white shadow-warm">
+              <table className="w-full border-collapse min-w-[920px]">
                 <thead>
-                  <tr style={{ background: accent, color: "#fff" }}>
-                    <th style={th}>#</th>
-                    <th style={th}>Fecha</th>
-                    <th style={th}>Cliente</th>
-                    <th style={th}>Colaborador</th>
-                    <th style={th}>Estado pago</th>
-                    <th style={th}>Tipo</th>
-                    <th style={{ ...th, textAlign: "right" }}>Total</th>
-                    <th style={th}>Productos</th>
+                  <tr className="bg-market">
+                    <th className="px-3.5 py-2.5 text-left text-[0.82rem] font-semibold text-white">#</th>
+                    <th className="px-3.5 py-2.5 text-left text-[0.82rem] font-semibold text-white">Fecha</th>
+                    <th className="px-3.5 py-2.5 text-left text-[0.82rem] font-semibold text-white">Cliente</th>
+                    <th className="px-3.5 py-2.5 text-left text-[0.82rem] font-semibold text-white">Colaborador</th>
+                    <th className="px-3.5 py-2.5 text-left text-[0.82rem] font-semibold text-white">Estado pago</th>
+                    <th className="px-3.5 py-2.5 text-left text-[0.82rem] font-semibold text-white">Tipo</th>
+                    <th className="px-3.5 py-2.5 text-right text-[0.82rem] font-semibold text-white">Total</th>
+                    <th className="px-3.5 py-2.5 text-left text-[0.82rem] font-semibold text-white">Productos</th>
                   </tr>
                 </thead>
                 <tbody>
                   {ventas.map((v, i) => (
-                    <tr key={v.id_venta} style={{ background: i % 2 === 0 ? "var(--surface2)" : "var(--surface)", verticalAlign: "top" }}>
-                      <td style={td}>{v.id_venta}</td>
-                      <td style={td}>{new Date(v.fecha_venta).toLocaleString("es-GT", { dateStyle: "short", timeStyle: "short" })}</td>
-                      <td style={td}><div style={{ fontWeight: 500 }}>{v.nombre_cliente}</div><div style={{ fontSize: "0.78rem", color: "var(--muted)" }}>{v.correo_cliente}</div></td>
-                      <td style={td}>{v.nombre_colaborador ?? "—"}</td>
-                      <td style={td}>{v.estado_venta}</td>
-                      <td style={td}>{v.tipo_venta}</td>
-                      <td style={{ ...td, textAlign: "right", fontWeight: 600 }}>Q{Number(v.total).toFixed(2)}</td>
-                      <td style={{ ...td, fontSize: "0.82rem", maxWidth: 320 }}>
+                    <tr key={v.id_venta} className={`align-top ${i % 2 === 0 ? "bg-cream/40" : "bg-white"}`}>
+                      <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">{v.id_venta}</td>
+                      <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">{new Date(v.fecha_venta).toLocaleString("es-GT", { dateStyle: "short", timeStyle: "short" })}</td>
+                      <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">
+                        <div className="font-medium">{v.nombre_cliente}</div>
+                        <div className="text-[0.78rem] text-ink-muted">{v.correo_cliente}</div>
+                      </td>
+                      <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">{v.nombre_colaborador ?? "—"}</td>
+                      <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">{v.estado_venta}</td>
+                      <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">{v.tipo_venta}</td>
+                      <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)] text-right font-semibold">Q{Number(v.total).toFixed(2)}</td>
+                      <td className="px-3.5 py-2.5 text-[0.82rem] border-b border-[var(--border)] max-w-[320px]">
                         {(v.productos || []).map((pr) => (
-                          <div key={pr.id_detalle} style={{ marginBottom: "0.35rem" }}>
-                            <span style={{ color: "var(--text)" }}>{pr.codigo_producto}</span>{" "}× {Number(pr.cantidad).toFixed(3)} @ Q{Number(pr.precio_unitario_venta).toFixed(2)} → Q{Number(pr.subtotal).toFixed(2)}
+                          <div key={pr.id_detalle} className="mb-1.5">
+                            <span className="text-ink">{pr.codigo_producto}</span>{" "}× {Number(pr.cantidad).toFixed(3)} @ Q{Number(pr.precio_unitario_venta).toFixed(2)} → Q{Number(pr.subtotal).toFixed(2)}
                           </div>
                         ))}
                       </td>
@@ -422,7 +443,7 @@ export default function VentasPage() {
                   ))}
                 </tbody>
               </table>
-              {ventas.length === 0 && <p style={{ padding: "1.25rem", color: "var(--muted)", margin: 0 }}>Aún no hay ventas registradas.</p>}
+              {ventas.length === 0 && <p className="p-5 text-ink-muted m-0">Aún no hay ventas registradas.</p>}
             </div>
           )}
         </div>
@@ -430,7 +451,3 @@ export default function VentasPage() {
     </StaffShell>
   );
 }
-
-const field: React.CSSProperties = { display: "flex", flexDirection: "column", gap: "0.35rem" };
-const label: React.CSSProperties = { fontWeight: 600, fontSize: "0.88rem", color: "var(--muted)" };
-const input: React.CSSProperties = { padding: "0.6rem 0.75rem", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)", fontSize: "0.95rem", outline: "none", width: "100%", boxSizing: "border-box" };

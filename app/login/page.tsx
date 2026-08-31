@@ -1,13 +1,16 @@
 "use client";
 
 /* Página de login.
-   Panel izquierdo: branding con fondo sólido oscuro, texto ordenado en bloque único.
-   Panel derecho: formulario limpio sobre fondo blanco. */
+   Panel izquierdo: branding cálido (visible desde md hacia arriba).
+   Panel derecho: formulario, siempre visible — en móvil ocupa toda la pantalla. */
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { postLoginPath } from "@/lib/roles";
+
+const inputCls =
+  "w-full bg-white border border-[var(--border)] rounded-control px-4 py-3 text-ink text-[0.95rem] outline-none transition-shadow focus:ring-2 focus:ring-market/40";
+const labelCls = "text-[0.85rem] font-medium text-ink-muted";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -121,32 +124,34 @@ export default function LoginPage() {
   }
 
   return (
-    <main style={s.page}>
+    <main className="min-h-screen flex font-body bg-cream">
 
-      {/* ── Panel izquierdo: branding ─────────────────────────────────────── */}
-      <div style={s.brand}>
-        <div style={s.brandContent}>
+      {/* ── Panel izquierdo: branding — oculto en móvil, aparece desde md ── */}
+      <div className="hidden md:flex md:flex-[0_0_42%] bg-sidebar items-center p-12">
+        <div className="flex flex-col gap-8 max-w-[340px]">
 
-          {/* Nombre del sistema */}
-          <div style={s.brandHeader}>
-            <p style={s.brandEyebrow}>Sistema de gestión</p>
-            <h1 style={s.brandTitle}>Tienda San Miguel</h1>
+          <div className="flex flex-col gap-1.5">
+            <p className="text-[0.78rem] font-semibold text-market-100 tracking-widest uppercase m-0">
+              Sistema de gestión
+            </p>
+            <h1 className="font-head text-[2.2rem] font-extrabold text-cream leading-tight m-0">
+              Tienda San Miguel
+            </h1>
           </div>
 
-          {/* Descripción y features en bloque compacto */}
-          <div style={s.brandBody}>
-            <p style={s.brandDesc}>
+          <div className="flex flex-col gap-4">
+            <p className="text-[0.92rem] text-cream/85 leading-relaxed m-0">
               Plataforma de inventario y ventas para mayoristas de Guatemala.
             </p>
-            <ul style={s.featureList}>
+            <ul className="list-none p-0 m-0 flex flex-col gap-2.5">
               {[
                 "Control de inventario en tiempo real",
                 "Ventas mayoristas y minoristas",
                 "Kardex y trazabilidad",
                 "Reportes y facturación",
               ].map((f) => (
-                <li key={f} style={s.featureItem}>
-                  <span style={s.featureDot} />
+                <li key={f} className="flex items-center gap-2.5 text-[0.88rem] text-mango-100/90">
+                  <span className="w-1.5 h-1.5 rounded-full bg-market shrink-0" />
                   {f}
                 </li>
               ))}
@@ -156,15 +161,23 @@ export default function LoginPage() {
         </div>
       </div>
 
-      {/* ── Panel derecho: formulario ─────────────────────────────────────── */}
-      <div style={s.formPanel}>
-        <div style={s.formCard}>
+      {/* ── Panel derecho: formulario ── */}
+      <div className="flex-1 flex items-center justify-center p-6 sm:p-8 bg-cream">
+        <div className="w-full max-w-[420px]">
 
-          <div style={s.formHeader}>
-            <h2 style={s.formTitle}>
+          {/* En móvil, ya que no hay panel de branding, mostramos el nombre aquí */}
+          <div className="md:hidden mb-6 text-center">
+            <p className="text-[0.72rem] font-semibold text-market-600 tracking-widest uppercase m-0">
+              Sistema de gestión
+            </p>
+            <h1 className="font-head text-2xl font-extrabold text-ink m-0">Tienda San Miguel</h1>
+          </div>
+
+          <div className="mb-8">
+            <h2 className="font-head text-[1.8rem] font-bold text-ink mb-1.5">
               {paso === "credenciales" ? "Bienvenido de vuelta" : "Verificá tu identidad"}
             </h2>
-            <p style={s.formSub}>
+            <p className="text-ink-muted text-[0.9rem] m-0">
               {paso === "credenciales"
                 ? "Ingresa tus credenciales para continuar"
                 : `Te mandamos un código de 6 dígitos a ${correoEnmascarado || "tu correo"}`}
@@ -172,11 +185,10 @@ export default function LoginPage() {
           </div>
 
           {paso === "credenciales" ? (
-            <form onSubmit={handleLogin} style={s.form}>
+            <form onSubmit={handleLogin} className="flex flex-col gap-5 mb-5">
 
-              {/* Correo */}
-              <div style={s.field}>
-                <label style={s.label}>Correo electrónico</label>
+              <div className="flex flex-col gap-1.5">
+                <label className={labelCls}>Correo electrónico</label>
                 <input
                   type="email"
                   autoComplete="email"
@@ -184,13 +196,12 @@ export default function LoginPage() {
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   required
-                  style={s.input}
+                  className={inputCls}
                 />
               </div>
 
-              {/* Contraseña */}
-              <div style={s.field}>
-                <label style={s.label}>Contraseña</label>
+              <div className="flex flex-col gap-1.5">
+                <label className={labelCls}>Contraseña</label>
                 <input
                   type="password"
                   autoComplete="current-password"
@@ -198,30 +209,29 @@ export default function LoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  style={s.input}
+                  className={inputCls}
                 />
               </div>
 
               {error && (
-                <div style={s.errorBox}>
-                  <span>{error}</span>
+                <div className="bg-achiote-50 border border-achiote/25 rounded-control px-4 py-3 text-achiote-600 text-[0.88rem]">
+                  {error}
                 </div>
               )}
 
               <button
                 type="submit"
                 disabled={loading}
-                style={{ ...s.btn, opacity: loading ? 0.7 : 1 }}
+                className="w-full bg-market text-white border-none rounded-control py-3.5 font-head text-[0.95rem] font-bold transition-transform active:scale-[0.98] hover:brightness-110 disabled:opacity-70"
               >
                 {loading ? "Ingresando…" : "Ingresar al sistema"}
               </button>
             </form>
           ) : (
-            <form onSubmit={handleVerificarCodigo} style={s.form}>
+            <form onSubmit={handleVerificarCodigo} className="flex flex-col gap-5 mb-5">
 
-              {/* Código de verificación */}
-              <div style={s.field}>
-                <label style={s.label}>Código de verificación</label>
+              <div className="flex flex-col gap-1.5">
+                <label className={labelCls}>Código de verificación</label>
                 <input
                   type="text"
                   inputMode="numeric"
@@ -232,40 +242,44 @@ export default function LoginPage() {
                   maxLength={6}
                   required
                   autoFocus
-                  style={{ ...s.input, letterSpacing: "0.4em", textAlign: "center", fontSize: "1.2rem" }}
+                  className={`${inputCls} tracking-[0.4em] text-center text-xl`}
                 />
               </div>
 
               {error && (
-                <div style={s.errorBox}>
-                  <span>{error}</span>
+                <div className="bg-achiote-50 border border-achiote/25 rounded-control px-4 py-3 text-achiote-600 text-[0.88rem]">
+                  {error}
                 </div>
               )}
 
               {avisoReenvio && (
-                <div style={s.avisoBox}>
-                  <span>{avisoReenvio}</span>
+                <div className="bg-market-50 border border-market/25 rounded-control px-4 py-3 text-market-600 text-[0.85rem] animate-toast-in">
+                  {avisoReenvio}
                 </div>
               )}
 
               <button
                 type="submit"
                 disabled={loading || codigo.length !== 6}
-                style={{ ...s.btn, opacity: loading || codigo.length !== 6 ? 0.7 : 1 }}
+                className="w-full bg-market text-white border-none rounded-control py-3.5 font-head text-[0.95rem] font-bold transition-transform active:scale-[0.98] hover:brightness-110 disabled:opacity-70"
               >
                 {loading ? "Verificando…" : "Verificar y entrar"}
               </button>
 
-              <div style={s.codigoAcciones}>
+              <div className="flex justify-between gap-2">
                 <button
                   type="button"
                   onClick={handleReenviarCodigo}
                   disabled={reenviando}
-                  style={s.linkBtn}
+                  className="bg-transparent border-none text-market-600 text-[0.82rem] font-medium p-0 disabled:opacity-60 hover:underline"
                 >
                   {reenviando ? "Reenviando…" : "Reenviar código"}
                 </button>
-                <button type="button" onClick={handleVolver} style={s.linkBtn}>
+                <button
+                  type="button"
+                  onClick={handleVolver}
+                  className="bg-transparent border-none text-market-600 text-[0.82rem] font-medium p-0 hover:underline"
+                >
                   Usar otra cuenta
                 </button>
               </div>
@@ -274,9 +288,9 @@ export default function LoginPage() {
 
           {/* Usuarios de prueba */}
           {paso === "credenciales" && (
-            <div style={s.demo}>
-              <p style={s.demoLabel}>Usuarios de prueba (password123):</p>
-              <div style={s.demoBtns}>
+            <div className="mt-5 p-4 bg-white rounded-card border border-[var(--border)]">
+              <p className="text-ink-muted text-[0.78rem] mb-2 m-0">Usuarios de prueba (password123):</p>
+              <div className="flex gap-2 flex-wrap">
                 {[
                   { label: "Dueño (entra directo)", correo: "dueno@tienda.com" },
                   { label: "Colaborador (2FA por correo)", correo: "armasangel193@gmail.com" },
@@ -285,7 +299,7 @@ export default function LoginPage() {
                     key={u.correo}
                     type="button"
                     onClick={() => setUsername(u.correo)}
-                    style={s.demoBtn}
+                    className="bg-cream border border-[var(--border)] rounded-control px-3 py-1.5 text-ink text-[0.78rem] transition-colors hover:bg-market-50 hover:border-market/30"
                   >
                     {u.label}
                   </button>
@@ -299,259 +313,3 @@ export default function LoginPage() {
     </main>
   );
 }
-
-/* ─── Estilos ─────────────────────────────────────────────────────────────── */
-
-const s: Record<string, React.CSSProperties> = {
-  /* Layout de dos columnas */
-  page: {
-    minHeight: "100vh",
-    display: "flex",
-    fontFamily: "var(--font-body)",
-  },
-
-  /* ── Panel izquierdo ── */
-
-  /* Fondo sólido oscuro, sin gradientes raros */
-  brand: {
-    flex: "0 0 42%",
-    background: "#1E293B",
-    display: "flex",
-    alignItems: "center",
-    padding: "3rem",
-  },
-
-  /* Bloque de contenido alineado como unidad */
-  brandContent: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "2rem",
-    maxWidth: 340,
-  },
-
-  brandHeader: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "0.4rem",
-  },
-
-  /* "Sistema de gestión" pequeño arriba del título */
-  brandEyebrow: {
-    fontSize: "0.78rem",
-    fontWeight: 600,
-    color: "var(--accent-light)",
-    letterSpacing: "0.1em",
-    textTransform: "uppercase",
-    margin: 0,
-  },
-
-  brandTitle: {
-    fontFamily: "var(--font-head)",
-    fontSize: "2.2rem",
-    fontWeight: 800,
-    color: "var(--bg)",
-    lineHeight: 1.15,
-    margin: 0,
-  },
-
-  brandBody: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "1rem",
-  },
-
-  brandDesc: {
-    fontSize: "0.92rem",
-    color: "rgba(226, 232, 240, 0.85)",
-    lineHeight: 1.65,
-    margin: 0,
-  },
-
-  /* Lista de features compacta, sin "niveles" extraños */
-  featureList: {
-    listStyle: "none",
-    padding: 0,
-    margin: 0,
-    display: "flex",
-    flexDirection: "column",
-    gap: "0.6rem",
-  },
-
-  featureItem: {
-    display: "flex",
-    alignItems: "center",
-    gap: "0.65rem",
-    fontSize: "0.88rem",
-    color: "rgba(249, 232, 201, 0.75)",
-  },
-
-  featureDot: {
-    width: 6,
-    height: 6,
-    borderRadius: "50%",
-    background: "var(--accent-light)",
-    flexShrink: 0,
-  },
-
-  /* ── Panel derecho ── */
-
-  formPanel: {
-    flex: 1,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: "2rem",
-    background: "#ffffff",
-  },
-
-  formCard: {
-    width: "100%",
-    maxWidth: 420,
-  },
-
-  formHeader: {
-    marginBottom: "2rem",
-  },
-
-  formTitle: {
-    fontFamily: "var(--font-head)",
-    fontSize: "1.8rem",
-    fontWeight: 700,
-    color: "var(--text)",
-    marginBottom: "0.4rem",
-  },
-
-  formSub: {
-    color: "var(--muted)",
-    fontSize: "0.9rem",
-    margin: 0,
-  },
-
-  /* Formulario */
-  form: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "1.2rem",
-    marginBottom: "1.25rem",
-  },
-
-  field: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "0.4rem",
-  },
-
-  label: {
-    fontSize: "0.85rem",
-    fontWeight: 500,
-    color: "var(--muted)",
-  },
-
-  input: {
-    background: "#ffffff",
-    border: "1px solid var(--border)",
-    borderRadius: "var(--radius)",
-    padding: "0.75rem 1rem",
-    color: "var(--text)",
-    fontSize: "0.95rem",
-    outline: "none",
-    width: "100%",
-    transition: "border-color .2s, box-shadow .2s",
-  },
-
-  /* El hover/focus del botón no afecta otros elementos porque
-     box-shadow y transform están aplicados solo al <button> */
-  btn: {
-    background: "var(--accent)",
-    color: "var(--bg)",                /* crema, no negro */
-    border: "none",
-    borderRadius: "var(--radius)",
-    padding: "0.85rem",
-    fontFamily: "var(--font-head)",
-    fontSize: "0.95rem",
-    fontWeight: 700,
-    cursor: "pointer",
-    width: "100%",
-    transition: "box-shadow .2s, transform .15s",
-  },
-
-  errorBox: {
-    background: "rgba(192, 57, 43, 0.08)",
-    border: "1px solid rgba(192, 57, 43, 0.25)",
-    borderRadius: "var(--radius)",
-    padding: "0.75rem 1rem",
-    color: "var(--red)",
-    fontSize: "0.88rem",
-  },
-
-  avisoBox: {
-    background: "rgba(63, 185, 80, 0.08)",
-    border: "1px solid rgba(63, 185, 80, 0.25)",
-    borderRadius: "var(--radius)",
-    padding: "0.75rem 1rem",
-    color: "var(--green, #3fb950)",
-    fontSize: "0.85rem",
-  },
-
-  codigoAcciones: {
-    display: "flex",
-    justifyContent: "space-between",
-    gap: "0.5rem",
-  },
-
-  linkBtn: {
-    background: "transparent",
-    border: "none",
-    color: "var(--accent)",
-    fontSize: "0.82rem",
-    fontWeight: 500,
-    cursor: "pointer",
-    padding: 0,
-  },
-
-  switchLink: {
-    textAlign: "center",
-    color: "var(--muted)",
-    fontSize: "0.88rem",
-    marginBottom: "1.25rem",
-    margin: "0 0 1.25rem",
-  },
-
-  switchLinkAnchor: {
-    color: "var(--accent)",
-    fontWeight: 500,
-    textDecoration: "none",
-  },
-
-  /* Bloque de usuarios de prueba */
-  demo: {
-    marginTop: "1.25rem",
-    padding: "1rem",
-    background: "var(--surface2)",
-    borderRadius: "var(--radius)",
-    border: "1px solid var(--border)",
-  },
-
-  demoLabel: {
-    color: "var(--muted)",
-    fontSize: "0.78rem",
-    marginBottom: "0.5rem",
-    margin: "0 0 0.5rem",
-  },
-
-  demoBtns: {
-    display: "flex",
-    gap: "0.5rem",
-    flexWrap: "wrap",
-  },
-
-  demoBtn: {
-    background: "var(--surface)",
-    border: "1px solid var(--border)",
-    borderRadius: 6,
-    padding: "0.3rem 0.7rem",
-    color: "var(--text)",
-    fontSize: "0.78rem",
-    cursor: "pointer",
-  },
-};

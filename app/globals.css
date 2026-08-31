@@ -11,9 +11,6 @@
 
 :root {
   /* ── Paleta Tienda San Miguel — cálida, inspirada en La Terminal ──
-     Estas mismas variables las siguen usando las páginas que todavía no
-     se migraron a clases de Tailwind, así que actualizarlas aquí ya sube
-     de nivel visualmente TODO el sitio de una vez, sin tocar cada página. */
   --bg:           #FBF7EF;
   --surface:      #ffffff;
   --surface2:     #F5EFE1;
