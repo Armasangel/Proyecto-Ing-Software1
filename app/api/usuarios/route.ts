@@ -3,10 +3,21 @@ import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { isDuenoTipo, TIPOS_USUARIO } from "@/lib/roles";
 import { apiError, unauthorizedError, validationError } from "@/lib/api-error";
+import { checkRateLimit, getClientIp } from "@/lib/api-rate-limit";
 
 const TIPOS_VALIDOS = Object.values(TIPOS_USUARIO);
 
+function rateLimitedResponse(retryAfterSeconds: number) {
+  return NextResponse.json(
+    { error: `Demasiadas solicitudes. Intenta de nuevo en ${retryAfterSeconds}s.` },
+    { status: 429, headers: { "Retry-After": String(retryAfterSeconds) } }
+  );
+}
+
 export async function GET(req: NextRequest) {
+  const rl = await checkRateLimit(`usuarios:GET:${getClientIp(req)}`, 60, 60_000);
+  if (rl.limited) return rateLimitedResponse(rl.retryAfterSeconds);
+
   const usuario = getUsuarioFromRequest(req);
   if (!usuario || !isDuenoTipo(usuario.tipo_usuario)) {
     return unauthorizedError();
@@ -58,6 +69,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
+  const rl = await checkRateLimit(`usuarios:PATCH:${getClientIp(req)}`, 20, 60_000);
+  if (rl.limited) return rateLimitedResponse(rl.retryAfterSeconds);
+
   const usuario = getUsuarioFromRequest(req);
   if (!usuario || !isDuenoTipo(usuario.tipo_usuario)) {
     return unauthorizedError();
@@ -124,6 +138,9 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const rl = await checkRateLimit(`usuarios:POST:${getClientIp(req)}`, 10, 60_000);
+  if (rl.limited) return rateLimitedResponse(rl.retryAfterSeconds);
+
   const usuario = getUsuarioFromRequest(req);
   if (!usuario || !isDuenoTipo(usuario.tipo_usuario)) {
     return unauthorizedError();
