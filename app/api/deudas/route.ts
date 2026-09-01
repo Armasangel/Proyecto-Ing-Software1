@@ -35,6 +35,12 @@ export async function GET(req: NextRequest) {
         d.id_cliente,
         c.limite_deuda,
         c.estado_cliente AS cliente_puede_comprar,
+        COALESCE(pg.total_pagado, 0) AS total_pagado,
+        GREATEST(d.monto_total - COALESCE(pg.total_pagado, 0), 0) AS saldo_pendiente,
+        CASE
+          WHEN d.monto_total <= 0 THEN 100
+          ELSE LEAST(ROUND(COALESCE(pg.total_pagado, 0) / d.monto_total * 100, 1), 100)
+        END AS porcentaje_cubierto,
         COALESCE(
           json_agg(
             json_build_object(
@@ -46,12 +52,31 @@ export async function GET(req: NextRequest) {
             ) ORDER BY p.nombre_producto
           ) FILTER (WHERE dp.id_producto IS NOT NULL),
           '[]'
-        ) AS productos
+        ) AS productos,
+        COALESCE(pg.pagos, '[]') AS pagos
       FROM deuda d
       LEFT JOIN deuda_producto dp ON dp.id_deuda = d.id_deuda
       LEFT JOIN producto p ON p.id_producto = dp.id_producto
       LEFT JOIN cliente c ON c.id_cliente = d.id_cliente
-      GROUP BY d.id_deuda, c.limite_deuda, c.estado_cliente
+      LEFT JOIN (
+        SELECT
+          pd.id_deuda,
+          SUM(pd.monto) AS total_pagado,
+          jsonb_agg(
+            jsonb_build_object(
+              'id_pago', pd.id_pago,
+              'monto', pd.monto,
+              'fecha_pago', pd.fecha_pago,
+              'metodo_pago', pd.metodo_pago,
+              'nota', pd.nota,
+              'registrado_por', u.nombre
+            ) ORDER BY pd.fecha_pago DESC
+          ) AS pagos
+        FROM pago_deuda pd
+        LEFT JOIN usuario u ON u.id_usuario = pd.id_usuario
+        GROUP BY pd.id_deuda
+      ) pg ON pg.id_deuda = d.id_deuda
+      GROUP BY d.id_deuda, c.limite_deuda, c.estado_cliente, pg.total_pagado, pg.pagos
       ORDER BY d.estado_deuda ASC, d.fecha_inicio DESC, d.id_deuda DESC
     `);
     return NextResponse.json({ deudas: result.rows });

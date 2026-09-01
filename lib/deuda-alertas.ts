@@ -52,9 +52,12 @@ export async function verificarLimiteAntesDeDeuda(
   }
 
   const sumaRes = await client.query(
-    `SELECT COALESCE(SUM(monto_total), 0) AS total
-     FROM deuda
-     WHERE id_cliente = $1 AND estado_deuda = 'PENDIENTE'`,
+    `SELECT COALESCE(SUM(d.monto_total - COALESCE(pg.total_pagado, 0)), 0) AS total
+     FROM deuda d
+     LEFT JOIN (
+       SELECT id_deuda, SUM(monto) AS total_pagado FROM pago_deuda GROUP BY id_deuda
+     ) pg ON pg.id_deuda = d.id_deuda
+     WHERE d.id_cliente = $1 AND d.estado_deuda = 'PENDIENTE'`,
     [id_cliente]
   );
   const deudaPendienteActual = Number(sumaRes.rows[0].total);
@@ -102,9 +105,12 @@ export async function recalcularBloqueoCliente(
   const estadoActual: boolean = clienteRes.rows[0].estado_cliente;
 
   const sumaRes = await client.query(
-    `SELECT COALESCE(SUM(monto_total), 0) AS total
-     FROM deuda
-     WHERE id_cliente = $1 AND estado_deuda = 'PENDIENTE'`,
+    `SELECT COALESCE(SUM(d.monto_total - COALESCE(pg.total_pagado, 0)), 0) AS total
+     FROM deuda d
+     LEFT JOIN (
+       SELECT id_deuda, SUM(monto) AS total_pagado FROM pago_deuda GROUP BY id_deuda
+     ) pg ON pg.id_deuda = d.id_deuda
+     WHERE d.id_cliente = $1 AND d.estado_deuda = 'PENDIENTE'`,
     [id_cliente]
   );
   const deudaPendiente = Number(sumaRes.rows[0].total);
