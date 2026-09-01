@@ -101,6 +101,15 @@ export default function VentasPage() {
   const [error, setError] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
 
+  // Confirmación antes de enviar
+  const [confirmando, setConfirmando] = useState(false);
+
+  // Deshacer (ventana corta tras registrar)
+  const VENTANA_DESHACER_SEGUNDOS = 60;
+  const [ventaDeshacer, setVentaDeshacer] = useState<{ id: number; total: number } | null>(null);
+  const [segundosRestantes, setSegundosRestantes] = useState(0);
+  const [deshaciendo, setDeshaciendo] = useState(false);
+
   const [idCliente, setIdCliente] = useState("");
   const [estadoPago, setEstadoPago] = useState<string>("PAGADO");
   const [tipoVenta, setTipoVenta] = useState<string>("MINORISTA");
@@ -167,6 +176,16 @@ export default function VentasPage() {
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [usuario, cargarClientes]);
+
+  // Cuenta regresiva del botón "Deshacer" — se apaga sola al llegar a 0.
+  useEffect(() => {
+    if (!ventaDeshacer || segundosRestantes <= 0) {
+      if (segundosRestantes <= 0) setVentaDeshacer(null);
+      return;
+    }
+    const t = setTimeout(() => setSegundosRestantes((s) => s - 1), 1000);
+    return () => clearTimeout(t);
+  }, [ventaDeshacer, segundosRestantes]);
 
   const productoPorId = useMemo(() => {
     const m = new Map<number, Producto>();
@@ -240,11 +259,28 @@ export default function VentasPage() {
       const data = await res.json();
       if (!res.ok) { setError(data.error || "No se pudo registrar la venta"); return; }
       setOkMsg(`Venta #${data.id_venta} registrada. Total: Q${Number(data.total).toFixed(2)}`);
+      setVentaDeshacer({ id: data.id_venta, total: Number(data.total) });
+      setSegundosRestantes(VENTANA_DESHACER_SEGUNDOS);
       setIdCliente(""); setEstadoPago("PAGADO"); setTipoVenta("MINORISTA"); setTipoEntrega("EN_TIENDA");
       setDireccionEntrega(""); setFechaLimitePago(""); setLineas([nuevaLinea()]);
       await cargarVentas();
     } catch { setError("No se pudo conectar con el servidor"); }
-    finally { setLoadingSubmit(false); }
+    finally { setLoadingSubmit(false); setConfirmando(false); }
+  }
+
+  async function handleDeshacer() {
+    if (!ventaDeshacer) return;
+    setDeshaciendo(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/ventas/${ventaDeshacer.id}/anular`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error || "No se pudo deshacer la venta"); return; }
+      setOkMsg(null);
+      setVentaDeshacer(null);
+      await cargarVentas();
+    } catch { setError("No se pudo conectar con el servidor"); }
+    finally { setDeshaciendo(false); }
   }
 
   const puedeEnviar = idCliente && lineas.some((ln) => ln.id_producto && ln.id_bodega && ln.cantidad && Number(ln.cantidad) > 0) && (tipoEntrega === "EN_TIENDA" || direccionEntrega.trim().length > 0);
@@ -378,11 +414,11 @@ export default function VentasPage() {
               <span className="font-bold text-ink">Total: Q{totalBorrador.toFixed(2)}</span>
               <button
                 type="button"
-                onClick={handleSubmit}
+                onClick={() => setConfirmando(true)}
                 disabled={loadingSubmit || !puedeEnviar}
                 className="bg-market text-white border-none rounded-control px-6 py-3.5 text-base font-semibold transition-transform active:scale-[0.97] hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {loadingSubmit ? "Guardando…" : "Registrar venta"}
+                Registrar venta
               </button>
             </div>
           </div>
@@ -392,13 +428,57 @@ export default function VentasPage() {
               {error}
             </div>
           )}
-          {okMsg && (
-            <div key={okMsg} className="mt-4 bg-market-50 border border-market/35 rounded-control px-4 py-3 text-market-600 font-medium flex items-center gap-2 animate-stamp">
+          {okMsg && ventaDeshacer && (
+            <div key={okMsg} className="mt-4 bg-market-50 border border-market/35 rounded-control px-4 py-3 text-market-600 font-medium flex items-center gap-3 flex-wrap animate-stamp">
               <span className="inline-flex w-5 h-5 rounded-full bg-market text-white items-center justify-center text-xs shrink-0">✓</span>
-              {okMsg}
+              <span className="flex-1">{okMsg}</span>
+              <button
+                type="button"
+                onClick={handleDeshacer}
+                disabled={deshaciendo}
+                className="bg-transparent border border-market text-market-600 rounded-control px-3 py-1.5 text-[0.85rem] font-semibold transition-transform active:scale-[0.97] hover:bg-market disabled:opacity-60 disabled:cursor-not-allowed hover:text-white"
+              >
+                {deshaciendo ? "Deshaciendo…" : `Deshacer (${segundosRestantes}s)`}
+              </button>
             </div>
           )}
         </div>
+
+        {/* ── Modal de confirmación antes de enviar ── */}
+        {confirmando && (
+          <div
+            className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50 p-4"
+            onClick={() => setConfirmando(false)}
+          >
+            <div
+              className="bg-white rounded-card shadow-warm-lg p-6 max-w-[420px] w-full"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="font-head text-lg font-bold text-ink mb-2">¿Confirmar esta venta?</h3>
+              <p className="text-ink-muted text-[0.9rem] mb-4">
+                {clientes.find((c) => String(c.id_cliente) === idCliente)?.nombre ?? "Cliente"} ·{" "}
+                {lineas.filter((l) => l.id_producto).length} producto(s) · Total: Q{totalBorrador.toFixed(2)}
+              </p>
+              <div className="flex gap-2 justify-end">
+                <button
+                  type="button"
+                  onClick={() => setConfirmando(false)}
+                  className="px-4 py-2 rounded-control border border-[var(--border)] text-ink-muted text-sm font-medium hover:bg-cream"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSubmit}
+                  disabled={loadingSubmit}
+                  className="px-4 py-2 rounded-control bg-market text-white text-sm font-semibold transition-transform active:scale-[0.97] hover:brightness-110 disabled:opacity-70"
+                >
+                  {loadingSubmit ? "Guardando…" : "Sí, registrar venta"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div>
           <h2 className="font-head text-[1.15rem] mb-4 text-market-600">Ventas recientes</h2>

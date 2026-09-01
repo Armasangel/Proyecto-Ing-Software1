@@ -259,8 +259,8 @@ export async function POST(request: NextRequest) {
         }
 
         await client.query(
-          `INSERT INTO detalle_venta (id_venta, id_producto, cantidad, precio_unitario, subtotal) VALUES ($1,$2,$3,$4,$5)`,
-          [idVenta, p.id_producto, p.cantidad, p.precio, p.subtotal]
+          `INSERT INTO detalle_venta (id_venta, id_producto, id_bodega, cantidad, precio_unitario, subtotal) VALUES ($1,$2,$3,$4,$5,$6)`,
+          [idVenta, p.id_producto, p.id_bodega, p.cantidad, p.precio, p.subtotal]
         );
         await client.query(
           `UPDATE bodega_producto SET cantidad_disponible = cantidad_disponible - $1, ultima_actualizacion = NOW()
