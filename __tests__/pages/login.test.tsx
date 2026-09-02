@@ -25,8 +25,10 @@ describe("LoginPage", () => {
 
   it("renders the branding panel", () => {
     render(<LoginPage />);
-    expect(screen.getByText("Tienda San Miguel")).toBeInTheDocument();
-    expect(screen.getByText("Sistema de gestión")).toBeInTheDocument();
+    // El branding aparece en el panel izquierdo (md+) y en el encabezado
+    // móvil (md:hidden), así que puede haber más de una coincidencia.
+    expect(screen.getAllByText("Tienda San Miguel").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("Sistema de gestión").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("Control de inventario en tiempo real")).toBeInTheDocument();
   });
 

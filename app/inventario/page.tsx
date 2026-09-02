@@ -455,7 +455,7 @@ export default function InventarioPage() {
                         <td style={s.td}>{r.bajo_minimo ? <span style={s.badgeWarn}>Bajo mínimo</span> : <span style={s.badgeOk}>OK</span>}</td>
                         <td style={{ ...s.td, fontSize: "0.82rem", color: "var(--muted)" }}>{new Date(r.ultima_actualizacion).toLocaleString("es-GT")}</td>
                         <td style={s.td}>
-                          <button type="button" style={s.btnPrimary} onClick={() => void patchMinimo(r.id_bodega, r.id_producto)}>Guardar</button>
+                          <button type="button" style={{ ...s.btnPrimary, color: "#0000000" }} onClick={() => void patchMinimo(r.id_bodega, r.id_producto)}>Guardar</button>
                         </td>
                       </tr>
                     );
@@ -713,26 +713,97 @@ export default function InventarioPage() {
 
       {/* ── Modal Bodega ── */}
       {modalBodegaOpen && (
-        <div style={s.overlay} onClick={e => { if (e.target === e.currentTarget) cerrarModalBodega(); }}>
-          <div style={{ ...s.modal, maxWidth: 480 }}>
-            <div style={s.modalHeader}>
-              <h2 style={s.modalTitle}>{editandoBodega ? "Editar bodega" : "Nueva bodega"}</h2>
-              <button type="button" onClick={cerrarModalBodega} style={s.closeBtn}>✕</button>
+        <div
+          style={{
+            ...s.overlay,
+            position: "fixed",
+            top: 0,
+            left: 0,
+            width: "100vw",
+            height: "100vh",
+            backgroundColor: "rgba(0, 0, 0, 0.5)", // Oscurece el fondo
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 101,
+          }}
+          onClick={e => { if (e.target === e.currentTarget) cerrarModalBodega(); }}
+        >
+          <div
+            style={{
+              ...s.modal,
+              maxWidth: 480,
+              width: "90%",
+              backgroundColor: "#ffffff", // Fondo blanco opaco
+              color: "#1a1a1a",           // Texto oscuro
+              borderRadius: "12px",
+              boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.3)",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+            }}
+          >
+            <div style={{ ...s.modalHeader, padding: "1.25rem 1.5rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <h2 style={{ ...s.modalTitle, margin: 0, color: "#1a1a1a" }}>
+                {editandoBodega ? "Editar bodega" : "Nueva bodega"}
+              </h2>
+              <button 
+                type="button" 
+                onClick={cerrarModalBodega} 
+                style={{ ...s.closeBtn, color: "#1a1a1a", background: "transparent", border: "none", cursor: "pointer" }}
+              >
+                ✕
+              </button>
             </div>
-            <div style={s.modalBody}>
-              <div style={s.field}>
-                <label style={s.label}>Nombre *</label>
-                <input style={s.inputModal} value={bodegaForm.nombre_bodega} onChange={e => setBodegaForm(f => ({ ...f, nombre_bodega: e.target.value }))} placeholder="Bodega Principal" autoFocus />
+            <div style={{ ...s.modalBody, padding: "0 1.5rem 1.5rem" }}>
+              <div style={{ ...s.field, marginBottom: "1rem" }}>
+                <label style={{ ...s.label, color: "#1a1a1a", fontWeight: 600, display: "block", marginBottom: "0.25rem" }}>
+                  Nombre *
+                </label>
+                <input
+                  style={{
+                    ...s.inputModal,
+                    backgroundColor: "#f4f4f5",
+                    color: "#1a1a1a",
+                    border: "1px solid #e4e4e7",
+                    width: "100%",
+                  }}
+                  value={bodegaForm.nombre_bodega}
+                  onChange={e => setBodegaForm(f => ({ ...f, nombre_bodega: e.target.value }))}
+                  placeholder="Bodega Principal"
+                  autoFocus
+                />
               </div>
-              <div style={s.field}>
-                <label style={s.label}>Ubicación</label>
-                <input style={s.inputModal} value={bodegaForm.ubicacion} onChange={e => setBodegaForm(f => ({ ...f, ubicacion: e.target.value }))} placeholder="Zona 1, Guatemala" />
+              <div style={{ ...s.field, marginBottom: "1rem" }}>
+                <label style={{ ...s.label, color: "#1a1a1a", fontWeight: 600, display: "block", marginBottom: "0.25rem" }}>
+                  Ubicación
+                </label>
+                <input
+                  style={{
+                    ...s.inputModal,
+                    backgroundColor: "#f4f4f5",
+                    color: "#1a1a1a",
+                    border: "1px solid #e4e4e7",
+                    width: "100%",
+                  }}
+                  value={bodegaForm.ubicacion}
+                  onChange={e => setBodegaForm(f => ({ ...f, ubicacion: e.target.value }))}
+                  placeholder="Zona 1, Guatemala"
+                />
               </div>
-              {bodegaFormError && <p style={{ color: "var(--red)", fontSize: "0.85rem", margin: 0 }}>{bodegaFormError}</p>}
+              {bodegaFormError && (
+                <p style={{ color: "#dc2626", fontSize: "0.85rem", margin: 0 }}>
+                  {bodegaFormError}
+                </p>
+              )}
             </div>
-            <div style={s.modalFooter}>
-              <button type="button" onClick={cerrarModalBodega} style={s.btnSecondary} disabled={savingBodega}>Cancelar</button>
-              <button type="button" onClick={handleGuardarBodega} style={s.btnPrimary} disabled={savingBodega}>{savingBodega ? "Guardando…" : editandoBodega ? "Guardar cambios" : "Crear bodega"}</button>
+            <div style={{ ...s.modalFooter, padding: "1rem 1.5rem", display: "flex", justifyContent: "flex-end", gap: "0.75rem", borderTop: "1px solid #e4e4e7" }}>
+              <button type="button" onClick={cerrarModalBodega} style={s.btnSecondary} disabled={savingBodega}>
+                Cancelar
+              </button>
+              <button type="button" onClick={handleGuardarBodega} style={s.btnSecondary} disabled={savingBodega}>
+                {savingBodega ? "Guardando…" : editandoBodega ? "Guardar cambios" : "Crear bodega"}
+              </button>
             </div>
           </div>
         </div>

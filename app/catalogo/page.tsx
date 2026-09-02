@@ -351,30 +351,86 @@ export default function CatalogoPage() {
 
       {/* ── Modal Crear / Editar producto ── */}
       {modalOpen && (
-        <div style={s.overlay} onClick={(e) => { if (e.target === e.currentTarget) cerrarModal(); }}>
-          <div style={s.modal}>
-            <div style={s.modalHeader}>
-              <h2 style={s.modalTitle}>{editando ? "Editar producto" : "Nuevo producto"}</h2>
-              <button type="button" onClick={cerrarModal} style={s.closeBtn}>✕</button>
+        <div
+          style={{
+            ...s.overlay,
+            position: "fixed",
+            top: 0,
+            left: 0,
+            width: "100vw",
+            height: "100vh",
+            backgroundColor: "rgba(0, 0, 0, 0.5)", // Oscurece el fondo
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 101,
+          }}
+          onClick={(e) => { if (e.target === e.currentTarget) cerrarModal(); }}
+        >
+          <div
+            style={{
+              ...s.modal,
+              backgroundColor: "#ffffff", // Fondo blanco sólido
+              color: "#1a1a1a",           // Texto legible y oscuro
+              borderRadius: "12px",
+              width: "90%",
+              maxWidth: "600px",
+              maxHeight: "90vh",
+              boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.3)",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+            }}
+          >
+            <div style={{ ...s.modalHeader, padding: "1.25rem 1.5rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <h2 style={{ ...s.modalTitle, margin: 0, color: "#1a1a1a" }}>
+                {editando ? "Editar producto" : "Nuevo producto"}
+              </h2>
+              <button 
+                type="button" 
+                onClick={cerrarModal} 
+                style={{ ...s.closeBtn, color: "#1a1a1a", background: "transparent", border: "none", cursor: "pointer" }}
+              >
+                ✕
+              </button>
             </div>
-            <div style={s.modalBody}>
+            <div style={{ ...s.modalBody, padding: "0 1.5rem 1.5rem", overflowY: "auto" }}>
               <div style={s.fila}>
                 <Field label="Código *" style={{ flex: "0 0 140px" }}>
-                  <input style={s.input} value={form.codigo_producto} onChange={(e) => setForm(f => ({ ...f, codigo_producto: e.target.value }))} placeholder="ARR-001" autoFocus />
+                  <input 
+                    style={{ ...s.input, backgroundColor: "#f4f4f5", color: "#1a1a1a", border: "1px solid #e4e4e7" }} 
+                    value={form.codigo_producto} 
+                    onChange={(e) => setForm(f => ({ ...f, codigo_producto: e.target.value }))} 
+                    placeholder="ARR-001" 
+                    autoFocus 
+                  />
                 </Field>
                 <Field label="Nombre del producto *" style={{ flex: 1 }}>
-                  <input style={s.input} value={form.nombre_producto} onChange={(e) => setForm(f => ({ ...f, nombre_producto: e.target.value }))} placeholder="Arroz 1 libra" />
+                  <input 
+                    style={{ ...s.input, backgroundColor: "#f4f4f5", color: "#1a1a1a", border: "1px solid #e4e4e7" }} 
+                    value={form.nombre_producto} 
+                    onChange={(e) => setForm(f => ({ ...f, nombre_producto: e.target.value }))} 
+                    placeholder="Arroz 1 libra" 
+                  />
                 </Field>
               </div>
               <div style={s.fila}>
                 <Field label="Categoría *" style={{ flex: 1 }}>
-                  <select style={s.input} value={form.id_categoria} onChange={(e) => setForm(f => ({ ...f, id_categoria: e.target.value }))}>
+                  <select 
+                    style={{ ...s.input, backgroundColor: "#f4f4f5", color: "#1a1a1a", border: "1px solid #e4e4e7" }} 
+                    value={form.id_categoria} 
+                    onChange={(e) => setForm(f => ({ ...f, id_categoria: e.target.value }))}
+                  >
                     <option value="">— Selecciona —</option>
                     {categorias.map((c) => <option key={c.id_categoria} value={c.id_categoria}>{c.nombre_categoria}</option>)}
                   </select>
                 </Field>
                 <Field label="Marca *" style={{ flex: 1 }}>
-                  <select style={s.input} value={form.id_marca} onChange={(e) => setForm(f => ({ ...f, id_marca: e.target.value }))}>
+                  <select 
+                    style={{ ...s.input, backgroundColor: "#f4f4f5", color: "#1a1a1a", border: "1px solid #e4e4e7" }} 
+                    value={form.id_marca} 
+                    onChange={(e) => setForm(f => ({ ...f, id_marca: e.target.value }))}
+                  >
                     <option value="">— Selecciona —</option>
                     {marcas.map((m) => <option key={m.id_marca} value={m.id_marca}>{m.nombre_marca}</option>)}
                   </select>
@@ -382,25 +438,46 @@ export default function CatalogoPage() {
               </div>
               <div style={s.fila}>
                 <Field label="Precio unitario" style={{ flex: 1 }}>
-                  <input style={s.input} type="number" step="0.01" min="0" value={form.precio_unitario} onChange={(e) => setForm(f => ({ ...f, precio_unitario: e.target.value }))} placeholder="0.00" />
+                  <input 
+                    style={{ ...s.input, backgroundColor: "#f4f4f5", color: "#1a1a1a", border: "1px solid #e4e4e7" }} 
+                    type="number" 
+                    step="0.01" 
+                    min="0" 
+                    value={form.precio_unitario} 
+                    onChange={(e) => setForm(f => ({ ...f, precio_unitario: e.target.value }))} 
+                    placeholder="0.00" 
+                  />
                 </Field>
                 <Field label="Precio mayoreo" style={{ flex: 1 }}>
-                  <input style={s.input} type="number" step="0.01" min="0" value={form.precio_mayoreo} onChange={(e) => setForm(f => ({ ...f, precio_mayoreo: e.target.value }))} placeholder="0.00" />
+                  <input 
+                    style={{ ...s.input, backgroundColor: "#f4f4f5", color: "#1a1a1a", border: "1px solid #e4e4e7" }} 
+                    type="number" 
+                    step="0.01" 
+                    min="0" 
+                    value={form.precio_mayoreo} 
+                    onChange={(e) => setForm(f => ({ ...f, precio_mayoreo: e.target.value }))} 
+                    placeholder="0.00" 
+                  />
                 </Field>
                 <Field label="Unidad de medida *" style={{ flex: 1 }}>
-                  <input style={s.input} value={form.unidad_medida} onChange={(e) => setForm(f => ({ ...f, unidad_medida: e.target.value }))} placeholder="libra, litro, unidad…" />
+                  <input 
+                    style={{ ...s.input, backgroundColor: "#f4f4f5", color: "#1a1a1a", border: "1px solid #e4e4e7" }} 
+                    value={form.unidad_medida} 
+                    onChange={(e) => setForm(f => ({ ...f, unidad_medida: e.target.value }))} 
+                    placeholder="libra, litro, unidad…" 
+                  />
                 </Field>
               </div>
-              <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap", marginTop: "0.25rem" }}>
+              <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap", marginTop: "0.25rem", color: "#1a1a1a" }}>
                 <CheckField label="Producto con fecha de caducidad" checked={form.caducidad} onChange={(v) => setForm(f => ({ ...f, caducidad: v }))} />
                 <CheckField label="Exento de IVA" checked={form.exento_iva} onChange={(v) => setForm(f => ({ ...f, exento_iva: v }))} />
                 <CheckField label="Producto activo" checked={form.estado_producto} onChange={(v) => setForm(f => ({ ...f, estado_producto: v }))} />
               </div>
               {formError && <p style={s.formError}>{formError}</p>}
             </div>
-            <div style={s.modalFooter}>
+            <div style={{ ...s.modalFooter, padding: "1rem 1.5rem", display: "flex", justifyContent: "flex-end", gap: "0.75rem", borderTop: "1px solid #e4e4e7" }}>
               <button type="button" onClick={cerrarModal} style={s.btnSecondary} disabled={saving}>Cancelar</button>
-              <button type="button" onClick={handleGuardar} style={s.btnPrimary} disabled={saving}>{saving ? "Guardando…" : editando ? "Guardar cambios" : "Crear producto"}</button>
+              <button type="button" onClick={handleGuardar} style={s.btnSecondary} disabled={saving}>{saving ? "Guardando…" : editando ? "Guardar cambios" : "Crear producto"}</button>
             </div>
           </div>
         </div>
@@ -409,7 +486,7 @@ export default function CatalogoPage() {
       {/* ── Confirm delete ── */}
       {confirmId !== null && (
         <div style={s.overlay}>
-          <div style={{ ...s.modal, maxWidth: 400 }}>
+          <div style={{ ...s.modal, maxWidth: 400, background: "var(--accent)", color: "#fffffff"}}>
             <div style={s.modalHeader}><h2 style={s.modalTitle}>¿Eliminar producto?</h2></div>
             <div style={s.modalBody}>
               <p style={{ color: "var(--muted)", lineHeight: 1.6 }}>Si el producto tiene historial, será <strong style={{ color: "var(--text)" }}>desactivado</strong> en lugar de eliminado para conservar el registro.</p>

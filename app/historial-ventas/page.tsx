@@ -449,13 +449,39 @@ export default function HistorialVentasPage() {
       {/* Panel lateral filtros */}
       {panelFiltros && (
         <>
+          {/* Overlay / Backdrop */}
           <button
             type="button"
             aria-label="Cerrar filtros"
             onClick={() => setPanelFiltros(false)}
-            style={s.drawerBackdrop}
+            style={{
+              ...s.drawerBackdrop,
+              position: "fixed",
+              top: 0,
+              left: 0,
+              width: "100vw",
+              height: "100vh",
+              backgroundColor: "rgba(0, 0, 0, 0.5)", // Oscurece el fondo
+              border: "none",
+              zIndex: 99,
+            }}
           />
-          <aside style={s.drawer}>
+          {/* Drawer / Panel lateral */}
+          <aside
+            style={{
+              ...s.drawer,
+              position: "fixed",
+              top: 0,
+              right: 0, // O left: 0 si lo prefieres a la izquierda
+              width: "320px",
+              height: "100vh",
+              backgroundColor: "var(--surface, #ffffff)", // Usa un color opaco (p. ej. #1e1e1e o #ffffff)
+              color: "var(--text, #1e1e1e)", // Corregido typo de color
+              zIndex: 100,
+              boxShadow: "-4px 0 12px rgba(0, 0, 0, 0.3)",
+              overflowY: "auto",
+            }}
+          >
             <div style={s.drawerHeader}>
               <h2 style={s.drawerTitle}>Filtros</h2>
               <button type="button" onClick={() => setPanelFiltros(false)} style={s.closeBtn}>
@@ -556,15 +582,51 @@ export default function HistorialVentasPage() {
 
       {/* Modal pickers */}
       {picker && (
-        <div style={s.overlay} role="presentation" onClick={() => setPicker(null)}>
-          <div style={s.modal} role="dialog" onClick={(e) => e.stopPropagation()}>
-            <div style={s.modalHeader}>
-              <h3 style={s.modalTitle}>
+        <div
+          style={{
+            ...s.overlay,
+            position: "fixed",
+            top: 0,
+            left: 0,
+            width: "100vw",
+            height: "100vh",
+            backgroundColor: "rgba(0, 0, 0, 0.5)", // Oscurece la pantalla de atrás
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 101, // Mayor que el drawer lateral (100)
+          }}
+          role="presentation"
+          onClick={() => setPicker(null)}
+        >
+          <div
+            style={{
+              ...s.modal,
+              backgroundColor: "#ffffff", // Fondo blanco opaco
+              color: "#1a1a1a",           // Texto oscuro
+              borderRadius: "12px",
+              width: "90%",
+              maxWidth: "480px",
+              maxHeight: "80vh",
+              boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.3)",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+            }}
+            role="dialog"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ ...s.modalHeader, padding: "1.25rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <h3 style={{ ...s.modalTitle, margin: 0, color: "#1a1a1a" }}>
                 {picker === "producto" && "Elegir producto"}
                 {picker === "cliente" && "Elegir cliente"}
                 {picker === "proveedor" && "Elegir proveedor"}
               </h3>
-              <button type="button" style={s.closeBtn} onClick={() => setPicker(null)}>
+              <button
+                type="button"
+                style={{ ...s.closeBtn, color: "#1a1a1a", background: "transparent", border: "none", cursor: "pointer" }}
+                onClick={() => setPicker(null)}
+              >
                 ✕
               </button>
             </div>
@@ -574,23 +636,32 @@ export default function HistorialVentasPage() {
                 placeholder="Filtrar lista…"
                 value={pickerBusqueda}
                 onChange={(e) => setPickerBusqueda(e.target.value)}
-                style={s.searchInput}
+                style={{
+                  ...s.searchInput,
+                  backgroundColor: "#f4f4f5", // Fondo suave para el input
+                  color: "#1a1a1a",
+                  border: "1px solid #e4e4e7",
+                }}
               />
             </div>
-            <div style={s.modalList}>
+            <div style={{ ...s.modalList, overflowY: "auto", padding: "0 1.25rem 1.25rem" }}>
               {picker === "producto" &&
                 productosPickerFiltrados.map((p) => (
                   <button
                     key={p.id_producto}
                     type="button"
-                    style={s.listItem}
+                    style={{
+                      ...s.listItem,
+                      backgroundColor: "transparent",
+                      color: "#1a1a1a",
+                    }}
                     onClick={() => {
                       setIdProducto(p.id_producto);
                       setPicker(null);
                     }}
                   >
-                    <span style={{ fontWeight: 600 }}>{p.codigo_producto}</span>
-                    <span style={{ color: "var(--muted)", fontSize: "0.85rem" }}>{p.nombre_producto}</span>
+                    <span style={{ fontWeight: 600, display: "block" }}>{p.codigo_producto}</span>
+                    <span style={{ color: "#666666", fontSize: "0.85rem" }}>{p.nombre_producto}</span>
                   </button>
                 ))}
               {picker === "cliente" &&
@@ -598,14 +669,18 @@ export default function HistorialVentasPage() {
                   <button
                     key={c.id_usuario}
                     type="button"
-                    style={s.listItem}
+                    style={{
+                      ...s.listItem,
+                      backgroundColor: "transparent",
+                      color: "#1a1a1a",
+                    }}
                     onClick={() => {
                       setIdCliente(c.id_usuario);
                       setPicker(null);
                     }}
                   >
-                    <span style={{ fontWeight: 600 }}>{c.nombre}</span>
-                    <span style={{ color: "var(--muted)", fontSize: "0.85rem" }}>{c.correo}</span>
+                    <span style={{ fontWeight: 600, display: "block" }}>{c.nombre}</span>
+                    <span style={{ color: "#666666", fontSize: "0.85rem" }}>{c.correo}</span>
                   </button>
                 ))}
               {picker === "proveedor" &&
@@ -613,14 +688,18 @@ export default function HistorialVentasPage() {
                   <button
                     key={p.id_proveedor}
                     type="button"
-                    style={s.listItem}
+                    style={{
+                      ...s.listItem,
+                      backgroundColor: "transparent",
+                      color: "#1a1a1a",
+                    }}
                     onClick={() => {
                       setIdProveedor(p.id_proveedor);
                       setPicker(null);
                     }}
                   >
-                    <span style={{ fontWeight: 600 }}>{p.nombre_proveedor}</span>
-                    <span style={{ color: "var(--muted)", fontSize: "0.85rem" }}>NIT {p.nit_proveedor}</span>
+                    <span style={{ fontWeight: 600, display: "block" }}>{p.nombre_proveedor}</span>
+                    <span style={{ color: "#666666", fontSize: "0.85rem" }}>NIT {p.nit_proveedor}</span>
                   </button>
                 ))}
             </div>
