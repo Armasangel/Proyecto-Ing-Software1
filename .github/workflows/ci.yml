@@ -10,6 +10,32 @@ jobs:
   quality:
     name: Lint, typecheck, tests y build
     runs-on: ubuntu-latest
+
+    services:
+      db:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: tienda_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/tienda_test
+      # Ajusta estos nombres a como los lea tu código (pg Pool usa PG* por defecto
+      # si no le pasas connectionString explícito):
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: tienda_test
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,6 +54,11 @@ jobs:
 
       - name: Typecheck
         run: npx tsc --noEmit
+
+      - name: Crear schema en la base de datos
+        run: psql "$DATABASE_URL" -f ./db/schema.sql
+        # ajusta la ruta al archivo (o script) que crea tus tablas:
+        # categoria, usuario, cliente, venta, detalle_venta, factura, kardex, etc.
 
       - name: Tests unitarios
         run: npm test -- --ci --coverage=false
