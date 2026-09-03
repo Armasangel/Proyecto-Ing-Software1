@@ -1,7 +1,10 @@
 /* Componente de iconos del sistema.
-   variant="dark"  → iconos negros, para fondos claros (default)
-   variant="light" → iconos blancos/crema, para fondos oscuros (sidebar)
-   Los archivos viven en /public/icons/{variant}/{name}.png */
+   Los SVGs viven en /components/icons/ y se renderizan como inline SVG.
+   El color se controla dinámicamente con fill="currentColor" (heredado del color
+   CSS del contenedor) o mediante la prop color. variant="light" se conserva por
+   compatibilidad y fija un color claro por defecto para fondos oscuros (sidebar). */
+
+import { iconMap } from "@/components/icons";
 
 export type IconName =
   | "catalogue"
@@ -31,19 +34,18 @@ type Props = {
   name: IconName;
   size?: number;
   variant?: "dark" | "light";
+  color?: string;
   className?: string;
 };
 
-export function Icon({ name, size = 20, variant = "dark", className }: Props) {
-  return (
-    <img
-      src={`/icons/${variant}/${name}.png`}
-      width={size}
-      height={size}
-      alt=""
-      draggable={false}
-      style={{ display: "block", flexShrink: 0 }}
-      className={className}
-    />
-  );
+export function Icon({ name, size = 20, variant = "dark", color, className }: Props) {
+  const SvgIcon = iconMap[name];
+
+  if (!SvgIcon) {
+    return null;
+  }
+
+  const resolvedColor = color ?? (variant === "light" ? "#faf8f2" : undefined);
+
+  return <SvgIcon size={size} color={resolvedColor} className={className} />;
 }
