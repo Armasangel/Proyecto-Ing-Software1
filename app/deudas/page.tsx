@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { StaffShell } from "@/components/StaffShell";
 import { useStaffSession } from "@/hooks/useStaffSession";
 
@@ -1142,8 +1142,8 @@ export default function DeudasPage() {
                 </thead>
                 <tbody>
                   {gruposPage.slice.map((g) => (
-                    <>
-                      <tr key={g.key} style={{ borderBottom: "1px solid var(--border)" }}>
+                    <Fragment key={g.key}>
+                      <tr style={{ borderBottom: "1px solid var(--border)" }}>
                         <td style={{ padding: "0.75rem" }}>
                           {g.label}
                           {g.telefono && (
@@ -1261,7 +1261,7 @@ export default function DeudasPage() {
                           </td>
                         </tr>
                       )}
-                    </>
+                    </Fragment>
                   ))}
                   {gruposPage.slice.length === 0 && (
                     <tr>
