@@ -10,6 +10,25 @@ jobs:
   quality:
     name: Lint, typecheck, tests y build
     runs-on: ubuntu-latest
+
+    services:
+      db:
+        image: postgres:16
+        env:
+          POSTGRES_USER: dsm_user
+          POSTGRES_PASSWORD: dsm_password
+          POSTGRES_DB: deposito_san_miguel
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://dsm_user:dsm_password@localhost:5432/deposito_san_miguel
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,6 +47,9 @@ jobs:
 
       - name: Typecheck
         run: npx tsc --noEmit
+
+      - name: Crear schema en la base de datos
+        run: psql "$DATABASE_URL" -f ./init/01_schema.sql
 
       - name: Tests unitarios
         run: npm test -- --ci --coverage=false
