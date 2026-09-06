@@ -34,7 +34,7 @@ type Movimiento = {
   cantidad_presentacion: string | null;
 };
 
-type TabKey = "entrada" | "salida" | "traslado";
+type TabKey = "pedidos" | "entrada" | "salida" | "traslado";
 
 const MOTIVO_LABEL: Record<string, string> = {
   MERMA: "Merma / daño",
@@ -42,11 +42,44 @@ const MOTIVO_LABEL: Record<string, string> = {
   TRASLADO: "Traslado",
 };
 
+// ─── Tablero "en vivo" de pedidos (como ordenes en fast food) ─────────────────
+
+type ProductoPedido = {
+  id_detalle: number;
+  codigo_producto: string;
+  nombre_producto: string;
+  cantidad: string;
+  unidad_medida: string;
+  id_bodega: number | null;
+  es_mi_bodega: boolean;
+};
+
+type Pedido = {
+  id_orden: number;
+  fecha_orden: string;
+  estado: "CONFIRMADO" | "EN_PREPARACION" | "ENVIADO";
+  notas: string | null;
+  total: string;
+  nombre_cliente: string;
+  productos: ProductoPedido[];
+};
+
+const COLUMNAS_PEDIDOS: { estado: Pedido["estado"]; titulo: string; siguiente?: { estado: string; label: string } }[] = [
+  { estado: "CONFIRMADO", titulo: "Nuevos", siguiente: { estado: "EN_PREPARACION", label: "Empezar a preparar" } },
+  { estado: "EN_PREPARACION", titulo: "En preparación", siguiente: { estado: "ENVIADO", label: "Marcar enviado" } },
+  { estado: "ENVIADO", titulo: "Enviados", siguiente: undefined },
+];
+
+const PEDIDOS_POLL_MS = 6000;
+
 export default function BodegaPage() {
   const usuario = useBodegueroSession();
   const router = useRouter();
 
-  const [tab, setTab] = useState<TabKey>("entrada");
+  const [tab, setTab] = useState<TabKey>("pedidos");
+  const [pedidos, setPedidos] = useState<Pedido[]>([]);
+  const [avanzandoId, setAvanzandoId] = useState<number | null>(null);
+  const [pedidosError, setPedidosError] = useState<string | null>(null);
   const [productos, setProductos] = useState<Producto[]>([]);
   const [bodegasDestino, setBodegasDestino] = useState<BodegaSimple[]>([]);
   const [nombreBodegaPropia, setNombreBodegaPropia] = useState<string>("");
@@ -69,6 +102,51 @@ export default function BodegaPage() {
       .then((d) => setHistorial(d.movimientos || []))
       .catch(() => {});
   }, []);
+
+  const cargarPedidos = useCallback(() => {
+    fetch("/api/bodega/pedidos")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.pedidos) {
+          setPedidos(d.pedidos);
+          setPedidosError(null);
+        } else if (d.error) {
+          setPedidosError(d.error);
+        }
+      })
+      .catch(() => setPedidosError("No se pudo cargar el tablero de pedidos"));
+  }, []);
+
+  // Tablero en vivo: se refresca solo mientras la pestana de Pedidos esta
+  // activa, como una pantalla de ordenes en cocina.
+  useEffect(() => {
+    if (!usuario || tab !== "pedidos") return;
+    cargarPedidos();
+    const interval = setInterval(cargarPedidos, PEDIDOS_POLL_MS);
+    return () => clearInterval(interval);
+  }, [usuario, tab, cargarPedidos]);
+
+  const avanzarPedido = async (idOrden: number, siguienteEstado: string) => {
+    setAvanzandoId(idOrden);
+    setPedidosError(null);
+    try {
+      const r = await fetch(`/api/ordenes/${idOrden}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ estado: siguienteEstado }),
+      });
+      const d = await r.json();
+      if (!r.ok) {
+        setPedidosError(d.error || "No se pudo actualizar el pedido");
+      } else {
+        cargarPedidos();
+      }
+    } catch {
+      setPedidosError("Error de conexión");
+    } finally {
+      setAvanzandoId(null);
+    }
+  };
 
   useEffect(() => {
     if (!usuario) return;
@@ -203,7 +281,7 @@ export default function BodegaPage() {
 
       <main style={s.main}>
         <div style={s.tabs}>
-          {(["entrada", "salida", "traslado"] as TabKey[]).map((k) => (
+          {(["pedidos", "entrada", "salida", "traslado"] as TabKey[]).map((k) => (
             <button
               key={k}
               type="button"
@@ -218,12 +296,77 @@ export default function BodegaPage() {
                 color: tab === k ? "var(--text)" : "var(--muted)",
               }}
             >
-              {k === "entrada" ? "Entrada" : k === "salida" ? "Salida" : "Traslado"}
+              {k === "pedidos" ? "Pedidos" : k === "entrada" ? "Entrada" : k === "salida" ? "Salida" : "Traslado"}
             </button>
           ))}
         </div>
 
-        <div style={s.card}>
+        {tab === "pedidos" && (
+          <div style={s.pedidosBoard}>
+            {pedidosError && (
+              <div style={{ ...s.msgBox, borderColor: "var(--red)", color: "var(--red)" }}>{pedidosError}</div>
+            )}
+            <div style={s.pedidosColumns}>
+              {COLUMNAS_PEDIDOS.map((col) => {
+                const items = pedidos.filter((p) => p.estado === col.estado);
+                return (
+                  <div key={col.estado} style={s.pedidosColumn}>
+                    <div style={s.pedidosColumnHeader}>
+                      {col.titulo} <span style={{ opacity: 0.6 }}>({items.length})</span>
+                    </div>
+                    <div style={s.pedidosColumnBody}>
+                      {items.length === 0 && (
+                        <div style={{ color: "var(--muted)", fontSize: "0.82rem", padding: "0.5rem" }}>
+                          Sin pedidos aquí
+                        </div>
+                      )}
+                      {items.map((p) => (
+                        <div key={p.id_orden} style={s.pedidoCard}>
+                          <div style={s.pedidoCardHeader}>
+                            <span style={{ fontWeight: 700 }}>Pedido #{p.id_orden}</span>
+                            <span style={{ fontSize: "0.72rem", color: "var(--muted)" }}>
+                              {new Date(p.fecha_orden).toLocaleTimeString("es-GT", { hour: "2-digit", minute: "2-digit" })}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: "0.82rem", color: "var(--muted)", marginBottom: "0.4rem" }}>
+                            {p.nombre_cliente}
+                          </div>
+                          <div style={{ display: "flex", flexDirection: "column", gap: "0.2rem", marginBottom: "0.6rem" }}>
+                            {p.productos
+                              .filter((pr) => pr.es_mi_bodega)
+                              .map((pr) => (
+                                <div key={pr.id_detalle} style={{ fontSize: "0.85rem" }}>
+                                  <strong>{Number(pr.cantidad).toLocaleString("es-GT")}</strong>{" "}
+                                  {pr.unidad_medida} — {pr.nombre_producto}
+                                </div>
+                              ))}
+                          </div>
+                          {p.notas && (
+                            <div style={{ fontSize: "0.78rem", color: "var(--muted)", fontStyle: "italic", marginBottom: "0.6rem" }}>
+                              &ldquo;{p.notas}&rdquo;
+                            </div>
+                          )}
+                          {col.siguiente && (
+                            <button
+                              type="button"
+                              onClick={() => avanzarPedido(p.id_orden, col.siguiente!.estado)}
+                              disabled={avanzandoId === p.id_orden}
+                              style={s.pedidoAdvanceBtn}
+                            >
+                              {avanzandoId === p.id_orden ? "Actualizando…" : col.siguiente.label}
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {tab !== "pedidos" && <div style={s.card}>
           <div style={s.field}>
             <label style={s.label}>Producto</label>
             <select style={s.input} value={idProducto} onChange={(e) => setIdProducto(e.target.value)}>
@@ -332,42 +475,44 @@ export default function BodegaPage() {
           <button type="button" style={s.submitBtn} onClick={enviar} disabled={enviando}>
             {enviando ? "Guardando…" : "Registrar movimiento"}
           </button>
-        </div>
+        </div>}
 
-        <div style={s.historial}>
-          <div style={s.historialTitle}>Últimos movimientos de tu bodega</div>
-          {historial.length === 0 && (
-            <div style={{ color: "var(--muted)", fontSize: "0.85rem" }}>Sin movimientos recientes</div>
-          )}
-          {historial.map((m) => (
-            <div key={m.id_kardex} style={s.historialRow}>
-              <div>
-                <span
-                  style={{
-                    fontWeight: 700,
-                    color: m.tipo_movimiento === "SALIDA" ? "var(--red)" : "var(--accent2)",
-                  }}
-                >
-                  {m.tipo_movimiento === "SALIDA" ? "− " : "+ "}
-                  {Number(m.cantidad).toLocaleString("es-GT")} {m.unidad_medida}
-                </span>{" "}
-                {m.nombre_producto}
-                {m.nombre_presentacion && (
-                  <span style={{ color: "var(--muted)" }}>
-                    {" "}
-                    ({m.cantidad_presentacion} × {m.nombre_presentacion})
-                  </span>
-                )}
+        {tab !== "pedidos" && (
+          <div style={s.historial}>
+            <div style={s.historialTitle}>Últimos movimientos de tu bodega</div>
+            {historial.length === 0 && (
+              <div style={{ color: "var(--muted)", fontSize: "0.85rem" }}>Sin movimientos recientes</div>
+            )}
+            {historial.map((m) => (
+              <div key={m.id_kardex} style={s.historialRow}>
+                <div>
+                  <span
+                    style={{
+                      fontWeight: 700,
+                      color: m.tipo_movimiento === "SALIDA" ? "var(--red)" : "var(--accent2)",
+                    }}
+                  >
+                    {m.tipo_movimiento === "SALIDA" ? "− " : "+ "}
+                    {Number(m.cantidad).toLocaleString("es-GT")} {m.unidad_medida}
+                  </span>{" "}
+                  {m.nombre_producto}
+                  {m.nombre_presentacion && (
+                    <span style={{ color: "var(--muted)" }}>
+                      {" "}
+                      ({m.cantidad_presentacion} × {m.nombre_presentacion})
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                  {m.motivo ? MOTIVO_LABEL[m.motivo] + " — " : ""}
+                  {m.descripcion || ""}
+                  {" · "}
+                  {new Date(m.fecha_movimiento).toLocaleString("es-GT", { dateStyle: "short", timeStyle: "short" })}
+                </div>
               </div>
-              <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
-                {m.motivo ? MOTIVO_LABEL[m.motivo] + " — " : ""}
-                {m.descripcion || ""}
-                {" · "}
-                {new Date(m.fecha_movimiento).toLocaleString("es-GT", { dateStyle: "short", timeStyle: "short" })}
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </main>
     </div>
   );
@@ -375,6 +520,63 @@ export default function BodegaPage() {
 
 const s: Record<string, CSSProperties> = {
   page: { minHeight: "100vh", background: "var(--bg)", fontFamily: "var(--font-body)" },
+  pedidosBoard: {
+    maxWidth: 1200,
+    margin: "0 auto",
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.75rem",
+  },
+  pedidosColumns: {
+    display: "grid",
+    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+    gap: "0.85rem",
+    alignItems: "start",
+  },
+  pedidosColumn: {
+    background: "var(--surface)",
+    border: "1px solid var(--border)",
+    borderRadius: 12,
+    display: "flex",
+    flexDirection: "column",
+    minHeight: 200,
+  },
+  pedidosColumnHeader: {
+    padding: "0.75rem 1rem",
+    fontWeight: 700,
+    fontSize: "0.92rem",
+    borderBottom: "1px solid var(--border)",
+    color: "var(--text)",
+  },
+  pedidosColumnBody: {
+    padding: "0.75rem",
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.6rem",
+  },
+  pedidoCard: {
+    background: "var(--surface2)",
+    border: "1px solid var(--border)",
+    borderRadius: 10,
+    padding: "0.75rem 0.85rem",
+  },
+  pedidoCardHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "baseline",
+    marginBottom: "0.2rem",
+  },
+  pedidoAdvanceBtn: {
+    width: "100%",
+    padding: "0.55rem 0.7rem",
+    borderRadius: 8,
+    border: "none",
+    background: "var(--accent2)",
+    color: "#fff",
+    fontWeight: 600,
+    fontSize: "0.85rem",
+    cursor: "pointer",
+  },
   header: {
     display: "flex",
     justifyContent: "space-between",

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
-import { isStaffTipo } from "@/lib/roles";
+import { isBodegueroTipo, isStaffTipo } from "@/lib/roles";
 
 const ESTADOS_ORDEN = ["PENDIENTE", "CONFIRMADO", "EN_PREPARACION", "ENVIADO", "ENTREGADO", "CANCELADO"] as const;
 type EstadoOrden = (typeof ESTADOS_ORDEN)[number];
@@ -10,12 +10,23 @@ function isEstadoValido(s: string): s is EstadoOrden {
   return (ESTADOS_ORDEN as readonly string[]).includes(s);
 }
 
+// Transiciones que un BODEGUERO puede hacer desde el tablero "en vivo" de su
+// bodega — solo avanzar el flujo de preparación, nunca cancelar ni tocar
+// notas/cliente. Dueño y colaborador (isStaffTipo) siguen sin esta
+// restricción.
+const TRANSICIONES_BODEGUERO: Record<string, string[]> = {
+  CONFIRMADO: ["EN_PREPARACION"],
+  EN_PREPARACION: ["ENVIADO"],
+};
+
 export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   const usuario = getUsuarioFromRequest(req);
-  if (!usuario || !isStaffTipo(usuario.tipo_usuario)) {
+  const esStaff = !!usuario && isStaffTipo(usuario.tipo_usuario);
+  const esBodeguero = !!usuario && isBodegueroTipo(usuario.tipo_usuario);
+  if (!usuario || (!esStaff && !esBodeguero)) {
     return NextResponse.json({ error: "No autorizado" }, { status: 403 });
   }
 
@@ -33,6 +44,12 @@ export async function PATCH(
         { error: `Estado invalido. Use: ${ESTADOS_ORDEN.join(", ")}` },
         { status: 400 }
       );
+    }
+
+    // El bodeguero solo puede cambiar estado (nunca notas) y solo dentro de
+    // las transiciones de preparacion permitidas.
+    if (esBodeguero && (notas !== undefined || !estado)) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }
 
     const client = await pool.connect();
@@ -55,6 +72,27 @@ export async function PATCH(
           { error: `No se puede modificar una orden ${estadoActual.toLowerCase()}` },
           { status: 400 }
         );
+      }
+
+      if (esBodeguero) {
+        const permitido = TRANSICIONES_BODEGUERO[estadoActual] ?? [];
+        if (!permitido.includes(estado)) {
+          await client.query("ROLLBACK");
+          return NextResponse.json(
+            { error: "Esa transicion de estado no esta permitida desde bodega" },
+            { status: 400 }
+          );
+        }
+        // Solo puede tocar ordenes que tengan al menos una linea asignada
+        // a su propia bodega.
+        const tieneLinea = await client.query(
+          `SELECT 1 FROM detalle_orden WHERE id_orden = $1 AND id_bodega = $2 LIMIT 1`,
+          [idOrden, usuario.id_bodega]
+        );
+        if (tieneLinea.rowCount === 0) {
+          await client.query("ROLLBACK");
+          return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+        }
       }
 
       const updates: string[] = [];

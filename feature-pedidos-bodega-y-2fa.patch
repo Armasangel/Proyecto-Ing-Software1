@@ -1,0 +1,771 @@
+diff --git a/app/api/bodega/pedidos/route.ts b/app/api/bodega/pedidos/route.ts
+new file mode 100644
+index 0000000..c98e97a
+--- /dev/null
++++ b/app/api/bodega/pedidos/route.ts
+@@ -0,0 +1,66 @@
++import { NextRequest, NextResponse } from "next/server";
++import { pool } from "@/lib/db";
++import { getUsuarioFromRequest } from "@/lib/server-auth";
++import { isBodegueroTipo } from "@/lib/roles";
++
++// Tablero "en vivo" de pedidos para el panel de bodega: muestra las ordenes
++// creadas por dueno/colaborador (via /ordenes) que tienen al menos una linea
++// asignada a la bodega del bodeguero autenticado, en los estados que le
++// corresponde preparar. Pensado para refrescarse por polling, como una
++// pantalla de ordenes de comida rapida.
++const ESTADOS_TABLERO = ["CONFIRMADO", "EN_PREPARACION", "ENVIADO"] as const;
++
++export async function GET(req: NextRequest) {
++  const usuario = getUsuarioFromRequest(req);
++  if (!usuario || !isBodegueroTipo(usuario.tipo_usuario) || !usuario.id_bodega) {
++    return NextResponse.json({ error: "No autorizado" }, { status: 403 });
++  }
++
++  try {
++    const result = await pool.query(
++      `
++      SELECT
++        o.id_orden,
++        o.fecha_orden,
++        o.estado,
++        o.notas,
++        o.total,
++        c.nombre AS nombre_cliente,
++        COALESCE(
++          json_agg(
++            json_build_object(
++              'id_detalle', d.id_detalle,
++              'codigo_producto', p.codigo_producto,
++              'nombre_producto', p.nombre_producto,
++              'cantidad', d.cantidad,
++              'unidad_medida', p.unidad_medida,
++              'id_bodega', d.id_bodega,
++              'es_mi_bodega', d.id_bodega = $1
++            )
++            ORDER BY d.id_detalle
++          ) FILTER (WHERE d.id_detalle IS NOT NULL),
++          '[]'::json
++        ) AS productos
++      FROM orden o
++      JOIN cliente c ON c.id_cliente = o.id_cliente
++      JOIN detalle_orden d ON d.id_orden = o.id_orden
++      LEFT JOIN producto p ON p.id_producto = d.id_producto
++      WHERE o.estado = ANY($2::varchar[])
++        AND EXISTS (
++          SELECT 1 FROM detalle_orden d2
++          WHERE d2.id_orden = o.id_orden AND d2.id_bodega = $1
++        )
++      GROUP BY o.id_orden, o.fecha_orden, o.estado, o.notas, o.total, c.nombre
++      ORDER BY
++        CASE o.estado WHEN 'CONFIRMADO' THEN 0 WHEN 'EN_PREPARACION' THEN 1 ELSE 2 END,
++        o.fecha_orden ASC
++      `,
++      [usuario.id_bodega, ESTADOS_TABLERO]
++    );
++
++    return NextResponse.json({ pedidos: result.rows });
++  } catch (error) {
++    console.error("[BODEGA PEDIDOS GET]", error);
++    return NextResponse.json({ error: "Error al consultar pedidos" }, { status: 500 });
++  }
++}
+diff --git a/app/api/login/route.ts b/app/api/login/route.ts
+index a7bb377..bf080ed 100644
+--- a/app/api/login/route.ts
++++ b/app/api/login/route.ts
+@@ -47,8 +47,9 @@ export async function POST(req: NextRequest) {
+       tipo_usuario: string;
+       id_bodega: number | null;
+       contrasena_hash: string;
++      requiere_2fa: boolean;
+     }>(
+-      `SELECT id_usuario, nombre, correo, tipo_usuario, id_bodega, contrasena_hash
++      `SELECT id_usuario, nombre, correo, tipo_usuario, id_bodega, contrasena_hash, requiere_2fa
+        FROM usuario
+        WHERE LOWER(correo) = LOWER($1) AND estado_usuario = TRUE`,
+       [username]
+@@ -80,7 +81,10 @@ export async function POST(req: NextRequest) {
+     // porque es el que administra el sistema y los códigos se mandan al
+     // correo configurado en GMAIL_USER (que puede no ser el del dueño). El
+     // bodeguero tampoco pasa por 2FA: no maneja dinero ni facturación.
+-    if (row.tipo_usuario !== TIPOS_USUARIO.EMPLEADO) {
++    // Dentro de los EMPLEADO, el dueño puede además eximir puntualmente a
++    // alguno del 2FA (columna requiere_2fa) — p. ej. mientras se resuelve
++    // un problema con su correo.
++    if (row.tipo_usuario !== TIPOS_USUARIO.EMPLEADO || row.requiere_2fa === false) {
+       const token = signAuthToken(usuario);
+       const response = NextResponse.json({
+         ok: true,
+diff --git a/app/api/ordenes/[id]/route.ts b/app/api/ordenes/[id]/route.ts
+index 9af2b7a..2532c33 100644
+--- a/app/api/ordenes/[id]/route.ts
++++ b/app/api/ordenes/[id]/route.ts
+@@ -1,7 +1,7 @@
+ import { NextRequest, NextResponse } from "next/server";
+ import { pool } from "@/lib/db";
+ import { getUsuarioFromRequest } from "@/lib/server-auth";
+-import { isStaffTipo } from "@/lib/roles";
++import { isBodegueroTipo, isStaffTipo } from "@/lib/roles";
+ 
+ const ESTADOS_ORDEN = ["PENDIENTE", "CONFIRMADO", "EN_PREPARACION", "ENVIADO", "ENTREGADO", "CANCELADO"] as const;
+ type EstadoOrden = (typeof ESTADOS_ORDEN)[number];
+@@ -10,12 +10,23 @@ function isEstadoValido(s: string): s is EstadoOrden {
+   return (ESTADOS_ORDEN as readonly string[]).includes(s);
+ }
+ 
++// Transiciones que un BODEGUERO puede hacer desde el tablero "en vivo" de su
++// bodega — solo avanzar el flujo de preparación, nunca cancelar ni tocar
++// notas/cliente. Dueño y colaborador (isStaffTipo) siguen sin esta
++// restricción.
++const TRANSICIONES_BODEGUERO: Record<string, string[]> = {
++  CONFIRMADO: ["EN_PREPARACION"],
++  EN_PREPARACION: ["ENVIADO"],
++};
++
+ export async function PATCH(
+   req: NextRequest,
+   { params }: { params: { id: string } }
+ ) {
+   const usuario = getUsuarioFromRequest(req);
+-  if (!usuario || !isStaffTipo(usuario.tipo_usuario)) {
++  const esStaff = !!usuario && isStaffTipo(usuario.tipo_usuario);
++  const esBodeguero = !!usuario && isBodegueroTipo(usuario.tipo_usuario);
++  if (!usuario || (!esStaff && !esBodeguero)) {
+     return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+   }
+ 
+@@ -35,6 +46,12 @@ export async function PATCH(
+       );
+     }
+ 
++    // El bodeguero solo puede cambiar estado (nunca notas) y solo dentro de
++    // las transiciones de preparacion permitidas.
++    if (esBodeguero && (notas !== undefined || !estado)) {
++      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
++    }
++
+     const client = await pool.connect();
+     try {
+       await client.query("BEGIN");
+@@ -57,6 +74,27 @@ export async function PATCH(
+         );
+       }
+ 
++      if (esBodeguero) {
++        const permitido = TRANSICIONES_BODEGUERO[estadoActual] ?? [];
++        if (!permitido.includes(estado)) {
++          await client.query("ROLLBACK");
++          return NextResponse.json(
++            { error: "Esa transicion de estado no esta permitida desde bodega" },
++            { status: 400 }
++          );
++        }
++        // Solo puede tocar ordenes que tengan al menos una linea asignada
++        // a su propia bodega.
++        const tieneLinea = await client.query(
++          `SELECT 1 FROM detalle_orden WHERE id_orden = $1 AND id_bodega = $2 LIMIT 1`,
++          [idOrden, usuario.id_bodega]
++        );
++        if (tieneLinea.rowCount === 0) {
++          await client.query("ROLLBACK");
++          return NextResponse.json({ error: "No autorizado" }, { status: 403 });
++        }
++      }
++
+       const updates: string[] = [];
+       const values: unknown[] = [];
+       let idx = 1;
+diff --git a/app/api/usuarios/route.ts b/app/api/usuarios/route.ts
+index d40a10c..ec60ad7 100644
+--- a/app/api/usuarios/route.ts
++++ b/app/api/usuarios/route.ts
+@@ -46,6 +46,7 @@ export async function GET(req: NextRequest) {
+          u.tipo_usuario,
+          u.estado_usuario,
+          u.id_bodega,
++         u.requiere_2fa,
+          b.nombre_bodega
+        FROM usuario u
+        LEFT JOIN bodega b ON b.id_bodega = u.id_bodega
+@@ -68,7 +69,7 @@ export async function PATCH(req: NextRequest) {
+ 
+   try {
+     const body = await req.json();
+-    const { id_usuario, tipo_usuario, estado_usuario, id_bodega } = body;
++    const { id_usuario, tipo_usuario, estado_usuario, id_bodega, requiere_2fa } = body;
+ 
+     const idNum = Number(id_usuario);
+     if (!idNum || idNum < 1) {
+@@ -129,6 +130,14 @@ export async function PATCH(req: NextRequest) {
+       params.push(estado_usuario);
+     }
+ 
++    if (requiere_2fa !== undefined) {
++      if (typeof requiere_2fa !== "boolean") {
++        return validationError("requiere_2fa debe ser true o false");
++      }
++      updates.push(`requiere_2fa = $${idx++}`);
++      params.push(requiere_2fa);
++    }
++
+     if (updates.length === 0) {
+       return validationError("No se enviaron campos para actualizar");
+     }
+@@ -139,7 +148,7 @@ export async function PATCH(req: NextRequest) {
+       `UPDATE usuario
+        SET ${updates.join(", ")}
+        WHERE id_usuario = $${idx}
+-       RETURNING id_usuario, nombre, correo, tipo_usuario, estado_usuario, id_bodega`,
++       RETURNING id_usuario, nombre, correo, tipo_usuario, estado_usuario, id_bodega, requiere_2fa`,
+       params
+     );
+ 
+@@ -161,7 +170,7 @@ export async function POST(req: NextRequest) {
+ 
+   try {
+     const body = await req.json();
+-    const { nombre, correo, contrasena, tipo_usuario, telefono, id_bodega } = body;
++    const { nombre, correo, contrasena, tipo_usuario, telefono, id_bodega, requiere_2fa } = body;
+ 
+     if (!nombre || !correo || !contrasena) {
+       return validationError("nombre, correo y contrasena son obligatorios");
+@@ -222,13 +231,15 @@ export async function POST(req: NextRequest) {
+ 
+     const telefonoFinal = typeof telefono === "string" ? telefono.trim() : null;
+ 
+-
++    // Solo tiene efecto real para EMPLEADO (ver /api/login); para DUENO y
++    // BODEGUERO se guarda pero se ignora en el login. Por defecto TRUE.
++    const requiere2faFinal = typeof requiere_2fa === "boolean" ? requiere_2fa : true;
+ 
+     const result = await pool.query(
+-      `INSERT INTO usuario (nombre, correo, telefono, contrasena_hash, tipo_usuario, id_bodega)
+-       VALUES ($1, $2, $3, $4, $5, $6)
+-       RETURNING id_usuario, nombre, correo, tipo_usuario, estado_usuario, id_bodega`,
+-      [nombre.trim(), correoFinal, telefonoFinal, hash, tipoFinal, idBodegaFinal]
++      `INSERT INTO usuario (nombre, correo, telefono, contrasena_hash, tipo_usuario, id_bodega, requiere_2fa)
++       VALUES ($1, $2, $3, $4, $5, $6, $7)
++       RETURNING id_usuario, nombre, correo, tipo_usuario, estado_usuario, id_bodega, requiere_2fa`,
++      [nombre.trim(), correoFinal, telefonoFinal, hash, tipoFinal, idBodegaFinal, requiere2faFinal]
+ 
+     );
+ 
+diff --git a/app/bodega/page.tsx b/app/bodega/page.tsx
+index 6008ef4..6a05ea2 100644
+--- a/app/bodega/page.tsx
++++ b/app/bodega/page.tsx
+@@ -34,7 +34,7 @@ type Movimiento = {
+   cantidad_presentacion: string | null;
+ };
+ 
+-type TabKey = "entrada" | "salida" | "traslado";
++type TabKey = "pedidos" | "entrada" | "salida" | "traslado";
+ 
+ const MOTIVO_LABEL: Record<string, string> = {
+   MERMA: "Merma / daño",
+@@ -42,11 +42,44 @@ const MOTIVO_LABEL: Record<string, string> = {
+   TRASLADO: "Traslado",
+ };
+ 
++// ─── Tablero "en vivo" de pedidos (como ordenes en fast food) ─────────────────
++
++type ProductoPedido = {
++  id_detalle: number;
++  codigo_producto: string;
++  nombre_producto: string;
++  cantidad: string;
++  unidad_medida: string;
++  id_bodega: number | null;
++  es_mi_bodega: boolean;
++};
++
++type Pedido = {
++  id_orden: number;
++  fecha_orden: string;
++  estado: "CONFIRMADO" | "EN_PREPARACION" | "ENVIADO";
++  notas: string | null;
++  total: string;
++  nombre_cliente: string;
++  productos: ProductoPedido[];
++};
++
++const COLUMNAS_PEDIDOS: { estado: Pedido["estado"]; titulo: string; siguiente?: { estado: string; label: string } }[] = [
++  { estado: "CONFIRMADO", titulo: "Nuevos", siguiente: { estado: "EN_PREPARACION", label: "Empezar a preparar" } },
++  { estado: "EN_PREPARACION", titulo: "En preparación", siguiente: { estado: "ENVIADO", label: "Marcar enviado" } },
++  { estado: "ENVIADO", titulo: "Enviados", siguiente: undefined },
++];
++
++const PEDIDOS_POLL_MS = 6000;
++
+ export default function BodegaPage() {
+   const usuario = useBodegueroSession();
+   const router = useRouter();
+ 
+-  const [tab, setTab] = useState<TabKey>("entrada");
++  const [tab, setTab] = useState<TabKey>("pedidos");
++  const [pedidos, setPedidos] = useState<Pedido[]>([]);
++  const [avanzandoId, setAvanzandoId] = useState<number | null>(null);
++  const [pedidosError, setPedidosError] = useState<string | null>(null);
+   const [productos, setProductos] = useState<Producto[]>([]);
+   const [bodegasDestino, setBodegasDestino] = useState<BodegaSimple[]>([]);
+   const [nombreBodegaPropia, setNombreBodegaPropia] = useState<string>("");
+@@ -70,6 +103,51 @@ export default function BodegaPage() {
+       .catch(() => {});
+   }, []);
+ 
++  const cargarPedidos = useCallback(() => {
++    fetch("/api/bodega/pedidos")
++      .then((r) => r.json())
++      .then((d) => {
++        if (d.pedidos) {
++          setPedidos(d.pedidos);
++          setPedidosError(null);
++        } else if (d.error) {
++          setPedidosError(d.error);
++        }
++      })
++      .catch(() => setPedidosError("No se pudo cargar el tablero de pedidos"));
++  }, []);
++
++  // Tablero en vivo: se refresca solo mientras la pestana de Pedidos esta
++  // activa, como una pantalla de ordenes en cocina.
++  useEffect(() => {
++    if (!usuario || tab !== "pedidos") return;
++    cargarPedidos();
++    const interval = setInterval(cargarPedidos, PEDIDOS_POLL_MS);
++    return () => clearInterval(interval);
++  }, [usuario, tab, cargarPedidos]);
++
++  const avanzarPedido = async (idOrden: number, siguienteEstado: string) => {
++    setAvanzandoId(idOrden);
++    setPedidosError(null);
++    try {
++      const r = await fetch(`/api/ordenes/${idOrden}`, {
++        method: "PATCH",
++        headers: { "Content-Type": "application/json" },
++        body: JSON.stringify({ estado: siguienteEstado }),
++      });
++      const d = await r.json();
++      if (!r.ok) {
++        setPedidosError(d.error || "No se pudo actualizar el pedido");
++      } else {
++        cargarPedidos();
++      }
++    } catch {
++      setPedidosError("Error de conexión");
++    } finally {
++      setAvanzandoId(null);
++    }
++  };
++
+   useEffect(() => {
+     if (!usuario) return;
+     fetch("/api/productos")
+@@ -203,7 +281,7 @@ export default function BodegaPage() {
+ 
+       <main style={s.main}>
+         <div style={s.tabs}>
+-          {(["entrada", "salida", "traslado"] as TabKey[]).map((k) => (
++          {(["pedidos", "entrada", "salida", "traslado"] as TabKey[]).map((k) => (
+             <button
+               key={k}
+               type="button"
+@@ -218,12 +296,77 @@ export default function BodegaPage() {
+                 color: tab === k ? "var(--text)" : "var(--muted)",
+               }}
+             >
+-              {k === "entrada" ? "Entrada" : k === "salida" ? "Salida" : "Traslado"}
++              {k === "pedidos" ? "Pedidos" : k === "entrada" ? "Entrada" : k === "salida" ? "Salida" : "Traslado"}
+             </button>
+           ))}
+         </div>
+ 
+-        <div style={s.card}>
++        {tab === "pedidos" && (
++          <div style={s.pedidosBoard}>
++            {pedidosError && (
++              <div style={{ ...s.msgBox, borderColor: "var(--red)", color: "var(--red)" }}>{pedidosError}</div>
++            )}
++            <div style={s.pedidosColumns}>
++              {COLUMNAS_PEDIDOS.map((col) => {
++                const items = pedidos.filter((p) => p.estado === col.estado);
++                return (
++                  <div key={col.estado} style={s.pedidosColumn}>
++                    <div style={s.pedidosColumnHeader}>
++                      {col.titulo} <span style={{ opacity: 0.6 }}>({items.length})</span>
++                    </div>
++                    <div style={s.pedidosColumnBody}>
++                      {items.length === 0 && (
++                        <div style={{ color: "var(--muted)", fontSize: "0.82rem", padding: "0.5rem" }}>
++                          Sin pedidos aquí
++                        </div>
++                      )}
++                      {items.map((p) => (
++                        <div key={p.id_orden} style={s.pedidoCard}>
++                          <div style={s.pedidoCardHeader}>
++                            <span style={{ fontWeight: 700 }}>Pedido #{p.id_orden}</span>
++                            <span style={{ fontSize: "0.72rem", color: "var(--muted)" }}>
++                              {new Date(p.fecha_orden).toLocaleTimeString("es-GT", { hour: "2-digit", minute: "2-digit" })}
++                            </span>
++                          </div>
++                          <div style={{ fontSize: "0.82rem", color: "var(--muted)", marginBottom: "0.4rem" }}>
++                            {p.nombre_cliente}
++                          </div>
++                          <div style={{ display: "flex", flexDirection: "column", gap: "0.2rem", marginBottom: "0.6rem" }}>
++                            {p.productos
++                              .filter((pr) => pr.es_mi_bodega)
++                              .map((pr) => (
++                                <div key={pr.id_detalle} style={{ fontSize: "0.85rem" }}>
++                                  <strong>{Number(pr.cantidad).toLocaleString("es-GT")}</strong>{" "}
++                                  {pr.unidad_medida} — {pr.nombre_producto}
++                                </div>
++                              ))}
++                          </div>
++                          {p.notas && (
++                            <div style={{ fontSize: "0.78rem", color: "var(--muted)", fontStyle: "italic", marginBottom: "0.6rem" }}>
++                              &ldquo;{p.notas}&rdquo;
++                            </div>
++                          )}
++                          {col.siguiente && (
++                            <button
++                              type="button"
++                              onClick={() => avanzarPedido(p.id_orden, col.siguiente!.estado)}
++                              disabled={avanzandoId === p.id_orden}
++                              style={s.pedidoAdvanceBtn}
++                            >
++                              {avanzandoId === p.id_orden ? "Actualizando…" : col.siguiente.label}
++                            </button>
++                          )}
++                        </div>
++                      ))}
++                    </div>
++                  </div>
++                );
++              })}
++            </div>
++          </div>
++        )}
++
++        {tab !== "pedidos" && <div style={s.card}>
+           <div style={s.field}>
+             <label style={s.label}>Producto</label>
+             <select style={s.input} value={idProducto} onChange={(e) => setIdProducto(e.target.value)}>
+@@ -332,42 +475,44 @@ export default function BodegaPage() {
+           <button type="button" style={s.submitBtn} onClick={enviar} disabled={enviando}>
+             {enviando ? "Guardando…" : "Registrar movimiento"}
+           </button>
+-        </div>
+-
+-        <div style={s.historial}>
+-          <div style={s.historialTitle}>Últimos movimientos de tu bodega</div>
+-          {historial.length === 0 && (
+-            <div style={{ color: "var(--muted)", fontSize: "0.85rem" }}>Sin movimientos recientes</div>
+-          )}
+-          {historial.map((m) => (
+-            <div key={m.id_kardex} style={s.historialRow}>
+-              <div>
+-                <span
+-                  style={{
+-                    fontWeight: 700,
+-                    color: m.tipo_movimiento === "SALIDA" ? "var(--red)" : "var(--accent2)",
+-                  }}
+-                >
+-                  {m.tipo_movimiento === "SALIDA" ? "− " : "+ "}
+-                  {Number(m.cantidad).toLocaleString("es-GT")} {m.unidad_medida}
+-                </span>{" "}
+-                {m.nombre_producto}
+-                {m.nombre_presentacion && (
+-                  <span style={{ color: "var(--muted)" }}>
+-                    {" "}
+-                    ({m.cantidad_presentacion} × {m.nombre_presentacion})
+-                  </span>
+-                )}
+-              </div>
+-              <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+-                {m.motivo ? MOTIVO_LABEL[m.motivo] + " — " : ""}
+-                {m.descripcion || ""}
+-                {" · "}
+-                {new Date(m.fecha_movimiento).toLocaleString("es-GT", { dateStyle: "short", timeStyle: "short" })}
++        </div>}
++
++        {tab !== "pedidos" && (
++          <div style={s.historial}>
++            <div style={s.historialTitle}>Últimos movimientos de tu bodega</div>
++            {historial.length === 0 && (
++              <div style={{ color: "var(--muted)", fontSize: "0.85rem" }}>Sin movimientos recientes</div>
++            )}
++            {historial.map((m) => (
++              <div key={m.id_kardex} style={s.historialRow}>
++                <div>
++                  <span
++                    style={{
++                      fontWeight: 700,
++                      color: m.tipo_movimiento === "SALIDA" ? "var(--red)" : "var(--accent2)",
++                    }}
++                  >
++                    {m.tipo_movimiento === "SALIDA" ? "− " : "+ "}
++                    {Number(m.cantidad).toLocaleString("es-GT")} {m.unidad_medida}
++                  </span>{" "}
++                  {m.nombre_producto}
++                  {m.nombre_presentacion && (
++                    <span style={{ color: "var(--muted)" }}>
++                      {" "}
++                      ({m.cantidad_presentacion} × {m.nombre_presentacion})
++                    </span>
++                  )}
++                </div>
++                <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
++                  {m.motivo ? MOTIVO_LABEL[m.motivo] + " — " : ""}
++                  {m.descripcion || ""}
++                  {" · "}
++                  {new Date(m.fecha_movimiento).toLocaleString("es-GT", { dateStyle: "short", timeStyle: "short" })}
++                </div>
+               </div>
+-            </div>
+-          ))}
+-        </div>
++            ))}
++          </div>
++        )}
+       </main>
+     </div>
+   );
+@@ -375,6 +520,63 @@ export default function BodegaPage() {
+ 
+ const s: Record<string, CSSProperties> = {
+   page: { minHeight: "100vh", background: "var(--bg)", fontFamily: "var(--font-body)" },
++  pedidosBoard: {
++    maxWidth: 1200,
++    margin: "0 auto",
++    display: "flex",
++    flexDirection: "column",
++    gap: "0.75rem",
++  },
++  pedidosColumns: {
++    display: "grid",
++    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
++    gap: "0.85rem",
++    alignItems: "start",
++  },
++  pedidosColumn: {
++    background: "var(--surface)",
++    border: "1px solid var(--border)",
++    borderRadius: 12,
++    display: "flex",
++    flexDirection: "column",
++    minHeight: 200,
++  },
++  pedidosColumnHeader: {
++    padding: "0.75rem 1rem",
++    fontWeight: 700,
++    fontSize: "0.92rem",
++    borderBottom: "1px solid var(--border)",
++    color: "var(--text)",
++  },
++  pedidosColumnBody: {
++    padding: "0.75rem",
++    display: "flex",
++    flexDirection: "column",
++    gap: "0.6rem",
++  },
++  pedidoCard: {
++    background: "var(--surface2)",
++    border: "1px solid var(--border)",
++    borderRadius: 10,
++    padding: "0.75rem 0.85rem",
++  },
++  pedidoCardHeader: {
++    display: "flex",
++    justifyContent: "space-between",
++    alignItems: "baseline",
++    marginBottom: "0.2rem",
++  },
++  pedidoAdvanceBtn: {
++    width: "100%",
++    padding: "0.55rem 0.7rem",
++    borderRadius: 8,
++    border: "none",
++    background: "var(--accent2)",
++    color: "#fff",
++    fontWeight: 600,
++    fontSize: "0.85rem",
++    cursor: "pointer",
++  },
+   header: {
+     display: "flex",
+     justifyContent: "space-between",
+diff --git a/app/usuarios/page.tsx b/app/usuarios/page.tsx
+index fdb4c3e..dc2af60 100644
+--- a/app/usuarios/page.tsx
++++ b/app/usuarios/page.tsx
+@@ -17,6 +17,7 @@ type Usuario = {
+   estado_usuario: boolean;
+   id_bodega: number | null;
+   nombre_bodega: string | null;
++  requiere_2fa: boolean;
+ };
+ 
+ type TipoUsuario = keyof typeof TIPOS_USUARIO;
+@@ -59,6 +60,7 @@ const EMPTY_FORM = {
+   contrasena: "",
+   tipo_usuario: TIPOS_USUARIO.EMPLEADO as string,
+   id_bodega: "",
++  requiere_2fa: true,
+ };
+ 
+ // ─── Componente principal ─────────────────────────────────────────────────────
+@@ -78,7 +80,8 @@ export default function UsuariosPage() {
+   const [editando, setEditando] = useState<Usuario | null>(null);
+   const [editTipo, setEditTipo] = useState("");
+   const [editBodega, setEditBodega] = useState("");
+-  const [editEstado, setEditEstado] = useState(true);
++  const [editEstado, setEditEstado] = useState(true);
++  const [editRequiere2fa, setEditRequiere2fa] = useState(true);
+   const [savingEdit, setSavingEdit] = useState(false);
+   const [editError, setEditError] = useState("");
+ 
+@@ -139,6 +142,7 @@ export default function UsuariosPage() {
+     setEditTipo(u.tipo_usuario);
+     setEditBodega(u.id_bodega ? String(u.id_bodega) : "");
+     setEditEstado(u.estado_usuario);
++    setEditRequiere2fa(u.requiere_2fa);
+     setEditError("");
+   };
+ 
+@@ -159,6 +163,7 @@ export default function UsuariosPage() {
+           tipo_usuario: editTipo,
+           estado_usuario: editEstado,
+           id_bodega: editTipo === TIPOS_USUARIO.BODEGUERO ? Number(editBodega) : null,
++          requiere_2fa: editRequiere2fa,
+         }),
+       });
+       const d = await r.json();
+@@ -405,6 +410,11 @@ export default function UsuariosPage() {
+                           {u.nombre_bodega || "Sin bodega"}
+                         </div>
+                       )}
++                      {u.tipo_usuario === TIPOS_USUARIO.EMPLEADO && !u.requiere_2fa && (
++                        <div style={{ fontSize: "0.7rem", color: "var(--red)", marginTop: "0.25rem" }}>
++                          Sin 2FA
++                        </div>
++                      )}
+                     </td>
+                     <td style={{ ...s.td, textAlign: "center" }}>
+                       <span
+@@ -569,6 +579,37 @@ export default function UsuariosPage() {
+                 </div>
+               )}
+ 
++              {editTipo === TIPOS_USUARIO.EMPLEADO && (
++                <div style={s.field}>
++                  <label
++                    style={{
++                      display: "flex",
++                      alignItems: "center",
++                      gap: "0.6rem",
++                      padding: "0.65rem 0.85rem",
++                      borderRadius: 10,
++                      border: "1px solid var(--border)",
++                      background: "var(--surface2)",
++                      cursor: "pointer",
++                    }}
++                  >
++                    <input
++                      type="checkbox"
++                      checked={editRequiere2fa}
++                      onChange={(e) => setEditRequiere2fa(e.target.checked)}
++                    />
++                    <div>
++                      <div style={{ fontWeight: 600, fontSize: "0.88rem", color: "var(--text)" }}>
++                        Requiere verificación en dos pasos (2FA)
++                      </div>
++                      <div style={{ fontSize: "0.72rem", color: "var(--muted)" }}>
++                        Si lo desmarcas, este colaborador entra directo con usuario y contraseña, sin código por correo.
++                      </div>
++                    </div>
++                  </label>
++                </div>
++              )}
++
+               {/* Estado */}
+               <div style={s.field}>
+                 <label style={s.label}>Estado de la cuenta</label>
+@@ -790,6 +831,37 @@ export default function UsuariosPage() {
+                 </div>
+               )}
+ 
++              {nuevoForm.tipo_usuario === TIPOS_USUARIO.EMPLEADO && (
++                <div style={s.field}>
++                  <label
++                    style={{
++                      display: "flex",
++                      alignItems: "center",
++                      gap: "0.6rem",
++                      padding: "0.65rem 0.85rem",
++                      borderRadius: 10,
++                      border: "1px solid var(--border)",
++                      background: "var(--surface2)",
++                      cursor: "pointer",
++                    }}
++                  >
++                    <input
++                      type="checkbox"
++                      checked={nuevoForm.requiere_2fa}
++                      onChange={(e) => setNuevoForm((f) => ({ ...f, requiere_2fa: e.target.checked }))}
++                    />
++                    <div>
++                      <div style={{ fontWeight: 600, fontSize: "0.88rem", color: "var(--text)" }}>
++                        Requiere verificación en dos pasos (2FA)
++                      </div>
++                      <div style={{ fontSize: "0.72rem", color: "var(--muted)" }}>
++                        Desmárcalo para que este colaborador entre directo con usuario y contraseña, sin código por correo.
++                      </div>
++                    </div>
++                  </label>
++                </div>
++              )}
++
+               {nuevoError && <div style={s.errorBox}>{nuevoError}</div>}
+             </div>
+             <div style={s.modalFooter}>
+diff --git a/init/03_add_requiere_2fa.sql b/init/03_add_requiere_2fa.sql
+new file mode 100644
+index 0000000..d2840d1
+--- /dev/null
++++ b/init/03_add_requiere_2fa.sql
+@@ -0,0 +1,34 @@
++-- init/03_add_requiere_2fa.sql
++--
++-- Migración incremental para bases de datos EXISTENTES (donde ya corriste
++-- 01_schema.sql antes y no quieres perder los datos). Agrega la columna
++-- requiere_2fa a usuario, para poder eximir a colaboradores puntuales del
++-- código de verificación por correo (2FA) sin tocar su tipo_usuario.
++--
++-- Por defecto TRUE para no bajar la seguridad de nadie que ya existe.
++-- Solo tiene efecto real sobre usuarios EMPLEADO: DUENO y BODEGUERO nunca
++-- pasan por 2FA sin importar este valor (ver app/api/login/route.ts).
++--
++-- Uso (con la base ya corriendo):
++--   docker compose exec -T db psql -U <usuario> -d <basededatos> < init/03_add_requiere_2fa.sql
++-- o, si te conectas directo con psql:
++--   psql -U <usuario> -d <basededatos> -f init/03_add_requiere_2fa.sql
++--
++-- Es seguro correrlo más de una vez (IF NOT EXISTS / ON CONFLICT DO NOTHING).
++
++ALTER TABLE usuario
++    ADD COLUMN IF NOT EXISTS requiere_2fa BOOLEAN NOT NULL DEFAULT TRUE;
++
++-- Usuario de prueba con 2FA desactivado, para probar el flujo de login sin
++-- código por correo. Misma contraseña de prueba que el resto: password123
++INSERT INTO usuario (nombre, correo, telefono, contrasena_hash, tipo_usuario, requiere_2fa)
++VALUES (
++  'Empleado Sin 2FA',
++  'sin2fa@tienda.com',
++  '50205556666',
++  '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm',
++  'EMPLEADO',
++  FALSE
++)
++ON CONFLICT (correo) DO NOTHING;
++

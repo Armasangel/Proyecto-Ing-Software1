@@ -17,6 +17,7 @@ type Usuario = {
   estado_usuario: boolean;
   id_bodega: number | null;
   nombre_bodega: string | null;
+  requiere_2fa: boolean;
 };
 
 type TipoUsuario = keyof typeof TIPOS_USUARIO;
@@ -59,6 +60,7 @@ const EMPTY_FORM = {
   contrasena: "",
   tipo_usuario: TIPOS_USUARIO.EMPLEADO as string,
   id_bodega: "",
+  requiere_2fa: true,
 };
 
 // ─── Componente principal ─────────────────────────────────────────────────────
@@ -79,6 +81,7 @@ export default function UsuariosPage() {
   const [editTipo, setEditTipo] = useState("");
   const [editBodega, setEditBodega] = useState("");
   const [editEstado, setEditEstado] = useState(true);
+  const [editRequiere2fa, setEditRequiere2fa] = useState(true);
   const [savingEdit, setSavingEdit] = useState(false);
   const [editError, setEditError] = useState("");
 
@@ -139,6 +142,7 @@ export default function UsuariosPage() {
     setEditTipo(u.tipo_usuario);
     setEditBodega(u.id_bodega ? String(u.id_bodega) : "");
     setEditEstado(u.estado_usuario);
+    setEditRequiere2fa(u.requiere_2fa);
     setEditError("");
   };
 
@@ -159,6 +163,7 @@ export default function UsuariosPage() {
           tipo_usuario: editTipo,
           estado_usuario: editEstado,
           id_bodega: editTipo === TIPOS_USUARIO.BODEGUERO ? Number(editBodega) : null,
+          requiere_2fa: editRequiere2fa,
         }),
       });
       const d = await r.json();
@@ -405,6 +410,11 @@ export default function UsuariosPage() {
                           {u.nombre_bodega || "Sin bodega"}
                         </div>
                       )}
+                      {u.tipo_usuario === TIPOS_USUARIO.EMPLEADO && !u.requiere_2fa && (
+                        <div style={{ fontSize: "0.7rem", color: "var(--red)", marginTop: "0.25rem" }}>
+                          Sin 2FA
+                        </div>
+                      )}
                     </td>
                     <td style={{ ...s.td, textAlign: "center" }}>
                       <span
@@ -566,6 +576,37 @@ export default function UsuariosPage() {
                       </option>
                     ))}
                   </select>
+                </div>
+              )}
+
+              {editTipo === TIPOS_USUARIO.EMPLEADO && (
+                <div style={s.field}>
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.6rem",
+                      padding: "0.65rem 0.85rem",
+                      borderRadius: 10,
+                      border: "1px solid var(--border)",
+                      background: "var(--surface2)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={editRequiere2fa}
+                      onChange={(e) => setEditRequiere2fa(e.target.checked)}
+                    />
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: "0.88rem", color: "var(--text)" }}>
+                        Requiere verificación en dos pasos (2FA)
+                      </div>
+                      <div style={{ fontSize: "0.72rem", color: "var(--muted)" }}>
+                        Si lo desmarcas, este colaborador entra directo con usuario y contraseña, sin código por correo.
+                      </div>
+                    </div>
+                  </label>
                 </div>
               )}
 
@@ -787,6 +828,37 @@ export default function UsuariosPage() {
                       </option>
                     ))}
                   </select>
+                </div>
+              )}
+
+              {nuevoForm.tipo_usuario === TIPOS_USUARIO.EMPLEADO && (
+                <div style={s.field}>
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.6rem",
+                      padding: "0.65rem 0.85rem",
+                      borderRadius: 10,
+                      border: "1px solid var(--border)",
+                      background: "var(--surface2)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={nuevoForm.requiere_2fa}
+                      onChange={(e) => setNuevoForm((f) => ({ ...f, requiere_2fa: e.target.checked }))}
+                    />
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: "0.88rem", color: "var(--text)" }}>
+                        Requiere verificación en dos pasos (2FA)
+                      </div>
+                      <div style={{ fontSize: "0.72rem", color: "var(--muted)" }}>
+                        Desmárcalo para que este colaborador entre directo con usuario y contraseña, sin código por correo.
+                      </div>
+                    </div>
+                  </label>
                 </div>
               )}
 

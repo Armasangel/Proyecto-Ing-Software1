@@ -46,6 +46,7 @@ export async function GET(req: NextRequest) {
          u.tipo_usuario,
          u.estado_usuario,
          u.id_bodega,
+         u.requiere_2fa,
          b.nombre_bodega
        FROM usuario u
        LEFT JOIN bodega b ON b.id_bodega = u.id_bodega
@@ -68,7 +69,7 @@ export async function PATCH(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { id_usuario, tipo_usuario, estado_usuario, id_bodega } = body;
+    const { id_usuario, tipo_usuario, estado_usuario, id_bodega, requiere_2fa } = body;
 
     const idNum = Number(id_usuario);
     if (!idNum || idNum < 1) {
@@ -129,6 +130,14 @@ export async function PATCH(req: NextRequest) {
       params.push(estado_usuario);
     }
 
+    if (requiere_2fa !== undefined) {
+      if (typeof requiere_2fa !== "boolean") {
+        return validationError("requiere_2fa debe ser true o false");
+      }
+      updates.push(`requiere_2fa = $${idx++}`);
+      params.push(requiere_2fa);
+    }
+
     if (updates.length === 0) {
       return validationError("No se enviaron campos para actualizar");
     }
@@ -139,7 +148,7 @@ export async function PATCH(req: NextRequest) {
       `UPDATE usuario
        SET ${updates.join(", ")}
        WHERE id_usuario = $${idx}
-       RETURNING id_usuario, nombre, correo, tipo_usuario, estado_usuario, id_bodega`,
+       RETURNING id_usuario, nombre, correo, tipo_usuario, estado_usuario, id_bodega, requiere_2fa`,
       params
     );
 
@@ -161,7 +170,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { nombre, correo, contrasena, tipo_usuario, telefono, id_bodega } = body;
+    const { nombre, correo, contrasena, tipo_usuario, telefono, id_bodega, requiere_2fa } = body;
 
     if (!nombre || !correo || !contrasena) {
       return validationError("nombre, correo y contrasena son obligatorios");
@@ -222,13 +231,15 @@ export async function POST(req: NextRequest) {
 
     const telefonoFinal = typeof telefono === "string" ? telefono.trim() : null;
 
-
+    // Solo tiene efecto real para EMPLEADO (ver /api/login); para DUENO y
+    // BODEGUERO se guarda pero se ignora en el login. Por defecto TRUE.
+    const requiere2faFinal = typeof requiere_2fa === "boolean" ? requiere_2fa : true;
 
     const result = await pool.query(
-      `INSERT INTO usuario (nombre, correo, telefono, contrasena_hash, tipo_usuario, id_bodega)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING id_usuario, nombre, correo, tipo_usuario, estado_usuario, id_bodega`,
-      [nombre.trim(), correoFinal, telefonoFinal, hash, tipoFinal, idBodegaFinal]
+      `INSERT INTO usuario (nombre, correo, telefono, contrasena_hash, tipo_usuario, id_bodega, requiere_2fa)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id_usuario, nombre, correo, tipo_usuario, estado_usuario, id_bodega, requiere_2fa`,
+      [nombre.trim(), correoFinal, telefonoFinal, hash, tipoFinal, idBodegaFinal, requiere2faFinal]
 
     );
 
