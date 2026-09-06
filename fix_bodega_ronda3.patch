@@ -1,0 +1,340 @@
+diff --git a/app/api/categorias/route.ts b/app/api/categorias/route.ts
+index f6ebefc..a002923 100644
+--- a/app/api/categorias/route.ts
++++ b/app/api/categorias/route.ts
+@@ -17,4 +17,27 @@ export async function GET(req: NextRequest) {
+   } catch (error) {
+     return apiError("CATEGORIAS GET", error);
+   }
++}
++
++export async function POST(req: NextRequest) {
++  const usuario = getUsuarioFromRequest(req);
++  if (!usuario || !isStaffTipo(usuario.tipo_usuario)) {
++    return unauthorizedError();
++  }
++  try {
++    const { nombre_categoria } = await req.json();
++    if (!nombre_categoria || !String(nombre_categoria).trim()) {
++      return NextResponse.json({ error: "El nombre de la categoría es obligatorio" }, { status: 400 });
++    }
++    const result = await pool.query(
++      `INSERT INTO categoria (nombre_categoria) VALUES ($1) RETURNING id_categoria, nombre_categoria`,
++      [String(nombre_categoria).trim()]
++    );
++    return NextResponse.json({ categoria: result.rows[0] }, { status: 201 });
++  } catch (error: any) {
++    if (error.code === "23505") {
++      return NextResponse.json({ error: "Ya existe una categoría con ese nombre" }, { status: 409 });
++    }
++    return apiError("CATEGORIAS POST", error);
++  }
+ }
+\ No newline at end of file
+diff --git a/app/api/marcas/route.ts b/app/api/marcas/route.ts
+index 0986a26..89abef3 100644
+--- a/app/api/marcas/route.ts
++++ b/app/api/marcas/route.ts
+@@ -17,4 +17,27 @@ export async function GET(req: NextRequest) {
+   } catch (error) {
+     return apiError("MARCAS GET", error);
+   }
++}
++
++export async function POST(req: NextRequest) {
++  const usuario = getUsuarioFromRequest(req);
++  if (!usuario || !isStaffTipo(usuario.tipo_usuario)) {
++    return unauthorizedError();
++  }
++  try {
++    const { nombre_marca } = await req.json();
++    if (!nombre_marca || !String(nombre_marca).trim()) {
++      return NextResponse.json({ error: "El nombre de la marca es obligatorio" }, { status: 400 });
++    }
++    const result = await pool.query(
++      `INSERT INTO marca (nombre_marca) VALUES ($1) RETURNING id_marca, nombre_marca`,
++      [String(nombre_marca).trim()]
++    );
++    return NextResponse.json({ marca: result.rows[0] }, { status: 201 });
++  } catch (error: any) {
++    if (error.code === "23505") {
++      return NextResponse.json({ error: "Ya existe una marca con ese nombre" }, { status: 409 });
++    }
++    return apiError("MARCAS POST", error);
++  }
+ }
+\ No newline at end of file
+diff --git a/app/bodega/page.tsx b/app/bodega/page.tsx
+index b82775a..6008ef4 100644
+--- a/app/bodega/page.tsx
++++ b/app/bodega/page.tsx
+@@ -243,7 +243,7 @@ export default function BodegaPage() {
+                 style={s.input}
+                 type="number"
+                 min="0"
+-                step="0.001"
++                step="1"
+                 value={cantidad}
+                 onChange={(e) => setCantidad(e.target.value)}
+                 placeholder="0"
+diff --git a/app/deudas/page.tsx b/app/deudas/page.tsx
+index a8d644f..5d09f25 100644
+--- a/app/deudas/page.tsx
++++ b/app/deudas/page.tsx
+@@ -999,7 +999,7 @@ export default function DeudasPage() {
+                   <input
+                     type="number"
+                     min={0.001}
+-                    step="0.001"
++                    step="1"
+                     style={{ ...inputStyle, width: 100 }}
+                     value={linea.cantidad}
+                     onChange={(e) => actualizarLinea(idx, "cantidad", e.target.value)}
+diff --git a/app/inventario/page.tsx b/app/inventario/page.tsx
+index 7471907..47cfc0b 100644
+--- a/app/inventario/page.tsx
++++ b/app/inventario/page.tsx
+@@ -609,7 +609,7 @@ export default function InventarioPage() {
+                 </div>
+                 <div style={{ ...s.field, flex: "1 1 120px" }}>
+                   <label style={s.label}>Cantidad *</label>
+-                  <input type="number" min="0.001" step="0.001" value={entradaForm.cantidad} onChange={e => setEntradaForm(f => ({ ...f, cantidad: e.target.value }))} style={s.select} />
++                  <input type="number" min="0.001" step="1" value={entradaForm.cantidad} onChange={e => setEntradaForm(f => ({ ...f, cantidad: e.target.value }))} style={s.select} />
+                   {entradaForm.id_presentacion && entradaForm.cantidad && (
+                     <span style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                       = {(Number(entradaForm.cantidad) * Number(entradaPresentaciones.find(p => p.id_presentacion === Number(entradaForm.id_presentacion))?.factor_conversion || 1)).toLocaleString("es-GT")} {productoSeleccionado?.unidad_medida || "unidades"} en total
+@@ -663,7 +663,7 @@ export default function InventarioPage() {
+               </div>
+               <div style={s.field}>
+                 <label style={s.label}>Cantidad</label>
+-                <input type="number" min="0.001" step="0.001" value={xfer.cantidad} onChange={e => setXfer(x => ({ ...x, cantidad: e.target.value }))} style={s.select} inputMode="decimal" />
++                <input type="number" min="0.001" step="1" value={xfer.cantidad} onChange={e => setXfer(x => ({ ...x, cantidad: e.target.value }))} style={s.select} inputMode="decimal" />
+               </div>
+               <div style={s.field}>
+                 <label style={s.label}>Descripción (opcional)</label>
+@@ -694,7 +694,7 @@ export default function InventarioPage() {
+               </div>
+               <div style={s.field}>
+                 <label style={s.label}>Nueva cantidad (stock físico)</label>
+-                <input type="number" min="0" step="0.001" value={adj.nueva_cantidad} onChange={e => setAdj(a => ({ ...a, nueva_cantidad: e.target.value }))} style={s.select} inputMode="decimal" />
++                <input type="number" min="0" step="1" value={adj.nueva_cantidad} onChange={e => setAdj(a => ({ ...a, nueva_cantidad: e.target.value }))} style={s.select} inputMode="decimal" />
+               </div>
+               <div style={s.field}>
+                 <label style={s.label}>Motivo / nota (opcional)</label>
+@@ -916,7 +916,7 @@ export default function InventarioPage() {
+                   </div>
+                   <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                     <label style={{ fontSize: "0.75rem", color: "var(--muted)" }}>Factor (unidades base)</label>
+-                    <input type="number" min="0" step="0.001" value={presFactor} onChange={(e) => setPresFactor(e.target.value)} style={{ ...s.searchInput, flex: "0 0 120px", width: 120 }} />
++                    <input type="number" min="0" step="1" value={presFactor} onChange={(e) => setPresFactor(e.target.value)} style={{ ...s.searchInput, flex: "0 0 120px", width: 120 }} />
+                   </div>
+                   <button type="button" onClick={crearPresentacion} disabled={presGuardando} style={s.btnPrimary}>
+                     {presGuardando ? "Guardando…" : "+ Agregar presentación"}
+diff --git a/app/ordenes/page.tsx b/app/ordenes/page.tsx
+index 4ff3bed..c05f355 100644
+--- a/app/ordenes/page.tsx
++++ b/app/ordenes/page.tsx
+@@ -359,7 +359,7 @@ export default function OrdenesPage() {
+                       </div>
+                       <div style={field}>
+                         <label style={label}>Cantidad</label>
+-                        <input type="number" min="0.001" step="0.001" value={ln.cantidad} onChange={(e) => actualizarLinea(ln.key, { cantidad: e.target.value })} style={input} />
++                        <input type="number" min="0.001" step="1" value={ln.cantidad} onChange={(e) => actualizarLinea(ln.key, { cantidad: e.target.value })} style={input} />
+                       </div>
+                       <div style={field}>
+                         <label style={label}>P. unitario</label>
+diff --git a/app/productos/page.tsx b/app/productos/page.tsx
+index ce68f73..6b4b572 100644
+--- a/app/productos/page.tsx
++++ b/app/productos/page.tsx
+@@ -93,6 +93,18 @@ export default function ProductosPage() {
+   const [guardandoProveedor, setGuardandoProveedor] = useState(false);
+   const [errorProveedor, setErrorProveedor] = useState("");
+ 
++  // Categorías y marcas: alta rápida igual que proveedores (mismo patrón
++  // usado en Deudas para "+ Cliente nuevo").
++  const [creandoCategoria, setCreandoCategoria] = useState(false);
++  const [nuevaCategoriaNombre, setNuevaCategoriaNombre] = useState("");
++  const [guardandoCategoria, setGuardandoCategoria] = useState(false);
++  const [errorCategoria, setErrorCategoria] = useState("");
++
++  const [creandoMarca, setCreandoMarca] = useState(false);
++  const [nuevaMarcaNombre, setNuevaMarcaNombre] = useState("");
++  const [guardandoMarca, setGuardandoMarca] = useState(false);
++  const [errorMarca, setErrorMarca] = useState("");
++
+   // Presentaciones por mayor (ej. "Caja de 24", "Saco de 50 libras"),
+   // capturadas junto con el producto en vez de tener que ir a otra pantalla.
+   const [presentacionesForm, setPresentacionesForm] = useState<PresentacionForm[]>([]);
+@@ -186,6 +198,64 @@ export default function ProductosPage() {
+     }
+   };
+ 
++  const guardarCategoriaNueva = async () => {
++    setErrorCategoria("");
++    if (!nuevaCategoriaNombre.trim()) {
++      setErrorCategoria("El nombre es obligatorio");
++      return;
++    }
++    setGuardandoCategoria(true);
++    try {
++      const res = await fetch("/api/categorias", {
++        method: "POST",
++        headers: { "Content-Type": "application/json" },
++        body: JSON.stringify({ nombre_categoria: nuevaCategoriaNombre.trim() }),
++      });
++      const data = await res.json();
++      if (!res.ok) {
++        setErrorCategoria(data.error || "Error al crear la categoría");
++      } else {
++        setCategorias((prev) => [...prev, data.categoria].sort((a, b) => a.nombre_categoria.localeCompare(b.nombre_categoria)));
++        setForm((f) => ({ ...f, id_categoria: String(data.categoria.id_categoria) }));
++        setNuevaCategoriaNombre("");
++        setCreandoCategoria(false);
++      }
++    } catch {
++      setErrorCategoria("Error de conexión");
++    } finally {
++      setGuardandoCategoria(false);
++    }
++  };
++
++  const guardarMarcaNueva = async () => {
++    setErrorMarca("");
++    if (!nuevaMarcaNombre.trim()) {
++      setErrorMarca("El nombre es obligatorio");
++      return;
++    }
++    setGuardandoMarca(true);
++    try {
++      const res = await fetch("/api/marcas", {
++        method: "POST",
++        headers: { "Content-Type": "application/json" },
++        body: JSON.stringify({ nombre_marca: nuevaMarcaNombre.trim() }),
++      });
++      const data = await res.json();
++      if (!res.ok) {
++        setErrorMarca(data.error || "Error al crear la marca");
++      } else {
++        setMarcas((prev) => [...prev, data.marca].sort((a, b) => a.nombre_marca.localeCompare(b.nombre_marca)));
++        setForm((f) => ({ ...f, id_marca: String(data.marca.id_marca) }));
++        setNuevaMarcaNombre("");
++        setCreandoMarca(false);
++      }
++    } catch {
++      setErrorMarca("Error de conexión");
++    } finally {
++      setGuardandoMarca(false);
++    }
++  };
++
+   const agregarFilaPresentacion = (nombrePreset = "") => {
+     setPresentacionesForm((prev) => [...prev, { nombre_presentacion: nombrePreset, factor_conversion: "" }]);
+   };
+@@ -205,6 +275,12 @@ export default function ProductosPage() {
+     setProveedorQuery("");
+     setCreandoProveedor(false);
+     setFormProveedorNuevo(PROVEEDOR_VACIO);
++    setCreandoCategoria(false);
++    setNuevaCategoriaNombre("");
++    setErrorCategoria("");
++    setCreandoMarca(false);
++    setNuevaMarcaNombre("");
++    setErrorMarca("");
+   };
+ 
+   const handleSubmit = async () => {
+@@ -334,21 +410,59 @@ export default function ProductosPage() {
+             </div>
+             <div>
+               <label style={lbl}>Categoría *</label>
+-              <select name="id_categoria" value={form.id_categoria} onChange={handleChange} style={inp}>
+-                <option value="">Seleccionar...</option>
+-                {categorias.map((c) => (
+-                  <option key={c.id_categoria} value={c.id_categoria}>{c.nombre_categoria}</option>
+-                ))}
+-              </select>
++              <div style={{ display: "flex", gap: "0.4rem" }}>
++                <select name="id_categoria" value={form.id_categoria} onChange={handleChange} style={{ ...inp, flex: 1 }}>
++                  <option value="">Seleccionar...</option>
++                  {categorias.map((c) => (
++                    <option key={c.id_categoria} value={c.id_categoria}>{c.nombre_categoria}</option>
++                  ))}
++                </select>
++                <button type="button" onClick={() => setCreandoCategoria((v) => !v)} style={{ ...btnGhost, whiteSpace: "nowrap" }}>
++                  + Nueva
++                </button>
++              </div>
++              {creandoCategoria && (
++                <div style={{ display: "flex", gap: "0.4rem", marginTop: "0.5rem" }}>
++                  <input
++                    value={nuevaCategoriaNombre}
++                    onChange={(e) => setNuevaCategoriaNombre(e.target.value)}
++                    placeholder="Nombre de la categoría"
++                    style={inp}
++                  />
++                  <button type="button" onClick={guardarCategoriaNueva} disabled={guardandoCategoria} style={{ ...btnGhost, whiteSpace: "nowrap" }}>
++                    {guardandoCategoria ? "Guardando…" : "Guardar"}
++                  </button>
++                </div>
++              )}
++              {errorCategoria && <span style={{ fontSize: "0.75rem", color: "var(--red)" }}>{errorCategoria}</span>}
+             </div>
+             <div>
+               <label style={lbl}>Marca *</label>
+-              <select name="id_marca" value={form.id_marca} onChange={handleChange} style={inp}>
+-                <option value="">Seleccionar...</option>
+-                {marcas.map((m) => (
+-                  <option key={m.id_marca} value={m.id_marca}>{m.nombre_marca}</option>
+-                ))}
+-              </select>
++              <div style={{ display: "flex", gap: "0.4rem" }}>
++                <select name="id_marca" value={form.id_marca} onChange={handleChange} style={{ ...inp, flex: 1 }}>
++                  <option value="">Seleccionar...</option>
++                  {marcas.map((m) => (
++                    <option key={m.id_marca} value={m.id_marca}>{m.nombre_marca}</option>
++                  ))}
++                </select>
++                <button type="button" onClick={() => setCreandoMarca((v) => !v)} style={{ ...btnGhost, whiteSpace: "nowrap" }}>
++                  + Nueva
++                </button>
++              </div>
++              {creandoMarca && (
++                <div style={{ display: "flex", gap: "0.4rem", marginTop: "0.5rem" }}>
++                  <input
++                    value={nuevaMarcaNombre}
++                    onChange={(e) => setNuevaMarcaNombre(e.target.value)}
++                    placeholder="Nombre de la marca"
++                    style={inp}
++                  />
++                  <button type="button" onClick={guardarMarcaNueva} disabled={guardandoMarca} style={{ ...btnGhost, whiteSpace: "nowrap" }}>
++                    {guardandoMarca ? "Guardando…" : "Guardar"}
++                  </button>
++                </div>
++              )}
++              {errorMarca && <span style={{ fontSize: "0.75rem", color: "var(--red)" }}>{errorMarca}</span>}
+             </div>
+             <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", justifyContent: "center" }}>
+               <label style={{ fontSize: "0.85rem", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+@@ -476,7 +590,7 @@ export default function ProductosPage() {
+                 <input
+                   type="number"
+                   min="0"
+-                  step="0.001"
++                  step="1"
+                   value={p.factor_conversion}
+                   onChange={(e) => actualizarPresentacion(idx, "factor_conversion", e.target.value)}
+                   placeholder="Cantidad de unidades base"
+diff --git a/app/ventas/page.tsx b/app/ventas/page.tsx
+index e269dd3..b3f920f 100644
+--- a/app/ventas/page.tsx
++++ b/app/ventas/page.tsx
+@@ -344,7 +344,7 @@ export default function VentasPage() {
+                       </div>
+                       <div style={field}>
+                         <label style={label}>Cantidad</label>
+-                        <input type="number" min="0.001" step="0.001" value={ln.cantidad} onChange={(e) => actualizarLinea(ln.key, { cantidad: e.target.value })} style={input} />
++                        <input type="number" min="0.001" step="1" value={ln.cantidad} onChange={(e) => actualizarLinea(ln.key, { cantidad: e.target.value })} style={input} />
+                       </div>
+                       <div style={field}>
+                         <label style={label}>P. venta</label>

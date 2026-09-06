@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { StaffShell } from "@/components/StaffShell";
 import { useStaffSession } from "@/hooks/useStaffSession";
 import { staffVariantFromTipo } from "@/lib/roles";
+import { Icon } from "@/components/Icon";
 
 type Fila = {
   id_producto: number;
@@ -13,12 +14,23 @@ type Fila = {
   precio_mayoreo: string;
   unidad_medida: string;
   estado_producto: boolean;
+  caducidad: boolean;
+  fecha_caducidad: string | null;
   nombre_categoria: string;
   nombre_marca: string;
 };
 
 type Categoria = { id_categoria: number; nombre_categoria: string };
 type Marca = { id_marca: number; nombre_marca: string };
+type Proveedor = {
+  id_proveedor: number;
+  nombre_proveedor: string;
+  nit_proveedor: string;
+  correo_contacto: string | null;
+  telefono: string | null;
+  estado_proveedor: boolean;
+};
+type PresentacionForm = { nombre_presentacion: string; factor_conversion: string };
 
 const THEMES = {
   dueno: { head: "#2d6a4f" },
@@ -33,10 +45,31 @@ const formInicial = {
   unidad_medida: "",
   estado_producto: true,
   caducidad: false,
+  fecha_caducidad: "",
   exento_iva: false,
   id_categoria: "",
   id_marca: "",
 };
+
+const PROVEEDOR_VACIO = { nombre_proveedor: "", nit_proveedor: "", correo_contacto: "", telefono: "" };
+
+// Mismos heurísticos que valida el backend en /api/productos: por nombre de
+// unidad de medida detectamos si es un líquido embotellado (requiere caja
+// obligatoria) o si se mide en libras (puede ofrecerse como "saco").
+const UNIDADES_LIQUIDAS = ["botella", "litro", "lt", "ml", "galon", "galón"];
+function esUnidadLiquida(unidad: string): boolean {
+  const u = unidad.trim().toLowerCase();
+  return UNIDADES_LIQUIDAS.some((k) => u.includes(k));
+}
+function esUnidadLibra(unidad: string): boolean {
+  return unidad.trim().toLowerCase().includes("libra");
+}
+
+function matchesQuery(query: string, ...campos: Array<string | number | null | undefined>) {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  return campos.some((c) => c != null && String(c).toLowerCase().includes(q));
+}
 
 export default function ProductosPage() {
   const usuario = useStaffSession();
@@ -48,6 +81,33 @@ export default function ProductosPage() {
   const [form, setForm] = useState(formInicial);
   const [guardando, setGuardando] = useState(false);
   const [mensajeForm, setMensajeForm] = useState("");
+
+  // Proveedores: buscador + selección múltiple + alta rápida (mismo patrón
+  // que "+ Cliente nuevo" en Deudas).
+  const [proveedores, setProveedores] = useState<Proveedor[]>([]);
+  const [proveedorQuery, setProveedorQuery] = useState("");
+  const [proveedorSugerenciasAbiertas, setProveedorSugerenciasAbiertas] = useState(false);
+  const [proveedoresSeleccionados, setProveedoresSeleccionados] = useState<Proveedor[]>([]);
+  const [creandoProveedor, setCreandoProveedor] = useState(false);
+  const [formProveedorNuevo, setFormProveedorNuevo] = useState(PROVEEDOR_VACIO);
+  const [guardandoProveedor, setGuardandoProveedor] = useState(false);
+  const [errorProveedor, setErrorProveedor] = useState("");
+
+  // Categorías y marcas: alta rápida igual que proveedores (mismo patrón
+  // usado en Deudas para "+ Cliente nuevo").
+  const [creandoCategoria, setCreandoCategoria] = useState(false);
+  const [nuevaCategoriaNombre, setNuevaCategoriaNombre] = useState("");
+  const [guardandoCategoria, setGuardandoCategoria] = useState(false);
+  const [errorCategoria, setErrorCategoria] = useState("");
+
+  const [creandoMarca, setCreandoMarca] = useState(false);
+  const [nuevaMarcaNombre, setNuevaMarcaNombre] = useState("");
+  const [guardandoMarca, setGuardandoMarca] = useState(false);
+  const [errorMarca, setErrorMarca] = useState("");
+
+  // Presentaciones por mayor (ej. "Caja de 24", "Saco de 50 libras"),
+  // capturadas junto con el producto en vez de tener que ir a otra pantalla.
+  const [presentacionesForm, setPresentacionesForm] = useState<PresentacionForm[]>([]);
 
   const cargarProductos = () => {
     fetch("/api/productos")
@@ -68,7 +128,30 @@ export default function ProductosPage() {
     fetch("/api/marcas")
       .then((r) => r.json())
       .then((d) => setMarcas(d.marcas || []));
+    // Solo el dueño tiene permiso sobre /api/proveedores; si un colaborador
+    // entra aquí simplemente no verá sugerencias de proveedor (no es un error).
+    fetch("/api/proveedores")
+      .then((r) => (r.ok ? r.json() : { proveedores: [] }))
+      .then((d) => setProveedores(d.proveedores || []))
+      .catch(() => setProveedores([]));
   }, [usuario]);
+
+  const proveedoresFiltrados = useMemo(
+    () =>
+      proveedores.filter(
+        (p) =>
+          !proveedoresSeleccionados.some((s) => s.id_proveedor === p.id_proveedor) &&
+          matchesQuery(proveedorQuery, p.nombre_proveedor, p.nit_proveedor)
+      ),
+    [proveedores, proveedorQuery, proveedoresSeleccionados]
+  );
+
+  const liquidoRequiereCaja = esUnidadLiquida(form.unidad_medida);
+  const esLibra = esUnidadLibra(form.unidad_medida);
+  const presentacionesValidas = presentacionesForm.filter(
+    (p) => p.nombre_presentacion.trim() && Number(p.factor_conversion) > 0
+  );
+  const faltaCajaObligatoria = liquidoRequiereCaja && presentacionesValidas.length === 0;
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const target = e.target;
@@ -76,9 +159,139 @@ export default function ProductosPage() {
     setForm((prev) => ({ ...prev, [target.name]: value }));
   };
 
+  const agregarProveedor = (p: Proveedor) => {
+    setProveedoresSeleccionados((prev) => [...prev, p]);
+    setProveedorQuery("");
+    setProveedorSugerenciasAbiertas(false);
+  };
+
+  const quitarProveedor = (id: number) => {
+    setProveedoresSeleccionados((prev) => prev.filter((p) => p.id_proveedor !== id));
+  };
+
+  const guardarProveedorNuevo = async () => {
+    setErrorProveedor("");
+    if (!formProveedorNuevo.nombre_proveedor.trim() || !formProveedorNuevo.nit_proveedor.trim()) {
+      setErrorProveedor("Nombre y NIT son obligatorios");
+      return;
+    }
+    setGuardandoProveedor(true);
+    try {
+      const res = await fetch("/api/proveedores", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formProveedorNuevo),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setErrorProveedor(data.error || "Error al crear el proveedor");
+      } else {
+        setProveedores((prev) => [...prev, data.proveedor]);
+        agregarProveedor(data.proveedor);
+        setFormProveedorNuevo(PROVEEDOR_VACIO);
+        setCreandoProveedor(false);
+      }
+    } catch {
+      setErrorProveedor("Error de conexión");
+    } finally {
+      setGuardandoProveedor(false);
+    }
+  };
+
+  const guardarCategoriaNueva = async () => {
+    setErrorCategoria("");
+    if (!nuevaCategoriaNombre.trim()) {
+      setErrorCategoria("El nombre es obligatorio");
+      return;
+    }
+    setGuardandoCategoria(true);
+    try {
+      const res = await fetch("/api/categorias", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nombre_categoria: nuevaCategoriaNombre.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setErrorCategoria(data.error || "Error al crear la categoría");
+      } else {
+        setCategorias((prev) => [...prev, data.categoria].sort((a, b) => a.nombre_categoria.localeCompare(b.nombre_categoria)));
+        setForm((f) => ({ ...f, id_categoria: String(data.categoria.id_categoria) }));
+        setNuevaCategoriaNombre("");
+        setCreandoCategoria(false);
+      }
+    } catch {
+      setErrorCategoria("Error de conexión");
+    } finally {
+      setGuardandoCategoria(false);
+    }
+  };
+
+  const guardarMarcaNueva = async () => {
+    setErrorMarca("");
+    if (!nuevaMarcaNombre.trim()) {
+      setErrorMarca("El nombre es obligatorio");
+      return;
+    }
+    setGuardandoMarca(true);
+    try {
+      const res = await fetch("/api/marcas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nombre_marca: nuevaMarcaNombre.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setErrorMarca(data.error || "Error al crear la marca");
+      } else {
+        setMarcas((prev) => [...prev, data.marca].sort((a, b) => a.nombre_marca.localeCompare(b.nombre_marca)));
+        setForm((f) => ({ ...f, id_marca: String(data.marca.id_marca) }));
+        setNuevaMarcaNombre("");
+        setCreandoMarca(false);
+      }
+    } catch {
+      setErrorMarca("Error de conexión");
+    } finally {
+      setGuardandoMarca(false);
+    }
+  };
+
+  const agregarFilaPresentacion = (nombrePreset = "") => {
+    setPresentacionesForm((prev) => [...prev, { nombre_presentacion: nombrePreset, factor_conversion: "" }]);
+  };
+
+  const actualizarPresentacion = (idx: number, campo: keyof PresentacionForm, valor: string) => {
+    setPresentacionesForm((prev) => prev.map((p, i) => (i === idx ? { ...p, [campo]: valor } : p)));
+  };
+
+  const quitarPresentacion = (idx: number) => {
+    setPresentacionesForm((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const resetFormCompleto = () => {
+    setForm(formInicial);
+    setProveedoresSeleccionados([]);
+    setPresentacionesForm([]);
+    setProveedorQuery("");
+    setCreandoProveedor(false);
+    setFormProveedorNuevo(PROVEEDOR_VACIO);
+    setCreandoCategoria(false);
+    setNuevaCategoriaNombre("");
+    setErrorCategoria("");
+    setCreandoMarca(false);
+    setNuevaMarcaNombre("");
+    setErrorMarca("");
+  };
+
   const handleSubmit = async () => {
-    setGuardando(true);
     setMensajeForm("");
+    if (faltaCajaObligatoria) {
+      setMensajeForm(
+        "Los productos con unidad líquida (botella, litro, ml, galón) necesitan al menos una presentación tipo caja. Agrégala abajo en \"Presentaciones por mayor\"."
+      );
+      return;
+    }
+    setGuardando(true);
     try {
       const res = await fetch("/api/productos", {
         method: "POST",
@@ -87,8 +300,14 @@ export default function ProductosPage() {
           ...form,
           precio_unitario: form.precio_unitario ? Number(form.precio_unitario) : null,
           precio_mayoreo: form.precio_mayoreo ? Number(form.precio_mayoreo) : null,
+          fecha_caducidad: form.caducidad && form.fecha_caducidad ? form.fecha_caducidad : null,
           id_categoria: Number(form.id_categoria),
           id_marca: Number(form.id_marca),
+          id_proveedores: proveedoresSeleccionados.map((p) => p.id_proveedor),
+          presentaciones: presentacionesValidas.map((p) => ({
+            nombre_presentacion: p.nombre_presentacion.trim(),
+            factor_conversion: Number(p.factor_conversion),
+          })),
         }),
       });
       const data = await res.json();
@@ -96,7 +315,7 @@ export default function ProductosPage() {
         setMensajeForm(data.error || "Error al guardar");
       } else {
         setMensajeForm("✓ Producto agregado correctamente");
-        setForm(formInicial);
+        resetFormCompleto();
         cargarProductos();
         setTimeout(() => {
           setMostrarForm(false);
@@ -128,7 +347,11 @@ export default function ProductosPage() {
 
       <div style={{ marginBottom: "1.25rem" }}>
         <button
-          onClick={() => { setMostrarForm(!mostrarForm); setMensajeForm(""); }}
+          onClick={() => {
+            setMostrarForm(!mostrarForm);
+            setMensajeForm("");
+            if (mostrarForm) resetFormCompleto();
+          }}
           style={{
             background: th.head,
             color: "#fff",
@@ -151,7 +374,7 @@ export default function ProductosPage() {
           borderRadius: 12,
           padding: "1.5rem",
           marginBottom: "1.5rem",
-          maxWidth: 700,
+          maxWidth: 760,
         }}>
           <h3 style={{ margin: "0 0 1rem", fontSize: "1rem" }}>Nuevo producto</h3>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.85rem" }}>
@@ -165,33 +388,81 @@ export default function ProductosPage() {
             </div>
             <div>
               <label style={lbl}>Precio unitario</label>
-              <input name="precio_unitario" type="number" value={form.precio_unitario} onChange={handleChange} style={inp} placeholder="0.00" />
+              <input name="precio_unitario" type="number" min="0" step="0.01" value={form.precio_unitario} onChange={handleChange} style={inp} placeholder="0.00" />
             </div>
             <div>
               <label style={lbl}>Precio mayoreo</label>
-              <input name="precio_mayoreo" type="number" value={form.precio_mayoreo} onChange={handleChange} style={inp} placeholder="0.00" />
+              <input name="precio_mayoreo" type="number" min="0" step="0.01" value={form.precio_mayoreo} onChange={handleChange} style={inp} placeholder="0.00" />
             </div>
             <div>
               <label style={lbl}>Unidad de medida *</label>
-              <input name="unidad_medida" value={form.unidad_medida} onChange={handleChange} style={inp} placeholder="Ej: unidad, caja, kg" />
+              <input name="unidad_medida" value={form.unidad_medida} onChange={handleChange} style={inp} placeholder="Ej: unidad, botella, libra" />
+              {liquidoRequiereCaja && (
+                <span style={{ fontSize: "0.75rem", color: "var(--red)" }}>
+                  Unidad líquida: necesita al menos una presentación tipo caja (abajo).
+                </span>
+              )}
+              {esLibra && (
+                <span style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                  Se mide en libras: puedes ofrecerla también como &quot;saco&quot; abajo.
+                </span>
+              )}
             </div>
             <div>
               <label style={lbl}>Categoría *</label>
-              <select name="id_categoria" value={form.id_categoria} onChange={handleChange} style={inp}>
-                <option value="">Seleccionar...</option>
-                {categorias.map((c) => (
-                  <option key={c.id_categoria} value={c.id_categoria}>{c.nombre_categoria}</option>
-                ))}
-              </select>
+              <div style={{ display: "flex", gap: "0.4rem" }}>
+                <select name="id_categoria" value={form.id_categoria} onChange={handleChange} style={{ ...inp, flex: 1 }}>
+                  <option value="">Seleccionar...</option>
+                  {categorias.map((c) => (
+                    <option key={c.id_categoria} value={c.id_categoria}>{c.nombre_categoria}</option>
+                  ))}
+                </select>
+                <button type="button" onClick={() => setCreandoCategoria((v) => !v)} style={{ ...btnGhost, whiteSpace: "nowrap" }}>
+                  + Nueva
+                </button>
+              </div>
+              {creandoCategoria && (
+                <div style={{ display: "flex", gap: "0.4rem", marginTop: "0.5rem" }}>
+                  <input
+                    value={nuevaCategoriaNombre}
+                    onChange={(e) => setNuevaCategoriaNombre(e.target.value)}
+                    placeholder="Nombre de la categoría"
+                    style={inp}
+                  />
+                  <button type="button" onClick={guardarCategoriaNueva} disabled={guardandoCategoria} style={{ ...btnGhost, whiteSpace: "nowrap" }}>
+                    {guardandoCategoria ? "Guardando…" : "Guardar"}
+                  </button>
+                </div>
+              )}
+              {errorCategoria && <span style={{ fontSize: "0.75rem", color: "var(--red)" }}>{errorCategoria}</span>}
             </div>
             <div>
               <label style={lbl}>Marca *</label>
-              <select name="id_marca" value={form.id_marca} onChange={handleChange} style={inp}>
-                <option value="">Seleccionar...</option>
-                {marcas.map((m) => (
-                  <option key={m.id_marca} value={m.id_marca}>{m.nombre_marca}</option>
-                ))}
-              </select>
+              <div style={{ display: "flex", gap: "0.4rem" }}>
+                <select name="id_marca" value={form.id_marca} onChange={handleChange} style={{ ...inp, flex: 1 }}>
+                  <option value="">Seleccionar...</option>
+                  {marcas.map((m) => (
+                    <option key={m.id_marca} value={m.id_marca}>{m.nombre_marca}</option>
+                  ))}
+                </select>
+                <button type="button" onClick={() => setCreandoMarca((v) => !v)} style={{ ...btnGhost, whiteSpace: "nowrap" }}>
+                  + Nueva
+                </button>
+              </div>
+              {creandoMarca && (
+                <div style={{ display: "flex", gap: "0.4rem", marginTop: "0.5rem" }}>
+                  <input
+                    value={nuevaMarcaNombre}
+                    onChange={(e) => setNuevaMarcaNombre(e.target.value)}
+                    placeholder="Nombre de la marca"
+                    style={inp}
+                  />
+                  <button type="button" onClick={guardarMarcaNueva} disabled={guardandoMarca} style={{ ...btnGhost, whiteSpace: "nowrap" }}>
+                    {guardandoMarca ? "Guardando…" : "Guardar"}
+                  </button>
+                </div>
+              )}
+              {errorMarca && <span style={{ fontSize: "0.75rem", color: "var(--red)" }}>{errorMarca}</span>}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", justifyContent: "center" }}>
               <label style={{ fontSize: "0.85rem", display: "flex", alignItems: "center", gap: "0.4rem" }}>
@@ -203,6 +474,148 @@ export default function ProductosPage() {
               <label style={{ fontSize: "0.85rem", display: "flex", alignItems: "center", gap: "0.4rem" }}>
                 <input type="checkbox" name="estado_producto" checked={form.estado_producto} onChange={handleChange} /> Activo
               </label>
+            </div>
+            {form.caducidad && (
+              <div>
+                <label style={lbl}>Fecha de caducidad</label>
+                <input name="fecha_caducidad" type="date" value={form.fecha_caducidad} onChange={handleChange} style={inp} />
+                <span style={{ fontSize: "0.72rem", color: "var(--muted)" }}>
+                  Referencia general del producto (no por lote).
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* ── Proveedor ─────────────────────────────────────────────── */}
+          <div style={{ marginTop: "1.25rem", paddingTop: "1rem", borderTop: "1px solid var(--border)" }}>
+            <label style={lbl}>Proveedores</label>
+            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+              <div style={{ position: "relative", flex: "1 1 240px", minWidth: 220 }}>
+                <input
+                  style={inp}
+                  placeholder="Buscar proveedor por nombre o NIT…"
+                  value={proveedorQuery}
+                  onChange={(e) => { setProveedorQuery(e.target.value); setProveedorSugerenciasAbiertas(true); }}
+                  onFocus={() => setProveedorSugerenciasAbiertas(true)}
+                  onBlur={() => setTimeout(() => setProveedorSugerenciasAbiertas(false), 150)}
+                />
+                {proveedorSugerenciasAbiertas && proveedorQuery.trim() !== "" && (
+                  <div style={dropdown}>
+                    {proveedoresFiltrados.length === 0 ? (
+                      <div style={{ padding: "0.5rem 0.7rem", fontSize: "0.85rem", color: "var(--muted)" }}>
+                        Sin resultados — prueba &quot;+ Proveedor nuevo&quot;.
+                      </div>
+                    ) : (
+                      proveedoresFiltrados.slice(0, 8).map((p) => (
+                        <div key={p.id_proveedor} onMouseDown={() => agregarProveedor(p)} style={dropdownItem}>
+                          {p.nombre_proveedor} <span style={{ color: "var(--muted)" }}>({p.nit_proveedor})</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setCreandoProveedor((v) => !v)}
+                style={{ ...btnGhost, whiteSpace: "nowrap" }}
+              >
+                + Proveedor nuevo
+              </button>
+            </div>
+
+            {proveedoresSeleccionados.length > 0 && (
+              <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginTop: "0.6rem" }}>
+                {proveedoresSeleccionados.map((p) => (
+                  <span key={p.id_proveedor} style={chip}>
+                    {p.nombre_proveedor}
+                    <button
+                      type="button"
+                      onClick={() => quitarProveedor(p.id_proveedor)}
+                      style={chipRemove}
+                      aria-label={`Quitar ${p.nombre_proveedor}`}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {creandoProveedor && (
+              <div style={{ marginTop: "0.75rem", padding: "0.85rem", background: "var(--surface2)", borderRadius: 8, display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.6rem" }}>
+                <div>
+                  <label style={lbl}>Nombre *</label>
+                  <input value={formProveedorNuevo.nombre_proveedor} onChange={(e) => setFormProveedorNuevo((f) => ({ ...f, nombre_proveedor: e.target.value }))} style={inp} />
+                </div>
+                <div>
+                  <label style={lbl}>NIT *</label>
+                  <input value={formProveedorNuevo.nit_proveedor} onChange={(e) => setFormProveedorNuevo((f) => ({ ...f, nit_proveedor: e.target.value }))} style={inp} />
+                </div>
+                <div>
+                  <label style={lbl}>Correo</label>
+                  <input value={formProveedorNuevo.correo_contacto} onChange={(e) => setFormProveedorNuevo((f) => ({ ...f, correo_contacto: e.target.value }))} style={inp} />
+                </div>
+                <div>
+                  <label style={lbl}>Teléfono</label>
+                  <input value={formProveedorNuevo.telefono} onChange={(e) => setFormProveedorNuevo((f) => ({ ...f, telefono: e.target.value }))} style={inp} />
+                </div>
+                {errorProveedor && (
+                  <div style={{ gridColumn: "1 / -1", color: "var(--red)", fontSize: "0.82rem" }}>{errorProveedor}</div>
+                )}
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <button type="button" onClick={guardarProveedorNuevo} disabled={guardandoProveedor} style={btnGhost}>
+                    {guardandoProveedor ? "Guardando…" : "Guardar proveedor"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ── Presentaciones por mayor ──────────────────────────────── */}
+          <div style={{ marginTop: "1.25rem", paddingTop: "1rem", borderTop: "1px solid var(--border)" }}>
+            <label style={lbl}>Presentaciones por mayor (opcional{liquidoRequiereCaja ? ", obligatoria para líquidos" : ""})</label>
+            <p style={{ fontSize: "0.78rem", color: "var(--muted)", margin: "0 0 0.6rem" }}>
+              Ej. &quot;Caja de 24&quot; = 24 unidades base, &quot;Saco de 50&quot; = 50 libras base.
+            </p>
+
+            {presentacionesForm.map((p, idx) => (
+              <div key={idx} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem", alignItems: "center" }}>
+                <input
+                  value={p.nombre_presentacion}
+                  onChange={(e) => actualizarPresentacion(idx, "nombre_presentacion", e.target.value)}
+                  placeholder="Ej: Caja de 24"
+                  style={{ ...inp, flex: "1 1 200px" }}
+                />
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={p.factor_conversion}
+                  onChange={(e) => actualizarPresentacion(idx, "factor_conversion", e.target.value)}
+                  placeholder="Cantidad de unidades base"
+                  style={{ ...inp, width: 170 }}
+                />
+                <button type="button" onClick={() => quitarPresentacion(idx)} style={s.btnDel} title="Quitar">
+                  <Icon name="trash" size={14} />
+                </button>
+              </div>
+            ))}
+
+            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+              <button type="button" onClick={() => agregarFilaPresentacion()} style={btnGhost}>
+                + Agregar presentación
+              </button>
+              {liquidoRequiereCaja && (
+                <button type="button" onClick={() => agregarFilaPresentacion("Caja")} style={btnGhost}>
+                  + Agregar caja
+                </button>
+              )}
+              {esLibra && (
+                <button type="button" onClick={() => agregarFilaPresentacion("Saco")} style={btnGhost}>
+                  + Agregar saco
+                </button>
+              )}
             </div>
           </div>
 
@@ -248,6 +661,7 @@ export default function ProductosPage() {
               <th style={h}>Marca</th>
               <th style={{ ...h, textAlign: "right" }}>P. unit.</th>
               <th style={{ ...h, textAlign: "right" }}>P. mayoreo</th>
+              <th style={h}>Caduca</th>
               <th style={h}>Estado</th>
             </tr>
           </thead>
@@ -260,6 +674,11 @@ export default function ProductosPage() {
                 <td style={c}>{p.nombre_marca}</td>
                 <td style={{ ...c, textAlign: "right" }}>Q{Number(p.precio_unitario).toFixed(2)}</td>
                 <td style={{ ...c, textAlign: "right" }}>Q{Number(p.precio_mayoreo).toFixed(2)}</td>
+                <td style={c}>
+                  {p.caducidad
+                    ? (p.fecha_caducidad ? new Date(p.fecha_caducidad).toLocaleDateString("es-GT") : "Sí")
+                    : "—"}
+                </td>
                 <td style={c}>
                   {p.estado_producto
                     ? <span style={{ color: "var(--green)" }}>Activo</span>
@@ -303,4 +722,65 @@ const inp: React.CSSProperties = {
   color: "var(--text)",
   fontSize: "0.88rem",
   boxSizing: "border-box",
+};
+
+const dropdown: React.CSSProperties = {
+  position: "absolute",
+  top: "100%",
+  left: 0,
+  right: 0,
+  background: "var(--surface)",
+  border: "1px solid var(--border)",
+  borderRadius: 6,
+  marginTop: 2,
+  zIndex: 20,
+  maxHeight: 200,
+  overflowY: "auto",
+  boxShadow: "0 4px 10px rgba(0,0,0,0.12)",
+};
+
+const dropdownItem: React.CSSProperties = {
+  padding: "0.45rem 0.7rem",
+  cursor: "pointer",
+  fontSize: "0.85rem",
+  borderBottom: "1px solid var(--border)",
+};
+
+const btnGhost: React.CSSProperties = {
+  padding: "0.4rem 0.9rem",
+  borderRadius: 6,
+  background: "var(--border)",
+  border: "none",
+  cursor: "pointer",
+  fontSize: "0.82rem",
+  fontWeight: 600,
+};
+
+const chip: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: "0.35rem",
+  background: "var(--surface2)",
+  border: "1px solid var(--border)",
+  borderRadius: 999,
+  padding: "0.25rem 0.6rem",
+  fontSize: "0.8rem",
+};
+
+const chipRemove: React.CSSProperties = {
+  background: "none",
+  border: "none",
+  cursor: "pointer",
+  fontSize: "0.95rem",
+  lineHeight: 1,
+  color: "var(--muted)",
+};
+
+const s = {
+  btnDel: {
+    background: "none",
+    border: "none",
+    cursor: "pointer",
+    padding: "0.3rem",
+  } as React.CSSProperties,
 };

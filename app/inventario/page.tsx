@@ -98,6 +98,8 @@ export default function InventarioPage() {
 
   // Presentaciones (conversión de unidades para bodega)
   const [presProductoId, setPresProductoId] = useState("");
+  const [presProductoQuery, setPresProductoQuery] = useState("");
+  const [presSugerenciasAbiertas, setPresSugerenciasAbiertas] = useState(false);
   const [presLista, setPresLista] = useState<{ id_presentacion: number; nombre_presentacion: string; factor_conversion: string }[]>([]);
   const [presNombre, setPresNombre] = useState("");
   const [presFactor, setPresFactor] = useState("");
@@ -122,10 +124,15 @@ export default function InventarioPage() {
   const [kardex, setKardex] = useState<KardexRow[]>([]);
 
   // Operaciones: Entrada
-  const [entradaForm, setEntradaForm] = useState({ id_bodega: "", id_producto: "", cantidad: "", tipo_ingreso: "UNIDADES", descripcion: "" });
+  const [entradaForm, setEntradaForm] = useState({ id_bodega: "", id_producto: "", id_presentacion: "", cantidad: "", tipo_ingreso: "UNIDADES", descripcion: "" });
   const [entradaLoading, setEntradaLoading] = useState(false);
   const [entradaResultado, setEntradaResultado] = useState<StockActualizado | null>(null);
   const [entradaError, setEntradaError] = useState<string | null>(null);
+  // Presentaciones disponibles para el producto elegido en "Entrada de stock"
+  // (ej. "Caja de 24"). Si el usuario elige una, la cantidad que escribe está
+  // en esa presentación y el backend la convierte a unidad base usando el
+  // factor_conversion real — antes esto no pasaba y "Cajas" solo sumaba 1.
+  const [entradaPresentaciones, setEntradaPresentaciones] = useState<{ id_presentacion: number; nombre_presentacion: string; factor_conversion: string }[]>([]);
 
   // Operaciones: Transferencia
   const [xfer, setXfer] = useState({ id_bodega_origen: "", id_bodega_destino: "", id_producto: "", cantidad: "", descripcion: "" });
@@ -222,6 +229,29 @@ export default function InventarioPage() {
     setPage(1);
   }, [tab, qStock, qKardex, qBodegas, filtroBodega, filtroProducto, soloBajoMinimo, incluirInactivos, perPage]);
 
+  // Al cambiar el producto de "Entrada de stock", carga sus presentaciones
+  // reales (con factor_conversion) en vez de asumir que "Caja" = 1 unidad.
+  useEffect(() => {
+    setEntradaForm(f => ({ ...f, id_presentacion: "" }));
+    if (!entradaForm.id_producto) {
+      setEntradaPresentaciones([]);
+      return;
+    }
+    fetch(`/api/presentaciones?id_producto=${entradaForm.id_producto}`)
+      .then(r => r.json())
+      .then(d => setEntradaPresentaciones(d.presentaciones || []))
+      .catch(() => setEntradaPresentaciones([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entradaForm.id_producto]);
+
+  // Buscador de producto para la pestaña "Presentaciones" (mismo patrón que
+  // el buscador de clientes en Deudas): filtra por código o nombre en vez de
+  // mostrar un <select> con todos los productos.
+  const presProductosFiltrados = useMemo(
+    () => productos.filter((p) => matchesQuery(presProductoQuery, p.codigo_producto, p.nombre_producto)),
+    [productos, presProductoQuery]
+  );
+
   const stockFiltrado = useMemo(
     () =>
       stock.filter((r) =>
@@ -286,15 +316,28 @@ export default function InventarioPage() {
     setEntradaError(null);
     setEntradaResultado(null);
     try {
+      const usaPresentacion = !!entradaForm.id_presentacion;
+      const payload: Record<string, unknown> = {
+        id_bodega: Number(entradaForm.id_bodega),
+        id_producto: Number(entradaForm.id_producto),
+        descripcion: entradaForm.descripcion,
+      };
+      if (usaPresentacion) {
+        payload.id_presentacion = Number(entradaForm.id_presentacion);
+        payload.cantidad_presentacion = Number(entradaForm.cantidad);
+      } else {
+        payload.cantidad = Number(entradaForm.cantidad);
+        payload.tipo_ingreso = entradaForm.tipo_ingreso;
+      }
       const res = await fetch("/api/inventario/entrada", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id_bodega: Number(entradaForm.id_bodega), id_producto: Number(entradaForm.id_producto), cantidad: Number(entradaForm.cantidad), tipo_ingreso: entradaForm.tipo_ingreso, descripcion: entradaForm.descripcion }),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (!res.ok) { setEntradaError(data.error || "Error desconocido"); }
       else {
         setEntradaResultado(data.stock);
-        setEntradaForm(f => ({ ...f, id_producto: "", cantidad: "", tipo_ingreso: "UNIDADES", descripcion: "" }));
+        setEntradaForm(f => ({ ...f, id_producto: "", id_presentacion: "", cantidad: "", tipo_ingreso: "UNIDADES", descripcion: "" }));
         showToast("Entrada registrada ✓", "ok");
         await cargarStock();
       }
@@ -553,16 +596,25 @@ export default function InventarioPage() {
                 {productoSeleccionado && <span style={{ fontSize: "0.78rem", color: "var(--muted)" }}>Unidad: <strong style={{ color: "var(--text)" }}>{productoSeleccionado.unidad_medida}</strong></span>}
               </div>
               <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
-                <div style={{ ...s.field, flex: "1 1 120px" }}>
-                  <label style={s.label}>Tipo *</label>
-                  <select value={entradaForm.tipo_ingreso} onChange={e => setEntradaForm(f => ({ ...f, tipo_ingreso: e.target.value }))} style={s.select}>
-                    <option value="UNIDADES">Unidades</option>
-                    <option value="CAJAS">Cajas</option>
+                <div style={{ ...s.field, flex: "1 1 160px" }}>
+                  <label style={s.label}>Se ingresa en *</label>
+                  <select value={entradaForm.id_presentacion} onChange={e => setEntradaForm(f => ({ ...f, id_presentacion: e.target.value }))} style={s.select}>
+                    <option value="">{productoSeleccionado ? `Unidad base (${productoSeleccionado.unidad_medida})` : "Unidad base"}</option>
+                    {entradaPresentaciones.map(p => (
+                      <option key={p.id_presentacion} value={p.id_presentacion}>
+                        {p.nombre_presentacion} (× {Number(p.factor_conversion)} {productoSeleccionado?.unidad_medida || "unidades"})
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div style={{ ...s.field, flex: "1 1 120px" }}>
                   <label style={s.label}>Cantidad *</label>
-                  <input type="number" min="0.001" step="0.001" value={entradaForm.cantidad} onChange={e => setEntradaForm(f => ({ ...f, cantidad: e.target.value }))} style={s.select} />
+                  <input type="number" min="0.001" step="1" value={entradaForm.cantidad} onChange={e => setEntradaForm(f => ({ ...f, cantidad: e.target.value }))} style={s.select} />
+                  {entradaForm.id_presentacion && entradaForm.cantidad && (
+                    <span style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                      = {(Number(entradaForm.cantidad) * Number(entradaPresentaciones.find(p => p.id_presentacion === Number(entradaForm.id_presentacion))?.factor_conversion || 1)).toLocaleString("es-GT")} {productoSeleccionado?.unidad_medida || "unidades"} en total
+                    </span>
+                  )}
                 </div>
               </div>
               <div style={s.field}>
@@ -611,7 +663,7 @@ export default function InventarioPage() {
               </div>
               <div style={s.field}>
                 <label style={s.label}>Cantidad</label>
-                <input value={xfer.cantidad} onChange={e => setXfer(x => ({ ...x, cantidad: e.target.value }))} style={s.select} inputMode="decimal" />
+                <input type="number" min="0.001" step="1" value={xfer.cantidad} onChange={e => setXfer(x => ({ ...x, cantidad: e.target.value }))} style={s.select} inputMode="decimal" />
               </div>
               <div style={s.field}>
                 <label style={s.label}>Descripción (opcional)</label>
@@ -642,7 +694,7 @@ export default function InventarioPage() {
               </div>
               <div style={s.field}>
                 <label style={s.label}>Nueva cantidad (stock físico)</label>
-                <input value={adj.nueva_cantidad} onChange={e => setAdj(a => ({ ...a, nueva_cantidad: e.target.value }))} style={s.select} inputMode="decimal" />
+                <input type="number" min="0" step="1" value={adj.nueva_cantidad} onChange={e => setAdj(a => ({ ...a, nueva_cantidad: e.target.value }))} style={s.select} inputMode="decimal" />
               </div>
               <div style={s.field}>
                 <label style={s.label}>Motivo / nota (opcional)</label>
@@ -765,19 +817,64 @@ export default function InventarioPage() {
         {tab === "presentaciones" && (
           <>
             <div style={{ ...s.toolbar, marginTop: 0 }}>
-              <select
-                value={presProductoId}
-                onChange={(e) => setPresProductoId(e.target.value)}
-                style={{ ...s.selectInline, minWidth: 260 }}
-                aria-label="Selecciona un producto"
-              >
-                <option value="">Selecciona un producto…</option>
-                {productos.map((p) => (
-                  <option key={p.id_producto} value={p.id_producto}>
-                    [{p.codigo_producto}] {p.nombre_producto}
-                  </option>
-                ))}
-              </select>
+              <div style={{ position: "relative", minWidth: 280 }}>
+                <input
+                  style={s.selectInline}
+                  placeholder="Buscar producto por código o nombre…"
+                  value={presProductoQuery}
+                  onChange={(e) => {
+                    setPresProductoQuery(e.target.value);
+                    setPresProductoId("");
+                    setPresSugerenciasAbiertas(true);
+                  }}
+                  onFocus={() => setPresSugerenciasAbiertas(true)}
+                  onBlur={() => setTimeout(() => setPresSugerenciasAbiertas(false), 150)}
+                  aria-label="Buscar producto para configurar presentaciones"
+                />
+                {presSugerenciasAbiertas && presProductoQuery.trim() !== "" && !presProductoId && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "100%",
+                      left: 0,
+                      right: 0,
+                      background: "var(--surface)",
+                      border: "1px solid var(--border)",
+                      borderRadius: 6,
+                      marginTop: 2,
+                      zIndex: 20,
+                      maxHeight: 220,
+                      overflowY: "auto",
+                      boxShadow: "0 4px 10px rgba(0,0,0,0.12)",
+                    }}
+                  >
+                    {presProductosFiltrados.length === 0 ? (
+                      <div style={{ padding: "0.5rem 0.7rem", fontSize: "0.85rem", color: "var(--muted)" }}>
+                        Sin resultados para esa búsqueda.
+                      </div>
+                    ) : (
+                      presProductosFiltrados.slice(0, 8).map((p) => (
+                        <div
+                          key={p.id_producto}
+                          onMouseDown={() => {
+                            setPresProductoId(String(p.id_producto));
+                            setPresProductoQuery(`[${p.codigo_producto}] ${p.nombre_producto}`);
+                            setPresSugerenciasAbiertas(false);
+                          }}
+                          style={{
+                            padding: "0.45rem 0.7rem",
+                            cursor: "pointer",
+                            fontSize: "0.85rem",
+                            borderBottom: "1px solid var(--border)",
+                          }}
+                        >
+                          <code style={s.code}>{p.codigo_producto}</code> {p.nombre_producto}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
             {presProductoId && (
@@ -803,7 +900,9 @@ export default function InventarioPage() {
                         <td style={{ ...s.td, fontWeight: 600 }}>{pr.nombre_presentacion}</td>
                         <td style={{ ...s.td, textAlign: "right" }}>{Number(pr.factor_conversion).toLocaleString("es-GT")}</td>
                         <td style={{ ...s.td, textAlign: "center" }}>
-                          <button type="button" onClick={() => eliminarPresentacion(pr.id_presentacion)} style={s.btnDel} title="Eliminar">🗑️</button>
+                          <button type="button" onClick={() => eliminarPresentacion(pr.id_presentacion)} style={s.btnDel} title="Eliminar">
+                            <Icon name="trash" size={14} />
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -813,11 +912,11 @@ export default function InventarioPage() {
                 <div style={{ display: "flex", gap: "0.6rem", alignItems: "flex-end", flexWrap: "wrap" }}>
                   <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
                     <label style={{ fontSize: "0.75rem", color: "var(--muted)" }}>Nombre (ej. Caja de 24)</label>
-                    <input value={presNombre} onChange={(e) => setPresNombre(e.target.value)} style={s.searchInput} />
+                    <input value={presNombre} onChange={(e) => setPresNombre(e.target.value)} style={{ ...s.searchInput, flex: "0 1 220px", minWidth: 180 }} />
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
                     <label style={{ fontSize: "0.75rem", color: "var(--muted)" }}>Factor (unidades base)</label>
-                    <input type="number" min="0" step="0.001" value={presFactor} onChange={(e) => setPresFactor(e.target.value)} style={{ ...s.searchInput, width: 140 }} />
+                    <input type="number" min="0" step="1" value={presFactor} onChange={(e) => setPresFactor(e.target.value)} style={{ ...s.searchInput, flex: "0 0 120px", width: 120 }} />
                   </div>
                   <button type="button" onClick={crearPresentacion} disabled={presGuardando} style={s.btnPrimary}>
                     {presGuardando ? "Guardando…" : "+ Agregar presentación"}

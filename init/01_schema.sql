@@ -45,6 +45,11 @@ CREATE TABLE producto (
     unidad_medida       VARCHAR(50)     NOT NULL,
     estado_producto     BOOLEAN         NOT NULL DEFAULT TRUE,
     caducidad           BOOLEAN         NOT NULL DEFAULT FALSE,
+    -- Fecha de caducidad de referencia para el producto (opcional). Es a
+    -- nivel de catálogo, no por lote — para trazabilidad por lote habría
+    -- que llevar la fecha en el kardex/entrada, esto es solo un recordatorio
+    -- general mostrado en el catálogo cuando caducidad = TRUE.
+    fecha_caducidad     DATE,
     exento_iva          BOOLEAN         NOT NULL DEFAULT FALSE,
     id_categoria        INT             NOT NULL,
     id_marca            INT             NOT NULL,

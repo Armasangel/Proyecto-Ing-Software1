@@ -359,7 +359,7 @@ export default function OrdenesPage() {
                       </div>
                       <div style={field}>
                         <label style={label}>Cantidad</label>
-                        <input type="number" min="0.001" step="0.001" value={ln.cantidad} onChange={(e) => actualizarLinea(ln.key, { cantidad: e.target.value })} style={input} />
+                        <input type="number" min="0.001" step="1" value={ln.cantidad} onChange={(e) => actualizarLinea(ln.key, { cantidad: e.target.value })} style={input} />
                       </div>
                       <div style={field}>
                         <label style={label}>P. unitario</label>

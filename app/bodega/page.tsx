@@ -49,6 +49,7 @@ export default function BodegaPage() {
   const [tab, setTab] = useState<TabKey>("entrada");
   const [productos, setProductos] = useState<Producto[]>([]);
   const [bodegasDestino, setBodegasDestino] = useState<BodegaSimple[]>([]);
+  const [nombreBodegaPropia, setNombreBodegaPropia] = useState<string>("");
   const [historial, setHistorial] = useState<Movimiento[]>([]);
   const [presentaciones, setPresentaciones] = useState<Presentacion[]>([]);
 
@@ -77,9 +78,11 @@ export default function BodegaPage() {
       .catch(() => {});
     fetch("/api/bodegas/simple")
       .then((r) => r.json())
-      .then((d) =>
-        setBodegasDestino((d.bodegas || []).filter((b: BodegaSimple) => b.id_bodega !== usuario.id_bodega))
-      )
+      .then((d) => {
+        const todas: BodegaSimple[] = d.bodegas || [];
+        setBodegasDestino(todas.filter((b) => b.id_bodega !== usuario.id_bodega));
+        setNombreBodegaPropia(todas.find((b) => b.id_bodega === usuario.id_bodega)?.nombre_bodega || "");
+      })
       .catch(() => {});
     cargarHistorial();
   }, [usuario, cargarHistorial]);
@@ -240,7 +243,7 @@ export default function BodegaPage() {
                 style={s.input}
                 type="number"
                 min="0"
-                step="0.001"
+                step="1"
                 value={cantidad}
                 onChange={(e) => setCantidad(e.target.value)}
                 placeholder="0"
@@ -283,17 +286,23 @@ export default function BodegaPage() {
           )}
 
           {tab === "traslado" && (
-            <div style={s.field}>
-              <label style={s.label}>Bodega destino</label>
-              <select style={s.input} value={idBodegaDestino} onChange={(e) => setIdBodegaDestino(e.target.value)}>
-                <option value="">Selecciona la bodega destino…</option>
-                {bodegasDestino.map((b) => (
-                  <option key={b.id_bodega} value={b.id_bodega}>
-                    {b.nombre_bodega}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <>
+              <div style={s.field}>
+                <label style={s.label}>Bodega origen</label>
+                <input style={{ ...s.input, opacity: 0.75 }} value={nombreBodegaPropia || "Tu bodega"} disabled readOnly />
+              </div>
+              <div style={s.field}>
+                <label style={s.label}>Bodega destino</label>
+                <select style={s.input} value={idBodegaDestino} onChange={(e) => setIdBodegaDestino(e.target.value)}>
+                  <option value="">Selecciona la bodega destino…</option>
+                  {bodegasDestino.map((b) => (
+                    <option key={b.id_bodega} value={b.id_bodega}>
+                      {b.nombre_bodega}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </>
           )}
 
           <div style={s.field}>

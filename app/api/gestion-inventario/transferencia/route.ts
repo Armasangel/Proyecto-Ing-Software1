@@ -63,14 +63,18 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Producto no disponible" }, { status: 400 });
       }
 
-      const bodegas = await client.query(`SELECT id_bodega FROM bodega WHERE id_bodega IN ($1, $2)`, [
-        idOrigen,
-        idDestino,
-      ]);
+      const bodegas = await client.query(
+        `SELECT id_bodega, nombre_bodega FROM bodega WHERE id_bodega IN ($1, $2)`,
+        [idOrigen, idDestino]
+      );
       if (bodegas.rowCount !== 2) {
         await client.query("ROLLBACK");
         return NextResponse.json({ error: "Bodega origen/destino no encontrada" }, { status: 400 });
       }
+      const nombreOrigen =
+        bodegas.rows.find((b) => b.id_bodega === idOrigen)?.nombre_bodega ?? `Bodega #${idOrigen}`;
+      const nombreDestino =
+        bodegas.rows.find((b) => b.id_bodega === idDestino)?.nombre_bodega ?? `Bodega #${idDestino}`;
 
       const stockOrigen = await client.query(
         `SELECT cantidad_disponible FROM bodega_producto WHERE id_bodega = $1 AND id_producto = $2`,
@@ -120,21 +124,40 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      const descBase = descripcion ?? "Transferencia entre bodegas";
-      const motivo = esBodeguero ? "TRASLADO" : null;
+      // Siempre se marca como TRASLADO (sin importar si lo hizo el dueño o un
+      // bodeguero) para que el kardex y los reportes puedan filtrar/identificar
+      // estos movimientos de forma consistente. Cada lado del traslado deja
+      // explícito, con el NOMBRE de la bodega (no el id crudo), tanto el origen
+      // como el destino.
+      const motivo = "TRASLADO";
+      const descSufijo = descripcion ? ` — ${descripcion}` : "";
       await client.query(
         `
         INSERT INTO kardex (id_bodega, id_producto, tipo_movimiento, cantidad, descripcion, id_usuario, motivo)
         VALUES ($1, $2, 'SALIDA', $3, $4, $5, $6)
         `,
-        [idOrigen, idProducto, cantidad, `${descBase} → bodega ${idDestino}`, usuario.id_usuario, motivo]
+        [
+          idOrigen,
+          idProducto,
+          cantidad,
+          `Traslado: ${nombreOrigen} → ${nombreDestino}${descSufijo}`,
+          usuario.id_usuario,
+          motivo,
+        ]
       );
       await client.query(
         `
         INSERT INTO kardex (id_bodega, id_producto, tipo_movimiento, cantidad, descripcion, id_usuario, motivo)
         VALUES ($1, $2, 'ENTRADA', $3, $4, $5, $6)
         `,
-        [idDestino, idProducto, cantidad, `${descBase} ← bodega ${idOrigen}`, usuario.id_usuario, motivo]
+        [
+          idDestino,
+          idProducto,
+          cantidad,
+          `Traslado: ${nombreOrigen} → ${nombreDestino}${descSufijo}`,
+          usuario.id_usuario,
+          motivo,
+        ]
       );
 
       await client.query("COMMIT");
