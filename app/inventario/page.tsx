@@ -72,7 +72,7 @@ type StockActualizado = {
   ultima_actualizacion: string;
 };
 
-type TabKey = "stock" | "operaciones" | "kardex" | "bodegas";
+type TabKey = "stock" | "operaciones" | "kardex" | "bodegas" | "presentaciones";
 type PageSize = 10 | 50;
 
 const EMPTY_BODEGA_FORM = { nombre_bodega: "", ubicacion: "" };
@@ -95,6 +95,14 @@ export default function InventarioPage() {
   const [filtroProducto, setFiltroProducto] = useState("");
   const [soloBajoMinimo, setSoloBajoMinimo] = useState(false);
   const [incluirInactivos, setIncluirInactivos] = useState(false);
+
+  // Presentaciones (conversión de unidades para bodega)
+  const [presProductoId, setPresProductoId] = useState("");
+  const [presLista, setPresLista] = useState<{ id_presentacion: number; nombre_presentacion: string; factor_conversion: string }[]>([]);
+  const [presNombre, setPresNombre] = useState("");
+  const [presFactor, setPresFactor] = useState("");
+  const [presError, setPresError] = useState("");
+  const [presGuardando, setPresGuardando] = useState(false);
 
   // Búsqueda (independiente por pestaña)
   const [qStock, setQStock] = useState("");
@@ -354,6 +362,50 @@ export default function InventarioPage() {
     finally { setDeletingBodega(false); setConfirmDeleteBodega(null); }
   };
 
+  // ── Presentaciones CRUD ────────────────────────────────────────────────────
+
+  const cargarPresentaciones = useCallback((idProducto: string) => {
+    if (!idProducto) { setPresLista([]); return; }
+    fetch(`/api/presentaciones?id_producto=${idProducto}`)
+      .then((r) => r.json())
+      .then((d) => setPresLista(d.presentaciones || []))
+      .catch(() => setPresLista([]));
+  }, []);
+
+  useEffect(() => {
+    if (tab === "presentaciones") cargarPresentaciones(presProductoId);
+  }, [tab, presProductoId, cargarPresentaciones]);
+
+  const crearPresentacion = async () => {
+    setPresError("");
+    if (!presProductoId) { setPresError("Selecciona un producto"); return; }
+    if (!presNombre.trim()) { setPresError("El nombre de la presentación es obligatorio"); return; }
+    const factor = Number(presFactor);
+    if (!(factor > 0)) { setPresError("El factor debe ser un número mayor a 0"); return; }
+
+    setPresGuardando(true);
+    try {
+      const r = await fetch("/api/presentaciones", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id_producto: Number(presProductoId), nombre_presentacion: presNombre.trim(), factor_conversion: factor }),
+      });
+      const d = await r.json();
+      if (!r.ok) { setPresError(d.error || "Error al guardar"); }
+      else { setPresNombre(""); setPresFactor(""); cargarPresentaciones(presProductoId); showToast("Presentación creada ✓", "ok"); }
+    } catch { setPresError("Error de conexión"); }
+    finally { setPresGuardando(false); }
+  };
+
+  const eliminarPresentacion = async (id: number) => {
+    try {
+      const r = await fetch(`/api/presentaciones/${id}`, { method: "DELETE" });
+      const d = await r.json();
+      if (!r.ok) showToast(d.error || "Error al eliminar", "err");
+      else { showToast("Presentación eliminada ✓", "ok"); cargarPresentaciones(presProductoId); }
+    } catch { showToast("Error de conexión", "err"); }
+  };
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   if (!usuario) return <div style={{ padding: "2rem", color: "var(--muted)" }}>Cargando…</div>;
@@ -376,6 +428,7 @@ export default function InventarioPage() {
               ["operaciones", "Operaciones"],
               ["kardex",      "Kardex"],
               ["bodegas",     "Bodegas"],
+              ["presentaciones", "Presentaciones"],
             ] as const).map(([k, label]) => (
               <button key={k} type="button" onClick={() => setTab(k)} style={{ ...s.tabBtn, borderColor: tab === k ? "rgba(45,106,79,.55)" : "var(--border)", background: tab === k ? "rgba(45,106,79,.12)" : "transparent", color: tab === k ? "var(--text)" : "var(--muted)" }}>
                 {label}
@@ -706,6 +759,73 @@ export default function InventarioPage() {
                 noun="bodegas"
               />
             </div>
+          </>
+        )}
+
+        {tab === "presentaciones" && (
+          <>
+            <div style={{ ...s.toolbar, marginTop: 0 }}>
+              <select
+                value={presProductoId}
+                onChange={(e) => setPresProductoId(e.target.value)}
+                style={{ ...s.selectInline, minWidth: 260 }}
+                aria-label="Selecciona un producto"
+              >
+                <option value="">Selecciona un producto…</option>
+                {productos.map((p) => (
+                  <option key={p.id_producto} value={p.id_producto}>
+                    [{p.codigo_producto}] {p.nombre_producto}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {presProductoId && (
+              <div style={{ ...s.card, display: "flex", flexDirection: "column", gap: "0.85rem" }}>
+                <div style={{ fontSize: "0.85rem", color: "var(--muted)" }}>
+                  Presentaciones que el bodeguero puede usar al registrar entradas/salidas de este producto
+                  (ej. &quot;Caja de 24&quot; = 24 unidades base).
+                </div>
+
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr style={{ background: "var(--surface2)" }}>
+                      <th style={s.th}>Presentación</th>
+                      <th style={{ ...s.th, textAlign: "right" }}>Equivale a (unidad base)</th>
+                      <th style={{ ...s.th, textAlign: "center" }}>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {presLista.length === 0 ? (
+                      <tr><td colSpan={3} style={{ ...s.td, textAlign: "center", padding: "1.25rem", color: "var(--muted)" }}>Este producto no tiene presentaciones configuradas.</td></tr>
+                    ) : presLista.map((pr) => (
+                      <tr key={pr.id_presentacion}>
+                        <td style={{ ...s.td, fontWeight: 600 }}>{pr.nombre_presentacion}</td>
+                        <td style={{ ...s.td, textAlign: "right" }}>{Number(pr.factor_conversion).toLocaleString("es-GT")}</td>
+                        <td style={{ ...s.td, textAlign: "center" }}>
+                          <button type="button" onClick={() => eliminarPresentacion(pr.id_presentacion)} style={s.btnDel} title="Eliminar">🗑️</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                <div style={{ display: "flex", gap: "0.6rem", alignItems: "flex-end", flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                    <label style={{ fontSize: "0.75rem", color: "var(--muted)" }}>Nombre (ej. Caja de 24)</label>
+                    <input value={presNombre} onChange={(e) => setPresNombre(e.target.value)} style={s.searchInput} />
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                    <label style={{ fontSize: "0.75rem", color: "var(--muted)" }}>Factor (unidades base)</label>
+                    <input type="number" min="0" step="0.001" value={presFactor} onChange={(e) => setPresFactor(e.target.value)} style={{ ...s.searchInput, width: 140 }} />
+                  </div>
+                  <button type="button" onClick={crearPresentacion} disabled={presGuardando} style={s.btnPrimary}>
+                    {presGuardando ? "Guardando…" : "+ Agregar presentación"}
+                  </button>
+                </div>
+                {presError && <div style={{ color: "var(--red)", fontSize: "0.85rem" }}>{presError}</div>}
+              </div>
+            )}
           </>
         )}
 

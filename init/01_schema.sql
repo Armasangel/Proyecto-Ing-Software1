@@ -61,6 +61,19 @@ CREATE TABLE producto_proveedor (
     CONSTRAINT fk_pp_producto   FOREIGN KEY (id_producto)  REFERENCES producto(id_producto),
     CONSTRAINT fk_pp_proveedor  FOREIGN KEY (id_proveedor) REFERENCES proveedor(id_proveedor)
 );
+-- PRESENTACION_PRODUCTO (empaques/presentaciones de un producto para bodega,
+-- ej. "Caja de 24" con factor_conversion = 24 unidades base. Por ahora solo
+-- lo usa el módulo de bodega; facturación sigue trabajando en unidad base.)
+CREATE TABLE presentacion_producto (
+    id_presentacion     SERIAL          PRIMARY KEY,
+    id_producto         INT             NOT NULL,
+    nombre_presentacion VARCHAR(100)    NOT NULL,
+    factor_conversion   NUMERIC(12,3)   NOT NULL CHECK (factor_conversion > 0),
+    estado_presentacion BOOLEAN         NOT NULL DEFAULT TRUE,
+    CONSTRAINT fk_presentacion_producto FOREIGN KEY (id_producto) REFERENCES producto(id_producto),
+    CONSTRAINT uq_presentacion_nombre UNIQUE (id_producto, nombre_presentacion)
+);
+
 -- CLIENTE (compradores minoristas y mayoristas) 
 CREATE TABLE cliente (
     id_cliente      SERIAL          PRIMARY KEY,
@@ -82,10 +95,15 @@ CREATE TABLE usuario (
     correo            VARCHAR(200)    NOT NULL,
     telefono          VARCHAR(20),
     contrasena_hash   VARCHAR(255)    NOT NULL,
-    tipo_usuario      VARCHAR(20)     NOT NULL CHECK (tipo_usuario IN ('DUENO', 'EMPLEADO')),
+    tipo_usuario      VARCHAR(20)     NOT NULL CHECK (tipo_usuario IN ('DUENO', 'EMPLEADO', 'BODEGUERO')),
     estado_usuario    BOOLEAN         NOT NULL DEFAULT TRUE,
+    -- Bodega fija asignada (obligatoria solo para BODEGUERO). La FK hacia
+    -- bodega(id_bodega) se agrega más abajo con ALTER TABLE porque la tabla
+    -- bodega todavía no existe en este punto del script.
+    id_bodega         INT,
     CONSTRAINT uq_usuario_correo    UNIQUE (correo),
-    CONSTRAINT uq_usuario_telefono  UNIQUE (telefono)
+    CONSTRAINT uq_usuario_telefono  UNIQUE (telefono),
+    CONSTRAINT chk_usuario_bodega   CHECK (tipo_usuario <> 'BODEGUERO' OR id_bodega IS NOT NULL)
 );
 
 -- CODIGO_VERIFICACION (2FA por correo)
@@ -112,6 +130,9 @@ CREATE TABLE bodega (
     ubicacion       VARCHAR(255)
 );
 
+ALTER TABLE usuario
+    ADD CONSTRAINT fk_usuario_bodega FOREIGN KEY (id_bodega) REFERENCES bodega(id_bodega);
+
 -- BODEGA_PRODUCTO (inventario)
 CREATE TABLE bodega_producto (
     id_bodega               INT             NOT NULL,
@@ -133,8 +154,20 @@ CREATE TABLE kardex (
     tipo_movimiento     VARCHAR(20)     NOT NULL CHECK (tipo_movimiento IN ('ENTRADA', 'SALIDA', 'AJUSTE')),
     cantidad            NUMERIC(12,3)   NOT NULL,
     descripcion         VARCHAR(255),
+    -- Quién registró el movimiento (NULL para movimientos generados por el
+    -- sistema antes de esta columna, o por procesos sin usuario asociado).
+    id_usuario          INT,
+    -- Motivo de una SALIDA manual (no aplica a ventas ni a AJUSTE).
+    motivo              VARCHAR(20)     CHECK (motivo IS NULL OR motivo IN ('MERMA', 'USO_INTERNO', 'TRASLADO')),
+    -- Si el movimiento se capturó en una presentación (ej. "Caja de 24"),
+    -- guardamos la presentación y la cantidad en esa presentación como dato
+    -- informativo; `cantidad` arriba siempre queda en unidad base del producto.
+    id_presentacion       INT,
+    cantidad_presentacion NUMERIC(12,3),
     CONSTRAINT fk_kardex_bp FOREIGN KEY (id_bodega, id_producto)
-        REFERENCES bodega_producto(id_bodega, id_producto)
+        REFERENCES bodega_producto(id_bodega, id_producto),
+    CONSTRAINT fk_kardex_usuario FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario),
+    CONSTRAINT fk_kardex_presentacion FOREIGN KEY (id_presentacion) REFERENCES presentacion_producto(id_presentacion)
 );
 
 -- VENTA
@@ -332,6 +365,9 @@ INSERT INTO usuario (nombre, correo, telefono, contrasena_hash, tipo_usuario) VA
   ('Admin Dueño',    'dueno@tienda.com',        '50201234567', '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm', 'DUENO'),
   ('Carlos Empleado','armasangel193@gmail.com', '50207654321', '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm', 'EMPLEADO');
 
+INSERT INTO usuario (nombre, correo, telefono, contrasena_hash, tipo_usuario, id_bodega) VALUES
+  ('Luis Bodeguero', 'bodega@tienda.com', '50208889999', '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm', 'BODEGUERO', 1);
+
 INSERT INTO producto (codigo_producto, nombre_producto, precio_unitario, precio_mayoreo, unidad_medida, id_categoria, id_marca)
 VALUES
   ('ARR-001', 'Arroz 1 libra',    4.50,  3.75, 'libra',  1, 1),
@@ -360,6 +396,18 @@ SELECT 1, p.id_producto, 100, 15
 FROM producto p
 WHERE p.codigo_producto IN ('FRI-001', 'BEB-001', 'BEB-002', 'LEC-002')
 ON CONFLICT (id_bodega, id_producto) DO NOTHING;
+
+-- ── Presentaciones de ejemplo (para bodega) ─────────────────────────────
+INSERT INTO presentacion_producto (id_producto, nombre_presentacion, factor_conversion)
+SELECT p.id_producto, v.nombre_presentacion, v.factor_conversion
+FROM producto p
+JOIN (VALUES
+  ('BEB-001', 'Caja de 24', 24),
+  ('BEB-002', 'Paquete de 6', 6),
+  ('BEB-002', 'Caja de 24', 24)
+) AS v(codigo_producto, nombre_presentacion, factor_conversion)
+  ON v.codigo_producto = p.codigo_producto
+ON CONFLICT (id_producto, nombre_presentacion) DO NOTHING;
 
 -- ── Más clientes (para "top clientes") ──────────────────────────────────
 INSERT INTO cliente (nombre, correo, telefono, tipo_cliente) VALUES

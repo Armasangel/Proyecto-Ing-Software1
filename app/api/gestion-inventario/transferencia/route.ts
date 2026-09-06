@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
-import { isDuenoTipo } from "@/lib/roles";
+import { isBodegueroTipo, isDuenoTipo } from "@/lib/roles";
 
 type Body = {
   id_bodega_origen: unknown;
@@ -14,16 +14,19 @@ type Body = {
 /**
  * POST /api/gestion-inventario/transferencia
  * Mueve stock entre bodegas y deja trazabilidad en kardex (SALIDA origen + ENTRADA destino).
+ * El dueño puede transferir entre cualquier par de bodegas; el bodeguero solo
+ * puede transferir DESDE su propia bodega asignada (motivo TRASLADO).
  */
 export async function POST(req: NextRequest) {
   const usuario = getUsuarioFromRequest(req);
-  if (!usuario || !isDuenoTipo(usuario.tipo_usuario)) {
+  const esBodeguero = !!usuario && isBodegueroTipo(usuario.tipo_usuario);
+  if (!usuario || !(isDuenoTipo(usuario.tipo_usuario) || esBodeguero)) {
     return NextResponse.json({ error: "No autorizado" }, { status: 403 });
   }
 
   try {
     const body = (await req.json()) as Body;
-    const idOrigen = Number(body.id_bodega_origen);
+    const idOrigen = esBodeguero ? Number(usuario.id_bodega) : Number(body.id_bodega_origen);
     const idDestino = Number(body.id_bodega_destino);
     const idProducto = Number(body.id_producto);
     const cantidad = Number(body.cantidad);
@@ -118,19 +121,20 @@ export async function POST(req: NextRequest) {
       }
 
       const descBase = descripcion ?? "Transferencia entre bodegas";
+      const motivo = esBodeguero ? "TRASLADO" : null;
       await client.query(
         `
-        INSERT INTO kardex (id_bodega, id_producto, tipo_movimiento, cantidad, descripcion)
-        VALUES ($1, $2, 'SALIDA', $3, $4)
+        INSERT INTO kardex (id_bodega, id_producto, tipo_movimiento, cantidad, descripcion, id_usuario, motivo)
+        VALUES ($1, $2, 'SALIDA', $3, $4, $5, $6)
         `,
-        [idOrigen, idProducto, cantidad, `${descBase} → bodega ${idDestino}`]
+        [idOrigen, idProducto, cantidad, `${descBase} → bodega ${idDestino}`, usuario.id_usuario, motivo]
       );
       await client.query(
         `
-        INSERT INTO kardex (id_bodega, id_producto, tipo_movimiento, cantidad, descripcion)
-        VALUES ($1, $2, 'ENTRADA', $3, $4)
+        INSERT INTO kardex (id_bodega, id_producto, tipo_movimiento, cantidad, descripcion, id_usuario, motivo)
+        VALUES ($1, $2, 'ENTRADA', $3, $4, $5, $6)
         `,
-        [idDestino, idProducto, cantidad, `${descBase} ← bodega ${idOrigen}`]
+        [idDestino, idProducto, cantidad, `${descBase} ← bodega ${idOrigen}`, usuario.id_usuario, motivo]
       );
 
       await client.query("COMMIT");

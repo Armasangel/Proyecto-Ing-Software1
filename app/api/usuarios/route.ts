@@ -44,8 +44,11 @@ export async function GET(req: NextRequest) {
          u.correo,
          u.telefono,
          u.tipo_usuario,
-         u.estado_usuario
+         u.estado_usuario,
+         u.id_bodega,
+         b.nombre_bodega
        FROM usuario u
+       LEFT JOIN bodega b ON b.id_bodega = u.id_bodega
        ${where}
        ORDER BY u.tipo_usuario, u.nombre`,
       params
@@ -65,7 +68,7 @@ export async function PATCH(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { id_usuario, tipo_usuario, estado_usuario } = body;
+    const { id_usuario, tipo_usuario, estado_usuario, id_bodega } = body;
 
     const idNum = Number(id_usuario);
     if (!idNum || idNum < 1) {
@@ -75,6 +78,14 @@ export async function PATCH(req: NextRequest) {
     // No puede editarse a sí mismo
     if (idNum === usuario.id_usuario) {
       return validationError("No puedes modificar tu propia cuenta desde este panel");
+    }
+
+    const actual = await pool.query(
+      `SELECT tipo_usuario, id_bodega FROM usuario WHERE id_usuario = $1`,
+      [idNum]
+    );
+    if (actual.rowCount === 0) {
+      return NextResponse.json({ error: "Usuario no encontrado" }, { status: 404 });
     }
 
     const updates: string[] = [];
@@ -89,6 +100,25 @@ export async function PATCH(req: NextRequest) {
       }
       updates.push(`tipo_usuario = $${idx++}`);
       params.push(tipo_usuario);
+    }
+
+    const tipoFinal = tipo_usuario ?? actual.rows[0].tipo_usuario;
+
+    if (id_bodega !== undefined) {
+      const idBodegaNum = id_bodega === null ? null : Number(id_bodega);
+      if (idBodegaNum !== null) {
+        const bodega = await pool.query(`SELECT 1 FROM bodega WHERE id_bodega = $1`, [idBodegaNum]);
+        if (bodega.rowCount === 0) {
+          return validationError("Bodega no encontrada");
+        }
+      }
+      updates.push(`id_bodega = $${idx++}`);
+      params.push(idBodegaNum);
+    }
+
+    const idBodegaFinal = id_bodega !== undefined ? id_bodega : actual.rows[0].id_bodega;
+    if (tipoFinal === TIPOS_USUARIO.BODEGUERO && !idBodegaFinal) {
+      return validationError("Un usuario bodeguero necesita una bodega asignada");
     }
 
     if (estado_usuario !== undefined) {
@@ -109,7 +139,7 @@ export async function PATCH(req: NextRequest) {
       `UPDATE usuario
        SET ${updates.join(", ")}
        WHERE id_usuario = $${idx}
-       RETURNING id_usuario, nombre, correo, tipo_usuario, estado_usuario`,
+       RETURNING id_usuario, nombre, correo, tipo_usuario, estado_usuario, id_bodega`,
       params
     );
 
@@ -131,7 +161,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { nombre, correo, contrasena, tipo_usuario, telefono } = body;
+    const { nombre, correo, contrasena, tipo_usuario, telefono, id_bodega } = body;
 
     if (!nombre || !correo || !contrasena) {
       return validationError("nombre, correo y contrasena son obligatorios");
@@ -161,7 +191,17 @@ export async function POST(req: NextRequest) {
 
     const correoFinal = String(correo).trim();
 
-
+    let idBodegaFinal: number | null = null;
+    if (tipoFinal === TIPOS_USUARIO.BODEGUERO) {
+      idBodegaFinal = Number(id_bodega);
+      if (!idBodegaFinal) {
+        return validationError("Un usuario bodeguero necesita una bodega asignada");
+      }
+      const bodega = await pool.query(`SELECT 1 FROM bodega WHERE id_bodega = $1`, [idBodegaFinal]);
+      if (bodega.rowCount === 0) {
+        return validationError("Bodega no encontrada");
+      }
+    }
 
 
     // Verificar correo duplicado
@@ -185,10 +225,10 @@ export async function POST(req: NextRequest) {
 
 
     const result = await pool.query(
-      `INSERT INTO usuario (nombre, correo, telefono, contrasena_hash, tipo_usuario)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id_usuario, nombre, correo, tipo_usuario, estado_usuario`,
-      [nombre.trim(), correoFinal, telefonoFinal, hash, tipoFinal]
+      `INSERT INTO usuario (nombre, correo, telefono, contrasena_hash, tipo_usuario, id_bodega)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id_usuario, nombre, correo, tipo_usuario, estado_usuario, id_bodega`,
+      [nombre.trim(), correoFinal, telefonoFinal, hash, tipoFinal, idBodegaFinal]
 
     );
 
