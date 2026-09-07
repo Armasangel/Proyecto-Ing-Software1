@@ -5,6 +5,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { StaffShell } from "@/components/StaffShell";
 import { useDuenoSession } from "@/hooks/useDuenoSession";
 import { Icon, type IconName } from "@/components/Icon";
+import { matchesQuery } from "@/lib/ui-table";
 
 const MIS_ITEMS = [
   {label: "editar", icon: "pencil"},
@@ -43,12 +44,6 @@ interface Proveedor {
   telefono: string | null;
 }
 type PresentacionForm = { nombre_presentacion: string; factor_conversion: string };
-
-function matchesQuery(query: string, ...campos: Array<string | number | null | undefined>) {
-  const q = query.trim().toLowerCase();
-  if (!q) return true;
-  return campos.some((c) => c != null && String(c).toLowerCase().includes(q));
-}
 
 // Mismo heurístico que valida /api/productos en el servidor: por el nombre
 // de la unidad de medida detectamos si es un líquido embotellado (requiere

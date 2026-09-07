@@ -81,6 +81,8 @@ jobs:
         run: npm ci
       - name: Correr lint
         run: npm run lint
+      - name: Typecheck
+        run: npx tsc --noEmit
       - name: Crear schema en la base de datos
         run: psql "$DATABASE_URL" -f ./init/01_schema.sql
         env:
@@ -90,3 +92,5 @@ jobs:
         env:
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           DATABASE_URL: postgresql://dsm_user:dsm_password@localhost:5432/deposito_san_miguel
+      - name: Build de producción
+        run: npm run build

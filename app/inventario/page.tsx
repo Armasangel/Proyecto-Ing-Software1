@@ -1,10 +1,11 @@
-"use client";
+﻿"use client";
 
 import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { StaffShell } from "@/components/StaffShell";
 import { useDuenoSession } from "@/hooks/useDuenoSession";
 import { Icon, type IconName } from "@/components/Icon";
+import { matchesQuery, paginar, PaginationBar, PAGE_SIZES_COMPACT, type PageSize } from "@/lib/ui-table";
 
 const MIS_ITEMS = [
   {label: "editar", icon: "pencil"},
@@ -73,10 +74,8 @@ type StockActualizado = {
 };
 
 type TabKey = "stock" | "operaciones" | "kardex" | "bodegas" | "presentaciones";
-type PageSize = 10 | 50;
 
 const EMPTY_BODEGA_FORM = { nombre_bodega: "", ubicacion: "" };
-const PAGE_SIZES: PageSize[] = [10, 50];
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
@@ -288,9 +287,9 @@ export default function InventarioPage() {
     [bodegas, qBodegas]
   );
 
-  const stockPage = useMemo(() => paginate(stockFiltrado, page, perPage), [stockFiltrado, page, perPage]);
-  const kardexPage = useMemo(() => paginate(kardexFiltrado, page, perPage), [kardexFiltrado, page, perPage]);
-  const bodegasPage = useMemo(() => paginate(bodegasFiltradas, page, perPage), [bodegasFiltradas, page, perPage]);
+  const stockPage = useMemo(() => paginar(stockFiltrado, page, perPage), [stockFiltrado, page, perPage]);
+  const kardexPage = useMemo(() => paginar(kardexFiltrado, page, perPage), [kardexFiltrado, page, perPage]);
+  const bodegasPage = useMemo(() => paginar(bodegasFiltradas, page, perPage), [bodegasFiltradas, page, perPage]);
 
   // ── Operaciones ────────────────────────────────────────────────────────────
 
@@ -565,6 +564,8 @@ export default function InventarioPage() {
               perPage={perPage}
               onPage={setPage}
               onPerPage={setPerPage}
+              pageSizes={PAGE_SIZES_COMPACT}
+              variant="inventario"
               noun="filas"
             />
           </div>
@@ -747,6 +748,8 @@ export default function InventarioPage() {
               perPage={perPage}
               onPage={setPage}
               onPerPage={setPerPage}
+              pageSizes={PAGE_SIZES_COMPACT}
+              variant="inventario"
               noun="movimientos"
             />
           </div>
@@ -808,6 +811,8 @@ export default function InventarioPage() {
                 perPage={perPage}
                 onPage={setPage}
                 onPerPage={setPerPage}
+                pageSizes={PAGE_SIZES_COMPACT}
+                variant="inventario"
                 noun="bodegas"
               />
             </div>
@@ -1051,93 +1056,6 @@ export default function InventarioPage() {
         </div>
       )}
     </StaffShell>
-  );
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function matchesQuery(query: string, ...fields: Array<string | number | null | undefined>) {
-  const q = query.trim().toLowerCase();
-  if (!q) return true;
-  return fields.some((f) => String(f ?? "").toLowerCase().includes(q));
-}
-
-function paginate<T>(items: T[], page: number, perPage: number) {
-  const total = items.length;
-  const totalPages = Math.max(1, Math.ceil(total / perPage) || 1);
-  const safePage = Math.min(Math.max(1, page), totalPages);
-  const start = (safePage - 1) * perPage;
-  return {
-    slice: items.slice(start, start + perPage),
-    total,
-    totalPages,
-    safePage,
-  };
-}
-
-function PaginationBar({
-  total,
-  page,
-  perPage,
-  onPage,
-  onPerPage,
-  noun,
-}: {
-  total: number;
-  page: number;
-  perPage: PageSize;
-  onPage: (p: number) => void;
-  onPerPage: (n: PageSize) => void;
-  noun: string;
-}) {
-  const totalPages = Math.max(1, Math.ceil(total / perPage) || 1);
-  const from = total === 0 ? 0 : (page - 1) * perPage + 1;
-  const to = Math.min(page * perPage, total);
-  const prevDisabled = page <= 1;
-  const nextDisabled = page >= totalPages || total === 0;
-
-  return (
-    <div style={s.pager} role="navigation" aria-label="Paginación">
-      <span style={s.pagerMeta}>
-        {total === 0 ? `Sin ${noun}` : `Mostrando ${from}–${to} de ${total} ${noun}`}
-      </span>
-      <div style={s.pagerControls}>
-        <label style={s.pagerSize}>
-          Por página
-          <select
-            value={perPage}
-            onChange={(e) => onPerPage(Number(e.target.value) as PageSize)}
-            style={s.pagerSelect}
-            aria-label="Resultados por página"
-          >
-            {PAGE_SIZES.map((n) => (
-              <option key={n} value={n}>{n}</option>
-            ))}
-          </select>
-        </label>
-        <button
-          type="button"
-          style={{ ...s.pagerBtn, opacity: prevDisabled ? 0.45 : 1, cursor: prevDisabled ? "not-allowed" : "pointer" }}
-          disabled={prevDisabled}
-          onClick={() => onPage(page - 1)}
-          aria-label="Página anterior"
-        >
-          Anterior
-        </button>
-        <span style={s.pagerPage} aria-live="polite">
-          {page} / {totalPages}
-        </span>
-        <button
-          type="button"
-          style={{ ...s.pagerBtn, opacity: nextDisabled ? 0.45 : 1, cursor: nextDisabled ? "not-allowed" : "pointer" }}
-          disabled={nextDisabled}
-          onClick={() => onPage(page + 1)}
-          aria-label="Página siguiente"
-        >
-          Siguiente
-        </button>
-      </div>
-    </div>
   );
 }
 

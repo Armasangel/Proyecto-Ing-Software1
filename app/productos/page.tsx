@@ -5,6 +5,7 @@ import { StaffShell } from "@/components/StaffShell";
 import { useStaffSession } from "@/hooks/useStaffSession";
 import { staffVariantFromTipo } from "@/lib/roles";
 import { Icon } from "@/components/Icon";
+import { matchesQuery } from "@/lib/ui-table";
 
 type Fila = {
   id_producto: number;
@@ -66,11 +67,83 @@ function esUnidadLibra(unidad: string): boolean {
   return unidad.trim().toLowerCase().includes("libra");
 }
 
-function matchesQuery(query: string, ...campos: Array<string | number | null | undefined>) {
-  const q = query.trim().toLowerCase();
-  if (!q) return true;
-  return campos.some((c) => c != null && String(c).toLowerCase().includes(q));
-}
+const lbl: React.CSSProperties = {
+  display: "block",
+  fontSize: "0.8rem",
+  marginBottom: "0.3rem",
+  color: "var(--muted)",
+};
+
+const inp: React.CSSProperties = {
+  width: "100%",
+  padding: "0.45rem 0.65rem",
+  borderRadius: 6,
+  border: "1px solid var(--border)",
+  background: "var(--surface2)",
+  color: "var(--text)",
+  fontSize: "0.88rem",
+  boxSizing: "border-box",
+};
+
+const dropdown: React.CSSProperties = {
+  position: "absolute",
+  top: "100%",
+  left: 0,
+  right: 0,
+  background: "var(--surface)",
+  border: "1px solid var(--border)",
+  borderRadius: 6,
+  marginTop: 2,
+  zIndex: 20,
+  maxHeight: 200,
+  overflowY: "auto",
+};
+
+const dropdownItem: React.CSSProperties = {
+  padding: "0.45rem 0.7rem",
+  cursor: "pointer",
+  fontSize: "0.85rem",
+  borderBottom: "1px solid var(--border)",
+};
+
+const btnGhost: React.CSSProperties = {
+  padding: "0.4rem 0.9rem",
+  borderRadius: 6,
+  background: "var(--border)",
+  border: "none",
+  cursor: "pointer",
+  fontSize: "0.82rem",
+  fontWeight: 600,
+};
+
+const chip: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: "0.35rem",
+  background: "var(--surface2)",
+  border: "1px solid var(--border)",
+  borderRadius: 999,
+  padding: "0.25rem 0.6rem",
+  fontSize: "0.8rem",
+};
+
+const chipRemove: React.CSSProperties = {
+  background: "none",
+  border: "none",
+  cursor: "pointer",
+  fontSize: "0.95rem",
+  lineHeight: 1,
+  color: "var(--muted)",
+};
+
+const s = {
+  btnDel: {
+    background: "none",
+    border: "none",
+    cursor: "pointer",
+    padding: "0.3rem",
+  } as React.CSSProperties,
+};
 
 export default function ProductosPage() {
   const usuario = useStaffSession();

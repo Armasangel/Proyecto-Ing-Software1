@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { StaffShell } from "@/components/StaffShell";
 import { useStaffSession } from "@/hooks/useStaffSession";
+import { matchesQuery, paginar, PaginationBar, type PageSize } from "@/lib/ui-table";
 
 type ProductoDeuda = {
   id_producto: number;
@@ -109,6 +110,26 @@ function diasRestantes(fecha: string | null): { texto: string; color: string } {
   if (dias === 0) return { texto: "Vence hoy", color: "#e63946" };
   if (dias <= 3) return { texto: `Vence en ${dias} día(s)`, color: "#e08e0b" };
   return { texto: `Vence en ${dias} día(s)`, color: "var(--muted)" };
+}
+
+function diasRestantesNum(fecha: string | null): number | null {
+  if (!fecha) return null;
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+  const limite = new Date(`${fecha}T00:00:00`);
+  return Math.round((limite.getTime() - hoy.getTime()) / 86400000);
+}
+
+type FiltroVencimiento = "todas" | "vencidas" | "proximas" | "sin_fecha";
+
+function cumpleFiltroVencimiento(fecha: string | null, filtro: FiltroVencimiento): boolean {
+  if (filtro === "todas") return true;
+  if (filtro === "sin_fecha") return !fecha;
+  const dias = diasRestantesNum(fecha);
+  if (dias === null) return false;
+  if (filtro === "vencidas") return dias < 0;
+  if (filtro === "proximas") return dias >= 0 && dias <= 3;
+  return true;
 }
 
 // Barra de progreso + monto restante. El % viene calculado por el backend
@@ -311,6 +332,14 @@ export default function DeudasPage() {
   // Edición de límites (pestaña "Límites de deuda")
   const [limitesEditando, setLimitesEditando] = useState<Record<number, string>>({});
   const [guardandoLimiteId, setGuardandoLimiteId] = useState<number | null>(null);
+
+  // Búsqueda/filtros y paginación de las tablas de la página
+  const [qDeudas, setQDeudas] = useState("");
+  const [qLimites, setQLimites] = useState("");
+  const [soloBloqueados, setSoloBloqueados] = useState(false);
+  const [filtroVencimiento, setFiltroVencimiento] = useState<FiltroVencimiento>("todas");
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState<PageSize>(10);
 
   async function cargarDeudas() {
     const res = await fetch("/api/deudas");
