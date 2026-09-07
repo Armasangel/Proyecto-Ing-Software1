@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { StaffShell } from "@/components/StaffShell";
 import { useStaffSession } from "@/hooks/useStaffSession";
-import { isDuenoTipo } from "@/lib/roles";
 import { Icon, type IconName } from "@/components/Icon";
 
 export default function DashboardPage() {
@@ -38,9 +37,7 @@ export default function DashboardPage() {
   }, [loadStats]);
 
   if (!usuario) {
-    return (
-      <div style={{ padding: "2rem", color: "var(--muted)" }}>Cargando…</div>
-    );
+    return <div className="p-8 text-ink-muted">Cargando…</div>;
   }
 
   const STATS_CONFIG = [
@@ -48,35 +45,35 @@ export default function DashboardPage() {
       label: "Productos activos",
       value: stats.productos,
       icon: "box",
-      bg: "#EEF1FB",
-      iconBg: "rgba(29, 36, 202, 0.1)",
-      valueColor: "#1D24CA",
+      cardBg: "bg-market-50",
+      iconBg: "bg-market/15",
+      valueClass: "text-market-600",
     },
     {
       label: "Ventas registradas",
       value: stats.ventas,
       icon: "bill",
-      bg: "#EEF1FB",
-      iconBg: "rgba(32, 22, 88, 0.1)",
-      valueColor: "#201658",
+      cardBg: "bg-mango-50",
+      iconBg: "bg-mango/20",
+      valueClass: "text-mango-600",
     },
     {
       label: "Ventas pendientes",
       value: stats.pendientes,
       icon: "hourglass",
-      bg: "#EEF1FB",
-      iconBg: "rgba(152, 171, 238, 0.3)",
-      valueColor: "#1D24CA",
+      cardBg: "bg-achiote-50",
+      iconBg: "bg-achiote/15",
+      valueClass: "text-achiote-600",
     },
     {
       label: "Proveedores",
       value: stats.proveedores,
       icon: "truck",
-      bg: "#EEF1FB",
-      iconBg: "rgba(152, 171, 238, 0.2)",
-      valueColor: "#201658",
+      cardBg: "bg-cream-100",
+      iconBg: "bg-ink/10",
+      valueClass: "text-ink",
     },
-  ];
+  ] as const;
 
   return (
     <StaffShell
@@ -89,71 +86,77 @@ export default function DashboardPage() {
       })}`}
     >
       {/* ── Stat cards ── */}
-      <div style={s.statsGrid}>
+      <div className="grid gap-4 mb-8" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))" }}>
         {statsError ? (
-          <div style={s.statsErrorCard}>
-            <div style={s.statsErrorTitle}>No se pudieron cargar las estadísticas</div>
-            <div style={s.statsErrorBody}>
+          <div className="col-span-full rounded-card p-9 border border-[var(--border)] bg-white flex flex-col items-center justify-center text-center gap-2.5 shadow-warm min-h-[180px]">
+            <div className="font-head font-bold text-ink text-base">No se pudieron cargar las estadísticas</div>
+            <div className="text-sm text-ink-muted max-w-[420px] leading-relaxed">
               Los contadores no están disponibles.
             </div>
-            <button type="button" onClick={loadStats} style={s.statsErrorBtn}>
+            <button
+              type="button"
+              onClick={loadStats}
+              className="mt-1 bg-transparent border border-market text-market-600 font-semibold text-sm rounded-control px-4 py-2 transition-transform active:scale-[0.97] hover:bg-market-50"
+            >
               Reintentar
             </button>
-            <div style={s.statsErrorHint}>
-              También puedes recargar la página. Si el problema continúa, contacta al
-              administrador.
+            <div className="text-xs text-ink-muted max-w-[420px] leading-snug">
+              También puedes recargar la página. Si el problema continúa, contacta al administrador.
             </div>
           </div>
         ) : (
           STATS_CONFIG.map((stat) => (
-            <div key={stat.label} style={{ ...s.statCard, background: stat.bg }}>
-              <div style={{ ...s.statIconWrap, background: stat.iconBg }}>
+            <div
+              key={stat.label}
+              className={`${stat.cardBg} rounded-card p-5 border border-[var(--border)] flex flex-col gap-2 shadow-warm transition-transform hover:-translate-y-0.5`}
+            >
+              <div className={`${stat.iconBg} w-11 h-11 rounded-control flex items-center justify-center mb-1`}>
                 <Icon name={stat.icon as IconName} variant="dark" size={24} />
               </div>
-              <div style={{ ...s.statValue, color: stat.valueColor }}>
+              <div className={`font-head text-[2rem] font-extrabold leading-none ${stat.valueClass}`}>
                 {stat.value.toLocaleString("es-GT")}
               </div>
-              <div style={s.statLabel}>{stat.label}</div>
+              <div className="text-[0.8rem] text-ink-muted font-medium">{stat.label}</div>
             </div>
           ))
         )}
       </div>
 
-      {/* ── Notification card (matches reference image) ── */}
+      {/* ── Avisos ── */}
       {!statsError && (
-        <div style={s.notifRow}>
-          <div style={s.notifCard}>
-            <div style={s.notifDot} />
+        <div className="flex gap-4 flex-wrap">
+          <div className="bg-market-50 border border-market/20 rounded-card px-5 py-4 flex items-center gap-3.5 flex-1 min-w-[200px]">
+            <div className="w-2.5 h-2.5 rounded-full bg-market shrink-0 shadow-[0_0_0_3px_rgba(76,154,42,0.2)]" />
             <div>
-              <div style={s.notifTitle}>Sistema activo</div>
-              <div style={s.notifSub}>
+              <div className="font-bold text-ink text-[0.88rem]">Sistema activo</div>
+              <div className="text-[0.78rem] text-ink-muted mt-0.5">
                 Inventario y ventas funcionando correctamente
               </div>
             </div>
           </div>
           {stats.pendientes > 0 && (
-            <div style={s.alertCard}>
-              <span style={{ fontSize: "1.1rem" }}>⚠️</span>
+            <div className="bg-mango-50 border border-mango/25 rounded-card px-5 py-4 flex items-center gap-3.5 flex-1 min-w-[200px]">
+              <span className="text-[1.1rem]">⚠️</span>
               <div>
-                <div style={s.alertTitle}>
+                <div className="font-bold text-ink text-[0.88rem]">
                   {stats.pendientes} venta{stats.pendientes !== 1 ? "s" : ""} pendiente
                   {stats.pendientes !== 1 ? "s" : ""}
                 </div>
-                <Link href="/ventas" style={s.alertLink}>
+                <Link href="/ventas" className="text-[0.78rem] text-mango-600 font-semibold no-underline mt-0.5 block hover:underline">
                   Ver detalles →
                 </Link>
               </div>
             </div>
           )}
           {stats.clientesBloqueados > 0 && (
-            <div style={s.alertCard}>
-              <span style={{ fontSize: "1.1rem" }}>🔒</span>
+            <div className="bg-achiote-50 border border-achiote/25 rounded-card px-5 py-4 flex items-center gap-3.5 flex-1 min-w-[200px]">
+              <span className="text-[1.1rem]">🔒</span>
               <div>
-                <div style={s.alertTitle}>
+                <div className="font-bold text-ink text-[0.88rem]">
                   {stats.clientesBloqueados} cliente{stats.clientesBloqueados !== 1 ? "s" : ""}{" "}
                   bloqueado{stats.clientesBloqueados !== 1 ? "s" : ""} por deuda
                 </div>
-                <Link href="/deudas" style={s.alertLink}>
+                <Link href="/deudas" className="text-[0.78rem] text-achiote-600 font-semibold no-underline mt-0.5 block hover:underline">
                   Ver en Deudas →
                 </Link>
               </div>
@@ -164,219 +167,3 @@ export default function DashboardPage() {
     </StaffShell>
   );
 }
-
-const s: Record<string, React.CSSProperties> = {
-  /* Stats */
-  statsGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))",
-    gap: "1rem",
-    marginBottom: "2rem",
-  },
-
-  statCard: {
-    borderRadius: 14,
-    padding: "1.35rem 1.25rem",
-    border: "1px solid #C5CEED",
-    display: "flex",
-    flexDirection: "column",
-    gap: "0.5rem",
-    boxShadow: "0 2px 8px rgba(29, 36, 202, 0.06)",
-  },
-
-  statIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 10,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: "0.25rem",
-  },
-
-  statValue: {
-    fontFamily: "var(--font-head)",
-    fontSize: "2rem",
-    fontWeight: 800,
-    lineHeight: 1,
-    color: "#1D24CA",
-  },
-
-  statLabel: {
-    fontSize: "0.8rem",
-    color: "#5a6495",
-    fontWeight: 500,
-  },
-
-  statsErrorCard: {
-    gridColumn: "1 / -1",
-    borderRadius: 14,
-    padding: "2.25rem 1.5rem",
-    border: "1px solid #C5CEED",
-    background: "#EEF1FB",
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    textAlign: "center",
-    gap: "0.65rem",
-    boxShadow: "0 2px 8px rgba(29, 36, 202, 0.06)",
-    minHeight: 180,
-  },
-
-  statsErrorTitle: {
-    fontFamily: "var(--font-head)",
-    fontWeight: 700,
-    color: "#201658",
-    fontSize: "1.05rem",
-  },
-
-  statsErrorBody: {
-    fontSize: "0.88rem",
-    color: "#5a6495",
-    maxWidth: 420,
-    lineHeight: 1.45,
-  },
-
-  statsErrorBtn: {
-    marginTop: "0.25rem",
-    background: "transparent",
-    border: "1px solid #1D24CA",
-    color: "#1D24CA",
-    fontWeight: 600,
-    fontSize: "0.85rem",
-    borderRadius: 8,
-    padding: "0.5rem 1.1rem",
-    cursor: "pointer",
-  },
-
-  statsErrorHint: {
-    fontSize: "0.78rem",
-    color: "#5a6495",
-    maxWidth: 420,
-    lineHeight: 1.4,
-  },
-
-  /* Quick actions */
-  section: {
-    marginBottom: "2rem",
-  },
-
-  sectionTitle: {
-    fontFamily: "var(--font-head)",
-    fontSize: "0.78rem",
-    fontWeight: 700,
-    color: "#5a6495",
-    marginBottom: "1rem",
-    textTransform: "uppercase",
-    letterSpacing: "0.08em",
-  },
-
-  actionsGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
-    gap: "0.75rem",
-  },
-
-  actionCard: {
-    background: "#ffffff",
-    border: "1px solid #C5CEED",
-    borderRadius: 12,
-    padding: "1.1rem 1rem",
-    display: "flex",
-    flexDirection: "column",
-    gap: "0.4rem",
-    textDecoration: "none",
-    transition: "border-color .15s, box-shadow .15s, transform .15s",
-    position: "relative",
-    overflow: "hidden",
-  },
-
-  actionIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    background: "#EEF1FB",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: "0.15rem",
-  },
-
-  actionLabel: {
-    fontWeight: 600,
-    color: "#201658",
-    fontSize: "0.88rem",
-  },
-
-  actionArrow: {
-    fontSize: "0.78rem",
-    color: "#98ABEE",
-    fontWeight: 700,
-  },
-
-  /* Notification row */
-  notifRow: {
-    display: "flex",
-    gap: "1rem",
-    flexWrap: "wrap",
-  },
-
-  notifCard: {
-    background: "#EEF1FB",
-    border: "1px solid #C5CEED",
-    borderRadius: 12,
-    padding: "1rem 1.25rem",
-    display: "flex",
-    alignItems: "center",
-    gap: "0.85rem",
-    flex: "1 1 200px",
-  },
-
-  notifDot: {
-    width: 10,
-    height: 10,
-    borderRadius: "50%",
-    background: "#1D24CA",
-    flexShrink: 0,
-    boxShadow: "0 0 0 3px rgba(29, 36, 202, 0.2)",
-  },
-
-  notifTitle: {
-    fontWeight: 700,
-    color: "#201658",
-    fontSize: "0.88rem",
-  },
-
-  notifSub: {
-    fontSize: "0.78rem",
-    color: "#5a6495",
-    marginTop: "0.15rem",
-  },
-
-  alertCard: {
-    background: "rgba(249, 232, 201, 0.8)",
-    border: "1px solid rgba(29, 36, 202, 0.2)",
-    borderRadius: 12,
-    padding: "1rem 1.25rem",
-    display: "flex",
-    alignItems: "center",
-    gap: "0.85rem",
-    flex: "1 1 200px",
-  },
-
-  alertTitle: {
-    fontWeight: 700,
-    color: "#201658",
-    fontSize: "0.88rem",
-  },
-
-  alertLink: {
-    fontSize: "0.78rem",
-    color: "#1D24CA",
-    fontWeight: 600,
-    textDecoration: "none",
-    marginTop: "0.15rem",
-    display: "block",
-  },
-};

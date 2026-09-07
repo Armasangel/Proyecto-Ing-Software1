@@ -29,7 +29,7 @@ export default function FacturacionPage() {
   }, []);
 
   if (!usuario) {
-    return <p style={{ padding: "2rem", color: "var(--muted)" }}>Cargando…</p>;
+    return <p className="p-8 text-ink-muted">Cargando…</p>;
   }
 
   async function emitirFactura(id_venta: number, nombre: string) {
@@ -54,59 +54,57 @@ export default function FacturacionPage() {
   return (
     <StaffShell usuario={usuario} title="Facturación" subtitle="Registro y emisión de facturas por venta">
       {mensaje && (
-        <p style={{ color: "#52b788", marginBottom: "1rem", fontWeight: 600 }}>{mensaje}</p>
+        <p key={mensaje} className="text-market-600 mb-4 font-semibold flex items-center gap-2 animate-stamp">
+          <span className="inline-flex w-5 h-5 rounded-full bg-market text-white items-center justify-center text-xs shrink-0">✓</span>
+          {mensaje}
+        </p>
       )}
       {ventas.length === 0 ? (
-        <div style={{ padding: "1.75rem", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface)", maxWidth: 520 }}>
-          <p style={{ color: "#91a7ff", fontWeight: 700, marginBottom: "0.75rem" }}>Sin ventas registradas</p>
-          <p style={{ color: "var(--muted)", fontSize: "0.92rem", lineHeight: 1.6 }}>
+        <div className="p-7 rounded-card border border-[var(--border)] bg-white shadow-warm max-w-[520px]">
+          <p className="text-mango-600 font-bold mb-3">Sin ventas registradas</p>
+          <p className="text-ink-muted text-[0.92rem] leading-relaxed">
             Las ventas aparecen aquí cuando un comprador confirma su pedido en línea.
           </p>
         </div>
       ) : (
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
+        <div className="overflow-x-auto border border-[var(--border)] rounded-card bg-white shadow-warm">
+          <table className="w-full border-collapse text-[0.9rem]">
             <thead>
-              <tr style={{ borderBottom: "2px solid var(--border)", textAlign: "left" }}>
-                <th style={{ padding: "0.75rem" }}>#Venta</th>
-                <th style={{ padding: "0.75rem" }}>Cliente</th>
-                <th style={{ padding: "0.75rem" }}>Fecha</th>
-                <th style={{ padding: "0.75rem" }}>Total</th>
-                <th style={{ padding: "0.75rem" }}>Estado</th>
-                <th style={{ padding: "0.75rem" }}># Factura</th>
-                <th style={{ padding: "0.75rem" }}>Acción</th>
+              <tr className="bg-market">
+                <th className="px-3.5 py-2.5 text-left text-[0.82rem] font-semibold text-white">#Venta</th>
+                <th className="px-3.5 py-2.5 text-left text-[0.82rem] font-semibold text-white">Cliente</th>
+                <th className="px-3.5 py-2.5 text-left text-[0.82rem] font-semibold text-white">Fecha</th>
+                <th className="px-3.5 py-2.5 text-left text-[0.82rem] font-semibold text-white">Total</th>
+                <th className="px-3.5 py-2.5 text-left text-[0.82rem] font-semibold text-white">Estado</th>
+                <th className="px-3.5 py-2.5 text-left text-[0.82rem] font-semibold text-white"># Factura</th>
+                <th className="px-3.5 py-2.5 text-left text-[0.82rem] font-semibold text-white">Acción</th>
               </tr>
             </thead>
             <tbody>
-              {ventas.map((v) => (
-                <tr key={v.id_venta} style={{ borderBottom: "1px solid var(--border)" }}>
-                  <td style={{ padding: "0.75rem", color: "var(--muted)" }}>{v.id_venta}</td>
-                  <td style={{ padding: "0.75rem" }}>{v.nombre}</td>
-                  <td style={{ padding: "0.75rem", color: "var(--muted)" }}>
+              {ventas.map((v, i) => (
+                <tr key={v.id_venta} className={i % 2 === 0 ? "bg-cream/40" : "bg-white"}>
+                  <td className="px-3.5 py-2.5 border-b border-[var(--border)] text-ink-muted">{v.id_venta}</td>
+                  <td className="px-3.5 py-2.5 border-b border-[var(--border)] text-ink">{v.nombre}</td>
+                  <td className="px-3.5 py-2.5 border-b border-[var(--border)] text-ink-muted">
                     {new Date(v.fecha_venta).toLocaleDateString("es-GT")}
                   </td>
-                  <td style={{ padding: "0.75rem" }}>Q{Number(v.total).toFixed(2)}</td>
-                  <td style={{ padding: "0.75rem" }}>
-                    <span style={{
-                      padding: "0.2rem 0.6rem",
-                      borderRadius: 20,
-                      fontSize: "0.8rem",
-                      fontWeight: 600,
-                      background: v.estado_venta === "CONFIRMADO" ? "#52b78833" : "#91a7ff33",
-                      color: v.estado_venta === "CONFIRMADO" ? "#52b788" : "#91a7ff",
-                    }}>
+                  <td className="px-3.5 py-2.5 border-b border-[var(--border)] text-ink">Q{Number(v.total).toFixed(2)}</td>
+                  <td className="px-3.5 py-2.5 border-b border-[var(--border)]">
+                    <span
+                      className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
+                        v.estado_venta === "CONFIRMADO" ? "bg-market-50 text-market-600" : "bg-mango-50 text-mango-600"
+                      }`}
+                    >
                       {v.estado_venta}
                     </span>
                   </td>
-                  <td style={{ padding: "0.75rem", color: "var(--muted)" }}>
-                    {v.numero_factura || "—"}
-                  </td>
-                  <td style={{ padding: "0.75rem" }}>
+                  <td className="px-3.5 py-2.5 border-b border-[var(--border)] text-ink-muted">{v.numero_factura || "—"}</td>
+                  <td className="px-3.5 py-2.5 border-b border-[var(--border)]">
                     {!v.id_factura && (
                       <button
                         onClick={() => emitirFactura(v.id_venta, v.nombre)}
                         disabled={cargando}
-                        style={{ padding: "0.3rem 0.8rem", borderRadius: 6, background: "#52b788", color: "#fff", border: "none", cursor: "pointer" }}
+                        className="px-3 py-1.5 rounded-control bg-market text-white border-none text-[0.85rem] font-medium transition-transform active:scale-[0.97] hover:brightness-110 disabled:opacity-60"
                       >
                         Emitir
                       </button>
