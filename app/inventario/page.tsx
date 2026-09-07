@@ -910,13 +910,13 @@ export default function InventarioPage() {
                 </table>
 
                 <div style={{ display: "flex", gap: "0.6rem", alignItems: "flex-end", flexWrap: "wrap" }}>
-                  <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem", flex: "1 1 220px", minWidth: 180 }}>
                     <label style={{ fontSize: "0.75rem", color: "var(--muted)" }}>Nombre (ej. Caja de 24)</label>
-                    <input value={presNombre} onChange={(e) => setPresNombre(e.target.value)} style={{ ...s.searchInput, flex: "0 1 220px", minWidth: 180 }} />
+                    <input value={presNombre} onChange={(e) => setPresNombre(e.target.value)} style={{ ...s.searchInput, flex: "0 0 auto", width: "100%" }} />
                   </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem", flex: "0 0 120px" }}>
                     <label style={{ fontSize: "0.75rem", color: "var(--muted)" }}>Factor (unidades base)</label>
-                    <input type="number" min="0" step="1" value={presFactor} onChange={(e) => setPresFactor(e.target.value)} style={{ ...s.searchInput, flex: "0 0 120px", width: 120 }} />
+                    <input type="number" min="0" step="1" value={presFactor} onChange={(e) => setPresFactor(e.target.value)} style={{ ...s.searchInput, flex: "0 0 auto", width: "100%" }} />
                   </div>
                   <button type="button" onClick={crearPresentacion} disabled={presGuardando} style={s.btnPrimary}>
                     {presGuardando ? "Guardando…" : "+ Agregar presentación"}

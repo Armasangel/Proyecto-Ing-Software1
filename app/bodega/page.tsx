@@ -279,7 +279,7 @@ export default function BodegaPage() {
         </button>
       </header>
 
-      <main style={s.main}>
+      <main style={tab === "pedidos" ? s.mainAncho : s.main}>
         <div style={s.tabs}>
           {(["pedidos", "entrada", "salida", "traslado"] as TabKey[]).map((k) => (
             <button
@@ -521,15 +521,16 @@ export default function BodegaPage() {
 const s: Record<string, CSSProperties> = {
   page: { minHeight: "100vh", background: "var(--bg)", fontFamily: "var(--font-body)" },
   pedidosBoard: {
-    maxWidth: 1200,
-    margin: "0 auto",
     display: "flex",
     flexDirection: "column",
     gap: "0.75rem",
   },
   pedidosColumns: {
     display: "grid",
-    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+    // auto-fit + minmax: usa 3 columnas cuando hay espacio (pantalla/monitor
+    // de bodega) y se acomoda solo a menos columnas en pantallas angostas,
+    // en vez de aplastar 3 columnas fijas en cualquier ancho.
+    gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
     gap: "0.85rem",
     alignItems: "start",
   },
@@ -607,6 +608,10 @@ const s: Record<string, CSSProperties> = {
     cursor: "pointer",
   },
   main: { maxWidth: 480, margin: "0 auto", padding: "1.25rem" },
+  // La pestaña "Pedidos" es un tablero, no un formulario angosto: necesita
+  // usar el ancho disponible de la pantalla en vez del maxWidth de 480px
+  // pensado para los formularios de entrada/salida/traslado.
+  mainAncho: { maxWidth: 1400, width: "100%", margin: "0 auto", padding: "1.25rem" },
   tabs: { display: "flex", gap: "0.5rem", marginBottom: "1rem" },
   tabBtn: {
     flex: 1,
