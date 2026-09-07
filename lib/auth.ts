@@ -10,6 +10,8 @@ export type AuthUsuario = {
   nombre: string
   correo: string
   tipo_usuario: string
+  // Bodega fija asignada (solo aplica a tipo_usuario === "BODEGUERO").
+  id_bodega?: number | null
 };
 
 export function getJwtSecret(): string {
@@ -27,6 +29,7 @@ export function signAuthToken(usuario: AuthUsuario): string {
       nombre: usuario.nombre,
       correo: usuario.correo,
       tipo_usuario: usuario.tipo_usuario,
+      id_bodega: usuario.id_bodega ?? null,
     },
     getJwtSecret(),
     {
@@ -42,6 +45,7 @@ export function verifyAuthToken(token: string): AuthUsuario | null {
       nombre: string
       correo: string
       tipo_usuario: string
+      id_bodega?: number | null
     };
     const id = decoded.sub;
     if (typeof id !== "string" || !id) return null;
@@ -50,6 +54,7 @@ export function verifyAuthToken(token: string): AuthUsuario | null {
       nombre: decoded.nombre,
       correo: decoded.correo,
       tipo_usuario: decoded.tipo_usuario,
+      id_bodega: decoded.id_bodega ?? null,
     };
   } catch {
     return null;

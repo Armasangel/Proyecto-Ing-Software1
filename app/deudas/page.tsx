@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { StaffShell } from "@/components/StaffShell";
 import { useStaffSession } from "@/hooks/useStaffSession";
 
@@ -344,6 +344,10 @@ export default function DeudasPage() {
     cargarClientes();
   }, []);
 
+  useEffect(() => {
+    setPage(1);
+  }, [tab, vista, qDeudas, qLimites, soloBloqueados, filtroVencimiento, perPage]);
+
   // Muestra el mensaje de alerta cuando una deuda vinculada a un cliente
   // acaba de bloquearlo o desbloquearlo por deuda.
   function mostrarAlerta(alerta: Alerta | null) {
@@ -477,6 +481,93 @@ export default function DeudasPage() {
     setGuardandoLimiteId(null);
   }
 
+  // Agrupa las deudas por cliente (o por nombre_deudor para las viejas que no
+  // están vinculadas a un cliente real) — usado en la vista "Acumulado". Se
+  // recalcula solo cuando cambia la lista de deudas.
+  const agruparPorCliente = useCallback(() => {
+    const map = new Map<
+      string,
+      {
+        key: string;
+        label: string;
+        telefono: string | null;
+        id_cliente: number | null;
+        cliente_puede_comprar: boolean | null;
+        limite_deuda: number | null;
+        totalPendiente: number;
+        deudas: Deuda[];
+      }
+    >();
+    for (const d of deudas) {
+      const key = d.id_cliente !== null ? `c${d.id_cliente}` : `n${d.nombre_deudor}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          label: d.nombre_deudor,
+          telefono: d.telefono_deudor,
+          id_cliente: d.id_cliente,
+          cliente_puede_comprar: d.cliente_puede_comprar,
+          limite_deuda: d.limite_deuda ? Number(d.limite_deuda) : null,
+          totalPendiente: 0,
+          deudas: [],
+        });
+      }
+      const g = map.get(key)!;
+      g.deudas.push(d);
+      if (d.estado_deuda === "PENDIENTE") g.totalPendiente += Number(d.monto_total);
+    }
+    return Array.from(map.values()).sort((a, b) => b.totalPendiente - a.totalPendiente);
+  }, [deudas]);
+
+  const deudasPorVencer = useCallback((): Deuda[] => {
+    return deudas
+      .filter((d) => d.estado_deuda === "PENDIENTE")
+      .slice()
+      .sort((a, b) => {
+        if (!a.fecha_limite_pago && !b.fecha_limite_pago) return 0;
+        if (!a.fecha_limite_pago) return 1;
+        if (!b.fecha_limite_pago) return -1;
+        return a.fecha_limite_pago.localeCompare(b.fecha_limite_pago);
+      });
+  }, [deudas]);
+
+  // Lista "Acumulado por cliente" filtrada por búsqueda y por bloqueo, y paginada.
+  const gruposFiltrados = useMemo(() => {
+    return agruparPorCliente().filter((g) => {
+      if (soloBloqueados && g.cliente_puede_comprar !== false) return false;
+      return matchesQuery(qDeudas, g.label, g.telefono);
+    });
+  }, [agruparPorCliente, qDeudas, soloBloqueados]);
+  const gruposPage = useMemo(
+    () => paginar(gruposFiltrados, page, perPage),
+    [gruposFiltrados, page, perPage]
+  );
+
+  // Lista "Próximas a vencer" filtrada por búsqueda, bloqueo y vencimiento, y paginada.
+  const vencimientoFiltrado = useMemo(() => {
+    return deudasPorVencer().filter((d) => {
+      if (soloBloqueados && d.cliente_puede_comprar !== false) return false;
+      if (!cumpleFiltroVencimiento(d.fecha_limite_pago, filtroVencimiento)) return false;
+      return matchesQuery(qDeudas, d.nombre_deudor, d.telefono_deudor);
+    });
+  }, [deudasPorVencer, qDeudas, soloBloqueados, filtroVencimiento]);
+  const vencimientoPage = useMemo(
+    () => paginar(vencimientoFiltrado, page, perPage),
+    [vencimientoFiltrado, page, perPage]
+  );
+
+  // Lista de clientes (pestaña "Límites de deuda") filtrada por búsqueda y bloqueo, y paginada.
+  const clientesFiltradosLimites = useMemo(() => {
+    return clientes.filter((c) => {
+      if (soloBloqueados && c.estado_cliente) return false;
+      return matchesQuery(qLimites, c.nombre, c.telefono, c.correo);
+    });
+  }, [clientes, qLimites, soloBloqueados]);
+  const clientesPage = useMemo(
+    () => paginar(clientesFiltradosLimites, page, perPage),
+    [clientesFiltradosLimites, page, perPage]
+  );
+
   if (!usuario) {
     return <p style={{ padding: "2rem", color: "var(--muted)" }}>Cargando…</p>;
   }
@@ -484,7 +575,7 @@ export default function DeudasPage() {
   if (usuario.tipo_usuario !== "DUENO") {
     return (
       <StaffShell usuario={usuario} title="Deudas" subtitle="">
-        <p style={{ color: "var(--muted)" }}>No tenés permiso para ver esta página.</p>
+        <p style={{ color: "var(--muted)" }}>No tienes permiso para ver esta página.</p>
       </StaffShell>
     );
   }
@@ -522,7 +613,7 @@ export default function DeudasPage() {
     setAlertaBloqueo("");
 
     if (!clienteSeleccionado) {
-      setError("Seleccioná (o creá) el cliente al que se le asigna la deuda.");
+      setError("Selecciona (o crea) el cliente al que se le asigna la deuda.");
       return;
     }
 
@@ -622,54 +713,6 @@ export default function DeudasPage() {
     });
   }
 
-  // Agrupa las deudas por cliente (o por nombre_deudor para las viejas que no
-  // están vinculadas a un cliente real) — usado en la vista "Acumulado".
-  function agruparPorCliente() {
-    const map = new Map<
-      string,
-      {
-        key: string;
-        label: string;
-        telefono: string | null;
-        id_cliente: number | null;
-        cliente_puede_comprar: boolean | null;
-        limite_deuda: number | null;
-        totalPendiente: number;
-        deudas: Deuda[];
-      }
-    >();
-    for (const d of deudas) {
-      const key = d.id_cliente !== null ? `c${d.id_cliente}` : `n${d.nombre_deudor}`;
-      if (!map.has(key)) {
-        map.set(key, {
-          key,
-          label: d.nombre_deudor,
-          telefono: d.telefono_deudor,
-          id_cliente: d.id_cliente,
-          cliente_puede_comprar: d.cliente_puede_comprar,
-          limite_deuda: d.limite_deuda ? Number(d.limite_deuda) : null,
-          totalPendiente: 0,
-          deudas: [],
-        });
-      }
-      const g = map.get(key)!;
-      g.deudas.push(d);
-      if (d.estado_deuda === "PENDIENTE") g.totalPendiente += Number(d.monto_total);
-    }
-    return Array.from(map.values()).sort((a, b) => b.totalPendiente - a.totalPendiente);
-  }
-
-  function deudasPorVencer(): Deuda[] {
-    return deudas
-      .filter((d) => d.estado_deuda === "PENDIENTE")
-      .slice()
-      .sort((a, b) => {
-        if (!a.fecha_limite_pago && !b.fecha_limite_pago) return 0;
-        if (!a.fecha_limite_pago) return 1;
-        if (!b.fecha_limite_pago) return -1;
-        return a.fecha_limite_pago.localeCompare(b.fecha_limite_pago);
-      });
-  }
 
   function formularioClienteNuevo(onCreado: (nuevo: Cliente) => void) {
     return (
@@ -801,7 +844,7 @@ export default function DeudasPage() {
     <StaffShell
       usuario={usuario}
       title="Deudas"
-      subtitle="Registrá y llevá el control de las deudas pendientes"
+      subtitle="Registra y controla las deudas pendientes"
     >
       {mensaje && (
         <p style={{ color: "#52b788", marginBottom: "1rem", fontWeight: 600 }}>{mensaje}</p>
@@ -897,7 +940,7 @@ export default function DeudasPage() {
                   <div style={{ position: "relative", flex: 1, isolation: "isolate" }}>
                     <input
                       style={inputStyle}
-                      placeholder="Escribí el nombre para buscar…"
+                      placeholder="Escribe el nombre para buscar…"
                       value={busquedaCliente}
                       onChange={(e) => {
                         setBusquedaCliente(e.target.value);
@@ -1019,7 +1062,7 @@ export default function DeudasPage() {
                     value={linea.id_producto}
                     onChange={(e) => actualizarLinea(idx, "id_producto", e.target.value)}
                   >
-                    <option value="">Seleccioná un producto…</option>
+                    <option value="">Seleccionar un producto…</option>
                     {productos.map((p) => (
                       <option key={p.id_producto} value={p.id_producto}>
                         {p.nombre_producto} (Q{Number(p.precio_unitario).toFixed(2)}/{p.unidad_medida})
@@ -1109,6 +1152,56 @@ export default function DeudasPage() {
             </button>
           </div>
 
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              gap: "0.75rem",
+              marginBottom: "1rem",
+            }}
+          >
+            <input
+              type="search"
+              value={qDeudas}
+              onChange={(e) => setQDeudas(e.target.value)}
+              placeholder="Buscar por nombre o teléfono…"
+              aria-label="Buscar en deudas"
+              style={{ ...inputStyle, flex: "1 1 220px", minWidth: 200, width: "auto" }}
+            />
+            {vista === "vencimiento" && (
+              <select
+                value={filtroVencimiento}
+                onChange={(e) => setFiltroVencimiento(e.target.value as FiltroVencimiento)}
+                aria-label="Filtrar por vencimiento"
+                style={{ ...inputStyle, width: "auto", minWidth: 190 }}
+              >
+                <option value="todas">Todos los vencimientos</option>
+                <option value="vencidas">Vencidas</option>
+                <option value="proximas">Vencen en 3 días o menos</option>
+                <option value="sin_fecha">Sin fecha límite</option>
+              </select>
+            )}
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "0.4rem",
+                fontSize: "0.85rem",
+                color: "var(--muted)",
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={soloBloqueados}
+                onChange={(e) => setSoloBloqueados(e.target.checked)}
+              />
+              Solo clientes bloqueados
+            </label>
+          </div>
+
           {vista === "acumulado" && (
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
@@ -1121,9 +1214,9 @@ export default function DeudasPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {agruparPorCliente().map((g) => (
-                    <>
-                      <tr key={g.key} style={{ borderBottom: "1px solid var(--border)" }}>
+                  {gruposPage.slice.map((g) => (
+                    <Fragment key={g.key}>
+                      <tr style={{ borderBottom: "1px solid var(--border)" }}>
                         <td style={{ padding: "0.75rem" }}>
                           {g.label}
                           {g.telefono && (
@@ -1282,17 +1375,27 @@ export default function DeudasPage() {
                           </td>
                         </tr>
                       )}
-                    </>
+                    </Fragment>
                   ))}
-                  {deudas.length === 0 && (
+                  {gruposPage.slice.length === 0 && (
                     <tr>
                       <td colSpan={4} style={{ padding: "1.5rem", textAlign: "center", color: "var(--muted)" }}>
-                        No hay deudas registradas.
+                        {qDeudas.trim() || soloBloqueados
+                          ? "Ningún resultado para esa búsqueda o filtro."
+                          : "No hay deudas registradas."}
                       </td>
                     </tr>
                   )}
                 </tbody>
               </table>
+              <PaginationBar
+                total={gruposPage.total}
+                page={gruposPage.paginaSegura}
+                perPage={perPage}
+                onPage={setPage}
+                onPerPage={setPerPage}
+                noun="clientes"
+              />
             </div>
           )}
 
@@ -1310,7 +1413,7 @@ export default function DeudasPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {deudasPorVencer().map((d) => {
+                  {vencimientoPage.slice.map((d) => {
                     const rest = diasRestantes(d.fecha_limite_pago);
                     return (
                       <>
@@ -1390,7 +1493,7 @@ export default function DeudasPage() {
                       </>
                     );
                   })}
-                  {deudasPorVencer().length === 0 && (
+                  {vencimientoPage.slice.length === 0 && (
                     <tr>
                       <td colSpan={6} style={{ padding: "1.5rem", textAlign: "center", color: "var(--muted)" }}>
                         No hay deudas pendientes.
@@ -1399,6 +1502,14 @@ export default function DeudasPage() {
                   )}
                 </tbody>
               </table>
+              <PaginationBar
+                total={vencimientoPage.total}
+                page={vencimientoPage.paginaSegura}
+                perPage={perPage}
+                onPage={setPage}
+                onPerPage={setPerPage}
+                noun="deudas"
+              />
             </div>
           )}
         </>
@@ -1407,7 +1518,7 @@ export default function DeudasPage() {
       {tab === "limites" && (
         <>
           <p style={{ color: "var(--muted)", marginBottom: "1rem", maxWidth: 640 }}>
-            Definí el límite de deuda de cada cliente. Al llegar (o superar) ese monto en deudas
+            Define el límite de deuda de cada cliente. Al llegar (o superar) ese monto en deudas
             pendientes, el cliente queda bloqueado automáticamente para comprar o hacer pedidos —
             se desbloquea solo cuando su deuda pendiente vuelve a bajar del límite.
           </p>
@@ -1436,6 +1547,43 @@ export default function DeudasPage() {
             </div>
           )}
 
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              gap: "0.75rem",
+              marginBottom: "1rem",
+            }}
+          >
+            <input
+              type="search"
+              value={qLimites}
+              onChange={(e) => setQLimites(e.target.value)}
+              placeholder="Buscar cliente por nombre, teléfono o correo…"
+              aria-label="Buscar clientes"
+              style={{ ...inputStyle, flex: "1 1 260px", minWidth: 220, width: "auto" }}
+            />
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "0.4rem",
+                fontSize: "0.85rem",
+                color: "var(--muted)",
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={soloBloqueados}
+                onChange={(e) => setSoloBloqueados(e.target.checked)}
+              />
+              Solo clientes bloqueados
+            </label>
+          </div>
+
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
               <thead>
@@ -1448,7 +1596,7 @@ export default function DeudasPage() {
                 </tr>
               </thead>
               <tbody>
-                {clientes.map((c) => (
+                {clientesPage.slice.map((c) => (
                   <tr key={c.id_cliente} style={{ borderBottom: "1px solid var(--border)" }}>
                     <td style={{ padding: "0.75rem" }}>
                       {c.nombre}
@@ -1498,15 +1646,25 @@ export default function DeudasPage() {
                     </td>
                   </tr>
                 ))}
-                {clientes.length === 0 && (
+                {clientesPage.slice.length === 0 && (
                   <tr>
                     <td colSpan={5} style={{ padding: "1.5rem", textAlign: "center", color: "var(--muted)" }}>
-                      No hay clientes registrados.
+                      {qLimites.trim() || soloBloqueados
+                        ? "Ningún resultado para esa búsqueda o filtro."
+                        : "No hay clientes registrados."}
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
+            <PaginationBar
+              total={clientesPage.total}
+              page={clientesPage.paginaSegura}
+              perPage={perPage}
+              onPage={setPage}
+              onPerPage={setPerPage}
+              noun="clientes"
+            />
           </div>
         </>
       )}

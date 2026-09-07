@@ -27,12 +27,14 @@ const NAV: NavItem[] = [
   { href: "/dashboard",        label: "Dashboard",       icon: "dashboard"     },
   { href: "/inventario",       label: "Inventario",      icon: "inventory"     },
   { href: "/catalogo",         label: "Catálogo",        icon: "catalogue"     },
+  { href: "/ordenes",          label: "Órdenes",         icon: "ticket"        },
   { href: "/ventas",           label: "Ventas",          icon: "shopping-cart" },
   { href: "/facturacion",      label: "Facturación",     icon: "bill"          },
   { href: "/reportes",         label: "Reportes",        icon: "report"        },
   { href: "/proveedores",      label: "Proveedores",     icon: "hand-truck"    },
   { href: "/historial-ventas", label: "Historial ventas",icon: "distribution"  },
   { href: "/deudas",           label: "Deudas",          icon: "debt"     },
+  { href: "/usuarios",         label: "Usuarios",        icon: "owner"         },
 ];
 
 function isStaffNavActive(
@@ -85,9 +87,15 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
 
   const navVisible = NAV.filter((item) => {
     if (item.href === "/ventas") return isColaboradorTipo(usuario.tipo_usuario);
-    if (["/inventario", "/catalogo", "/historial-ventas", "/proveedores", "/deudas"].includes(item.href)) {
+    if (
+      ["/inventario", "/catalogo", "/historial-ventas", "/proveedores", "/deudas", "/usuarios"].includes(
+        item.href
+      )
+    ) {
       return isDuenoTipo(usuario.tipo_usuario);
     }
+    // "/ordenes" (y cualquier otra ruta no listada arriba) queda visible
+    // tanto para dueño como para colaborador, igual que permite la API.
     return true;
   });
 

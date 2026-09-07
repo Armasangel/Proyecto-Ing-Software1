@@ -7,7 +7,12 @@ const ESTADOS_ORDEN = ["PENDIENTE", "CONFIRMADO", "EN_PREPARACION", "ENVIADO", "
 
 type LineaInput = {
   id_producto: number;
-  id_bodega: number | null;
+  // Presentación de mayoreo (ej. "Caja de 24") con la que el colaborador
+  // capturó la línea, si aplica. Ya no se recibe id_bodega del cliente: la
+  // bodega de origen se asigna automáticamente (ver POST más abajo).
+  id_presentacion: number | null;
+  // Cantidad tal como la capturó el colaborador: en unidades de la
+  // presentación si id_presentacion viene, o en unidad base si no.
   cantidad: number;
   precio_unitario: number;
 };
@@ -60,7 +65,10 @@ export async function GET(req: NextRequest) {
               'nombre_bodega', b.nombre_bodega,
               'cantidad', d.cantidad,
               'precio_unitario', d.precio_unitario,
-              'subtotal', d.subtotal
+              'subtotal', d.subtotal,
+              'id_presentacion', d.id_presentacion,
+              'nombre_presentacion', pp.nombre_presentacion,
+              'cantidad_presentacion', d.cantidad_presentacion
             )
             ORDER BY d.id_detalle
           ) FILTER (WHERE d.id_detalle IS NOT NULL),
@@ -72,6 +80,7 @@ export async function GET(req: NextRequest) {
       LEFT JOIN detalle_orden d ON d.id_orden = o.id_orden
       LEFT JOIN producto p ON p.id_producto = d.id_producto
       LEFT JOIN bodega b ON b.id_bodega = d.id_bodega
+      LEFT JOIN presentacion_producto pp ON pp.id_presentacion = d.id_presentacion
       ${whereClause}
       GROUP BY o.id_orden, o.id_cliente, o.id_usuario, o.fecha_orden,
         o.estado, o.notas, o.total, c.nombre, c.correo, c.tipo_cliente, u.nombre
@@ -113,7 +122,7 @@ export async function POST(request: NextRequest) {
       if (!L || typeof L !== "object") continue;
       const o = L as Record<string, unknown>;
       const id_producto = Number(o.id_producto);
-      const id_bodega = o.id_bodega ? Number(o.id_bodega) : null;
+      const id_presentacion = o.id_presentacion ? Number(o.id_presentacion) : null;
       const cantidad = Number(o.cantidad);
       const precio_unitario = Number(o.precio_unitario);
       if (!id_producto || cantidad <= 0 || precio_unitario < 0) {
@@ -122,7 +131,7 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
-      lineasNorm.push({ id_producto, id_bodega, cantidad, precio_unitario });
+      lineasNorm.push({ id_producto, id_presentacion, cantidad, precio_unitario });
     }
 
     if (lineasNorm.length === 0) {
@@ -150,7 +159,15 @@ export async function POST(request: NextRequest) {
       }
 
       let total = 0;
-      const prepared: Array<{ id_producto: number; id_bodega: number | null; cantidad: number; precio: number; subtotal: number }> = [];
+      const prepared: Array<{
+        id_producto: number;
+        id_bodega: number | null;
+        cantidad: number;
+        precio: number;
+        subtotal: number;
+        id_presentacion: number | null;
+        cantidad_presentacion: number | null;
+      }> = [];
 
       for (const ln of lineasNorm) {
         const prod = await client.query(
@@ -162,21 +179,60 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: `Producto no disponible: id ${ln.id_producto}` }, { status: 400 });
         }
 
-        if (ln.id_bodega) {
-          const bod = await client.query(`SELECT 1 FROM bodega WHERE id_bodega = $1`, [ln.id_bodega]);
-          if (bod.rowCount === 0) {
+        // Si la línea viene en una presentación de mayoreo (ej. "Caja de
+        // 24", creada por el dueño), convertimos a unidad base con su
+        // factor de conversión. `cantidad` en detalle_orden siempre queda
+        // en unidad base; la presentación y la cantidad capturada se
+        // guardan aparte solo como referencia (igual que en kardex).
+        let cantidadBase = ln.cantidad;
+        let cantidadPresentacion: number | null = null;
+        if (ln.id_presentacion) {
+          const pres = await client.query(
+            `SELECT factor_conversion FROM presentacion_producto
+             WHERE id_presentacion = $1 AND id_producto = $2 AND estado_presentacion = TRUE`,
+            [ln.id_presentacion, ln.id_producto]
+          );
+          if (pres.rowCount === 0) {
             await client.query("ROLLBACK");
-            return NextResponse.json({ error: `Bodega no encontrada: id ${ln.id_bodega}` }, { status: 400 });
+            return NextResponse.json(
+              { error: `Presentación inválida para el producto id ${ln.id_producto}` },
+              { status: 400 }
+            );
           }
+          const factor = Number(pres.rows[0].factor_conversion);
+          cantidadPresentacion = ln.cantidad;
+          cantidadBase = ln.cantidad * factor;
         }
+
+        // La bodega de origen ya no la escoge el colaborador: se asigna
+        // automáticamente la que tenga mayor cantidad_disponible de este
+        // producto, para que en la lista de órdenes se avise de dónde
+        // conviene sacarlo. Si ninguna bodega tiene el producto registrado
+        // todavía, la línea queda sin bodega (null).
+        const mejorBodega = await client.query(
+          `SELECT id_bodega FROM bodega_producto
+           WHERE id_producto = $1
+           ORDER BY cantidad_disponible DESC
+           LIMIT 1`,
+          [ln.id_producto]
+        );
+        const idBodegaAuto: number | null = mejorBodega.rowCount ? mejorBodega.rows[0].id_bodega : null;
 
         const subQ = await client.query(
           `SELECT ROUND(($1::numeric * $2::numeric), 2) AS sub`,
-          [ln.cantidad, ln.precio_unitario]
+          [cantidadBase, ln.precio_unitario]
         );
         const subtotal = Number(subQ.rows[0].sub);
         total += subtotal;
-        prepared.push({ id_producto: ln.id_producto, id_bodega: ln.id_bodega, cantidad: ln.cantidad, precio: ln.precio_unitario, subtotal });
+        prepared.push({
+          id_producto: ln.id_producto,
+          id_bodega: idBodegaAuto,
+          cantidad: cantidadBase,
+          precio: ln.precio_unitario,
+          subtotal,
+          id_presentacion: ln.id_presentacion,
+          cantidad_presentacion: cantidadPresentacion,
+        });
       }
 
       const totalQ = await client.query(`SELECT ROUND($1::numeric, 2) AS t`, [total]);
@@ -191,9 +247,10 @@ export async function POST(request: NextRequest) {
 
       for (const p of prepared) {
         await client.query(
-          `INSERT INTO detalle_orden (id_orden, id_producto, id_bodega, cantidad, precio_unitario, subtotal)
-           VALUES ($1, $2, $3, $4, $5, $6)`,
-          [idOrden, p.id_producto, p.id_bodega, p.cantidad, p.precio, p.subtotal]
+          `INSERT INTO detalle_orden
+             (id_orden, id_producto, id_bodega, cantidad, precio_unitario, subtotal, id_presentacion, cantidad_presentacion)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [idOrden, p.id_producto, p.id_bodega, p.cantidad, p.precio, p.subtotal, p.id_presentacion, p.cantidad_presentacion]
         );
       }
 

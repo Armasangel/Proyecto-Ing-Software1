@@ -293,7 +293,9 @@ export default function LoginPage() {
               <div className="flex gap-2 flex-wrap">
                 {[
                   { label: "Dueño (entra directo)", correo: "dueno@tienda.com" },
-                  { label: "Colaborador (2FA por correo)", correo: "armasangel193@gmail.com" },
+                  { label: "Colaborador (2FA por correo)", correo: "armasangel193@gmail.com"},
+                  { label : "Bodega", correo : "bodega@tienda.com"},
+                  { label : "colaborador sin 2FA", correo :"sin2fa@tienda.com"},
                 ].map((u) => (
                   <button
                     key={u.correo}

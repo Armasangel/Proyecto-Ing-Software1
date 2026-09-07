@@ -15,6 +15,9 @@ type Usuario = {
   telefono: string | null;
   tipo_usuario: string;
   estado_usuario: boolean;
+  id_bodega: number | null;
+  nombre_bodega: string | null;
+  requiere_2fa: boolean;
 };
 
 type TipoUsuario = keyof typeof TIPOS_USUARIO;
@@ -35,12 +38,19 @@ const TIPO_META: Record<
     bg: "rgba(88,166,255,.12)",
     border: "rgba(88,166,255,.35)",
   },
+  BODEGUERO: {
+    label: "Bodeguero",
+    color: "var(--green)",
+    bg: "rgba(45,106,79,.15)",
+    border: "rgba(45,106,79,.4)",
+  },
 };
 
 const TIPOS_OPCIONES: { value: string; label: string }[] = [
   { value: "", label: "Todos los roles" },
   { value: TIPOS_USUARIO.DUENO, label: "Dueño" },
   { value: TIPOS_USUARIO.EMPLEADO, label: "Colaborador" },
+  { value: TIPOS_USUARIO.BODEGUERO, label: "Bodeguero" },
 ];
 
 const EMPTY_FORM = {
@@ -48,7 +58,9 @@ const EMPTY_FORM = {
   correo: "",
   telefono: "",
   contrasena: "",
-  tipo_usuario: TIPOS_USUARIO.EMPLEADO,
+  tipo_usuario: TIPOS_USUARIO.EMPLEADO as string,
+  id_bodega: "",
+  requiere_2fa: true,
 };
 
 // ─── Componente principal ─────────────────────────────────────────────────────
@@ -58,6 +70,7 @@ export default function UsuariosPage() {
 
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [loading, setLoading] = useState(false);
+  const [bodegas, setBodegas] = useState<{ id_bodega: number; nombre_bodega: string }[]>([]);
 
   // Filtros
   const [busqueda, setBusqueda] = useState("");
@@ -66,7 +79,9 @@ export default function UsuariosPage() {
   // Modal edición de rol/estado
   const [editando, setEditando] = useState<Usuario | null>(null);
   const [editTipo, setEditTipo] = useState("");
+  const [editBodega, setEditBodega] = useState("");
   const [editEstado, setEditEstado] = useState(true);
+  const [editRequiere2fa, setEditRequiere2fa] = useState(true);
   const [savingEdit, setSavingEdit] = useState(false);
   const [editError, setEditError] = useState("");
 
@@ -112,17 +127,31 @@ export default function UsuariosPage() {
     cargar();
   }, [usuario, cargar]);
 
+  useEffect(() => {
+    if (!usuario) return;
+    fetch("/api/bodegas/simple")
+      .then((r) => r.json())
+      .then((d) => setBodegas(d.bodegas || []))
+      .catch(() => {});
+  }, [usuario]);
+
   // ── Editar rol/estado ──────────────────────────────────────────────────────
 
   const abrirEditar = (u: Usuario) => {
     setEditando(u);
     setEditTipo(u.tipo_usuario);
+    setEditBodega(u.id_bodega ? String(u.id_bodega) : "");
     setEditEstado(u.estado_usuario);
+    setEditRequiere2fa(u.requiere_2fa);
     setEditError("");
   };
 
   const guardarEdicion = async () => {
     if (!editando) return;
+    if (editTipo === TIPOS_USUARIO.BODEGUERO && !editBodega) {
+      setEditError("Selecciona la bodega asignada");
+      return;
+    }
     setSavingEdit(true);
     setEditError("");
     try {
@@ -133,6 +162,8 @@ export default function UsuariosPage() {
           id_usuario: editando.id_usuario,
           tipo_usuario: editTipo,
           estado_usuario: editEstado,
+          id_bodega: editTipo === TIPOS_USUARIO.BODEGUERO ? Number(editBodega) : null,
+          requiere_2fa: editRequiere2fa,
         }),
       });
       const d = await r.json();
@@ -190,6 +221,11 @@ export default function UsuariosPage() {
     const correoValido = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correoTrimmed);
     if (!correoValido) {
       setNuevoError("El correo no es válido. Debe incluir \"@\" y un dominio (ej: nombre@empresa.com)");
+      return;
+    }
+
+    if (nuevoForm.tipo_usuario === TIPOS_USUARIO.BODEGUERO && !nuevoForm.id_bodega) {
+      setNuevoError("Selecciona la bodega asignada para el bodeguero");
       return;
     }
 
@@ -369,6 +405,16 @@ export default function UsuariosPage() {
                       >
                         {meta.label}
                       </span>
+                      {u.tipo_usuario === TIPOS_USUARIO.BODEGUERO && (
+                        <div style={{ fontSize: "0.7rem", color: "var(--muted)", marginTop: "0.25rem" }}>
+                          {u.nombre_bodega || "Sin bodega"}
+                        </div>
+                      )}
+                      {u.tipo_usuario === TIPOS_USUARIO.EMPLEADO && !u.requiere_2fa && (
+                        <div style={{ fontSize: "0.7rem", color: "var(--red)", marginTop: "0.25rem" }}>
+                          Sin 2FA
+                        </div>
+                      )}
                     </td>
                     <td style={{ ...s.td, textAlign: "center" }}>
                       <span
@@ -514,6 +560,55 @@ export default function UsuariosPage() {
                   })}
                 </div>
               </div>
+
+              {editTipo === TIPOS_USUARIO.BODEGUERO && (
+                <div style={s.field}>
+                  <label style={s.label}>Bodega asignada</label>
+                  <select
+                    style={s.input}
+                    value={editBodega}
+                    onChange={(e) => setEditBodega(e.target.value)}
+                  >
+                    <option value="">Selecciona una bodega…</option>
+                    {bodegas.map((b) => (
+                      <option key={b.id_bodega} value={b.id_bodega}>
+                        {b.nombre_bodega}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {editTipo === TIPOS_USUARIO.EMPLEADO && (
+                <div style={s.field}>
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.6rem",
+                      padding: "0.65rem 0.85rem",
+                      borderRadius: 10,
+                      border: "1px solid var(--border)",
+                      background: "var(--surface2)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={editRequiere2fa}
+                      onChange={(e) => setEditRequiere2fa(e.target.checked)}
+                    />
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: "0.88rem", color: "var(--text)" }}>
+                        Requiere verificación en dos pasos (2FA)
+                      </div>
+                      <div style={{ fontSize: "0.72rem", color: "var(--muted)" }}>
+                        Si lo desmarcas, este colaborador entra directo con usuario y contraseña, sin código por correo.
+                      </div>
+                    </div>
+                  </label>
+                </div>
+              )}
 
               {/* Estado */}
               <div style={s.field}>
@@ -718,6 +813,55 @@ export default function UsuariosPage() {
                 </select>
               </div>
 
+              {nuevoForm.tipo_usuario === TIPOS_USUARIO.BODEGUERO && (
+                <div style={s.field}>
+                  <label style={s.label}>Bodega asignada</label>
+                  <select
+                    style={s.input}
+                    value={nuevoForm.id_bodega}
+                    onChange={(e) => setNuevoForm((f) => ({ ...f, id_bodega: e.target.value }))}
+                  >
+                    <option value="">Selecciona una bodega…</option>
+                    {bodegas.map((b) => (
+                      <option key={b.id_bodega} value={b.id_bodega}>
+                        {b.nombre_bodega}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {nuevoForm.tipo_usuario === TIPOS_USUARIO.EMPLEADO && (
+                <div style={s.field}>
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.6rem",
+                      padding: "0.65rem 0.85rem",
+                      borderRadius: 10,
+                      border: "1px solid var(--border)",
+                      background: "var(--surface2)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={nuevoForm.requiere_2fa}
+                      onChange={(e) => setNuevoForm((f) => ({ ...f, requiere_2fa: e.target.checked }))}
+                    />
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: "0.88rem", color: "var(--text)" }}>
+                        Requiere verificación en dos pasos (2FA)
+                      </div>
+                      <div style={{ fontSize: "0.72rem", color: "var(--muted)" }}>
+                        Desmárcalo para que este colaborador entre directo con usuario y contraseña, sin código por correo.
+                      </div>
+                    </div>
+                  </label>
+                </div>
+              )}
+
               {nuevoError && <div style={s.errorBox}>{nuevoError}</div>}
             </div>
             <div style={s.modalFooter}>
@@ -828,6 +972,8 @@ function rolDescripcion(tipo: string): string {
       return "Acceso total: inventario, reportes, estadísticas, usuarios";
     case "EMPLEADO":
       return "Panel de ventas, facturación, productos y bodegas";
+    case "BODEGUERO":
+      return "Registra entradas y salidas en su bodega asignada";
     default:
       return "";
   }

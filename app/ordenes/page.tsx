@@ -10,7 +10,9 @@ type Cliente = {
   id_cliente: number;
   nombre: string;
   correo: string;
+  telefono: string | null;
   tipo_cliente: string;
+  estado_cliente: boolean;
 };
 
 type Producto = {
@@ -23,12 +25,21 @@ type Producto = {
   estado_producto: boolean;
 };
 
-type Bodega = { id_bodega: number; nombre_bodega: string };
+type Presentacion = {
+  id_presentacion: number;
+  id_producto: number;
+  nombre_presentacion: string;
+  factor_conversion: string;
+};
 
 type LineaOrden = {
   key: string;
   id_producto: string;
-  id_bodega: string;
+  // Presentación de mayoreo elegida (ej. "Caja de 24"), o "" para capturar
+  // la cantidad directamente en la unidad base del producto.
+  id_presentacion: string;
+  // Cantidad tal como la escribe el colaborador: en la presentación
+  // seleccionada, o en unidad base si no hay presentación.
   cantidad: string;
   precio_unitario: string;
 };
@@ -43,6 +54,9 @@ type DetalleOrdenRow = {
   cantidad: string;
   precio_unitario: string;
   subtotal: string;
+  id_presentacion: number | null;
+  nombre_presentacion: string | null;
+  cantidad_presentacion: string | null;
 };
 
 type OrdenListada = {
@@ -102,18 +116,33 @@ function nuevaLinea(): LineaOrden {
   return {
     key: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
     id_producto: "",
-    id_bodega: "",
+    id_presentacion: "",
     cantidad: "",
     precio_unitario: "",
   };
 }
 
+// Deuda con la que arranca un cliente nuevo creado desde Pedidos cuando el
+// colaborador no especifica otro límite. Puede ajustarse antes de guardar.
+const LIMITE_DEUDA_DEFECTO = "500";
+
+const clienteFormVacio = {
+  nombre: "",
+  telefono: "",
+  correo: "",
+  tipo_cliente: "MINORISTA",
+  limite_deuda: LIMITE_DEUDA_DEFECTO,
+};
+
 export default function OrdenesPage() {
   const usuario = useStaffSession();
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
-  const [bodegas, setBodegas] = useState<Bodega[]>([]);
   const [ordenes, setOrdenes] = useState<OrdenListada[]>([]);
+  // Presentaciones de mayoreo por producto, cargadas bajo demanda cuando el
+  // colaborador elige un producto en alguna línea (undefined = no cargadas
+  // todavía, [] = cargadas y sin presentaciones).
+  const [presentacionesPorProducto, setPresentacionesPorProducto] = useState<Record<number, Presentacion[]>>({});
   const [loadingLista, setLoadingLista] = useState(false);
   const [loadingSubmit, setLoadingSubmit] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -122,6 +151,14 @@ export default function OrdenesPage() {
   const [idCliente, setIdCliente] = useState("");
   const [notas, setNotas] = useState("");
   const [lineas, setLineas] = useState<LineaOrden[]>([nuevaLinea()]);
+
+  // Buscador de cliente con autocompletar (igual que en Deudas): no se
+  // despliega nada hasta que el colaborador escribe algo.
+  const [busquedaCliente, setBusquedaCliente] = useState("");
+  const [sugerenciasAbiertas, setSugerenciasAbiertas] = useState(false);
+  const [creandoCliente, setCreandoCliente] = useState(false);
+  const [formCliente, setFormCliente] = useState(clienteFormVacio);
+  const [guardandoCliente, setGuardandoCliente] = useState(false);
 
   const cargarOrdenes = useCallback(async () => {
     setLoadingLista(true);
@@ -147,9 +184,19 @@ export default function OrdenesPage() {
     if (!usuario) return;
     cargarClientes();
     fetch("/api/productos").then((r) => r.json()).then((d) => setProductos(d.productos || []));
-    fetch("/api/bodegas").then((r) => r.json()).then((d) => setBodegas(d.bodegas || []));
     cargarOrdenes();
   }, [usuario, cargarOrdenes, cargarClientes]);
+
+  const cargarPresentacionesSiFalta = useCallback(async (idProducto: number) => {
+    if (!idProducto || presentacionesPorProducto[idProducto] !== undefined) return;
+    try {
+      const r = await fetch(`/api/presentaciones?id_producto=${idProducto}`);
+      const d = await r.json();
+      setPresentacionesPorProducto((prev) => ({ ...prev, [idProducto]: d.presentaciones || [] }));
+    } catch {
+      setPresentacionesPorProducto((prev) => ({ ...prev, [idProducto]: [] }));
+    }
+  }, [presentacionesPorProducto]);
 
   // Si el colaborador deja la pestaña de Pedidos abierta y el dueño bloquea
   // (o desbloquea) a un cliente por deuda mientras tanto, esto refresca la
@@ -176,17 +223,100 @@ export default function OrdenesPage() {
     return m;
   }, [productos]);
 
+  const clientesFiltrados = useMemo(() => {
+    const q = busquedaCliente.trim().toLowerCase();
+    if (q === "") return [];
+    return clientes.filter((c) => c.nombre.toLowerCase().includes(q));
+  }, [clientes, busquedaCliente]);
+
+  const clienteSeleccionado = useMemo(
+    () => clientes.find((c) => String(c.id_cliente) === idCliente) || null,
+    [clientes, idCliente]
+  );
+
+  function seleccionarCliente(c: Cliente) {
+    setIdCliente(String(c.id_cliente));
+    setBusquedaCliente(c.nombre);
+    setSugerenciasAbiertas(false);
+    setError(null);
+    setOkMsg(null);
+  }
+
+  // Crea un cliente nuevo sin salir de Pedidos, reciclando el flujo de
+  // Deudas — pero sin la parte de deuda inicial (aquí solo interesa poder
+  // facturarle un pedido). Si no se toca el límite, queda en Q500 por
+  // defecto; se puede ajustar luego desde Deudas.
+  async function crearCliente(): Promise<Cliente | null> {
+    if (!formCliente.nombre.trim()) {
+      setError("El nombre del cliente nuevo es obligatorio");
+      return null;
+    }
+    const limiteInicial =
+      formCliente.limite_deuda.trim() === "" ? null : Number(formCliente.limite_deuda);
+    if (limiteInicial !== null && (!Number.isFinite(limiteInicial) || limiteInicial < 0)) {
+      setError("El límite de deuda debe ser un número mayor o igual a 0");
+      return null;
+    }
+
+    setGuardandoCliente(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/clientes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nombre: formCliente.nombre,
+          telefono: formCliente.telefono,
+          correo: formCliente.correo,
+          tipo_cliente: formCliente.tipo_cliente,
+          limite_deuda: limiteInicial,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "No se pudo crear el cliente");
+        return null;
+      }
+      const nuevo: Cliente = data.cliente;
+      setClientes((prev) => [...prev, nuevo].sort((a, b) => a.nombre.localeCompare(b.nombre)));
+      setCreandoCliente(false);
+      setFormCliente(clienteFormVacio);
+      return nuevo;
+    } catch {
+      setError("No se pudo conectar con el servidor");
+      return null;
+    } finally {
+      setGuardandoCliente(false);
+    }
+  }
+
+  function factorDeLinea(ln: LineaOrden): number {
+    if (!ln.id_presentacion) return 1;
+    const lista = presentacionesPorProducto[Number(ln.id_producto)] || [];
+    const pres = lista.find((p) => p.id_presentacion === Number(ln.id_presentacion));
+    return pres ? Number(pres.factor_conversion) || 1 : 1;
+  }
+
+  // Cantidad en unidad base del producto (convierte si la línea viene en
+  // una presentación de mayoreo, ej. 3 "Caja de 24" => 72).
+  function cantidadBaseDeLinea(ln: LineaOrden): number {
+    const q = Number(ln.cantidad);
+    if (!q || Number.isNaN(q)) return 0;
+    return q * factorDeLinea(ln);
+  }
+
   const totalBorrador = useMemo(() => {
     let t = 0;
     for (const ln of lineas) {
-      const q = Number(ln.cantidad);
+      const qBase = cantidadBaseDeLinea(ln);
       const pu = Number(ln.precio_unitario);
-      if (q > 0 && pu >= 0 && !Number.isNaN(q) && !Number.isNaN(pu)) {
-        t += Math.round(q * pu * 100) / 100;
+      if (qBase > 0 && pu >= 0 && !Number.isNaN(pu)) {
+        t += Math.round(qBase * pu * 100) / 100;
       }
     }
     return Math.round(t * 100) / 100;
-  }, [lineas]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lineas, presentacionesPorProducto]);
 
   if (!usuario) return <p style={{ padding: "2rem", color: "var(--muted)" }}>Cargando...</p>;
 
@@ -211,10 +341,11 @@ export default function OrdenesPage() {
     setLineas((prev) =>
       prev.map((ln) =>
         ln.key === key
-          ? { ...ln, id_producto: idStr, precio_unitario: p ? precioSugerido(p) : ln.precio_unitario }
+          ? { ...ln, id_producto: idStr, id_presentacion: "", precio_unitario: p ? precioSugerido(p) : ln.precio_unitario }
           : ln
       )
     );
+    if (id) cargarPresentacionesSiFalta(id);
     setError(null);
     setOkMsg(null);
   }
@@ -228,7 +359,9 @@ export default function OrdenesPage() {
         .filter((ln) => ln.id_producto && ln.cantidad && ln.precio_unitario)
         .map((ln) => ({
           id_producto: Number(ln.id_producto),
-          id_bodega: ln.id_bodega ? Number(ln.id_bodega) : null,
+          id_presentacion: ln.id_presentacion ? Number(ln.id_presentacion) : null,
+          // Cantidad tal como se capturó (en la presentación elegida, o en
+          // unidad base); el backend hace la conversión y elige la bodega.
           cantidad: Number(ln.cantidad),
           precio_unitario: Number(ln.precio_unitario),
         }));
@@ -248,6 +381,7 @@ export default function OrdenesPage() {
       }
       setOkMsg(`Orden #${data.id_orden} creada. Total: Q${Number(data.total).toFixed(2)}`);
       setIdCliente("");
+      setBusquedaCliente("");
       setNotas("");
       setLineas([nuevaLinea()]);
       await cargarOrdenes();
@@ -297,7 +431,7 @@ export default function OrdenesPage() {
             </div>
             <div>
               <p style={{ margin: 0, color: "var(--muted)", fontSize: "0.88rem" }}>
-                Crear una orden de compra. Los productos se registran con cantidades y precios; la bodega es opcional hasta confirmar la preparacion.
+                Crear una orden de compra. Los productos se registran con cantidades y precios; el sistema asigna automaticamente la bodega con mas existencias de cada producto (se muestra en Ordenes recientes).
               </p>
             </div>
           </div>
@@ -305,18 +439,181 @@ export default function OrdenesPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
             <div style={field}>
               <label style={label}>Cliente *</label>
-              <select
-                value={idCliente}
-                onChange={(e) => { setIdCliente(e.target.value); setError(null); setOkMsg(null); }}
-                style={input}
-              >
-                <option value="">-- Selecciona un cliente --</option>
-                {clientes.map((c) => (
-                  <option key={c.id_cliente} value={c.id_cliente}>
-                    {c.nombre} ({c.correo})
-                  </option>
-                ))}
-              </select>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <div style={{ position: "relative", flex: 1 }}>
+                  <input
+                    style={input}
+                    placeholder="Escribe el nombre para buscar..."
+                    value={busquedaCliente}
+                    onChange={(e) => {
+                      setBusquedaCliente(e.target.value);
+                      setIdCliente("");
+                      setSugerenciasAbiertas(true);
+                      setError(null);
+                      setOkMsg(null);
+                    }}
+                    onFocus={() => setSugerenciasAbiertas(true)}
+                    onBlur={() => setTimeout(() => setSugerenciasAbiertas(false), 150)}
+                  />
+                  {sugerenciasAbiertas && busquedaCliente.trim() !== "" && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: "100%",
+                        left: 0,
+                        right: 0,
+                        background: "var(--surface)",
+                        border: "1px solid var(--border)",
+                        borderRadius: 6,
+                        marginTop: 2,
+                        zIndex: 20,
+                        maxHeight: 200,
+                        overflowY: "auto",
+                        boxShadow: "0 4px 10px rgba(0,0,0,0.12)",
+                      }}
+                    >
+                      {clientesFiltrados.length === 0 && (
+                        <div style={{ padding: "0.5rem 0.7rem", fontSize: "0.85rem", color: "var(--muted)" }}>
+                          Sin resultados — prueba &quot;+ Cliente nuevo&quot;.
+                        </div>
+                      )}
+                      {clientesFiltrados.slice(0, 8).map((c) => (
+                        <div
+                          key={c.id_cliente}
+                          onMouseDown={() => seleccionarCliente(c)}
+                          style={{
+                            padding: "0.45rem 0.7rem",
+                            cursor: "pointer",
+                            fontSize: "0.85rem",
+                            borderBottom: "1px solid var(--border)",
+                          }}
+                        >
+                          {c.nombre} {c.correo ? `(${c.correo})` : ""} {c.estado_cliente ? "" : "(bloqueado)"}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCreandoCliente((v) => !v)}
+                  style={{
+                    padding: "0.3rem 0.8rem",
+                    borderRadius: 6,
+                    border: `1px solid ${accent}`,
+                    background: "transparent",
+                    color: accent,
+                    cursor: "pointer",
+                    fontSize: "0.85rem",
+                    fontWeight: 600,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  + Cliente nuevo
+                </button>
+              </div>
+
+              {creandoCliente && (
+                <div
+                  style={{
+                    padding: "0.75rem",
+                    border: "1px dashed var(--border)",
+                    borderRadius: 8,
+                    marginTop: "0.5rem",
+                  }}
+                >
+                  <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
+                    <input
+                      style={input}
+                      placeholder="Nombre *"
+                      value={formCliente.nombre}
+                      onChange={(e) => setFormCliente((f) => ({ ...f, nombre: e.target.value }))}
+                    />
+                    <input
+                      style={input}
+                      placeholder="Telefono"
+                      value={formCliente.telefono}
+                      onChange={(e) => setFormCliente((f) => ({ ...f, telefono: e.target.value }))}
+                    />
+                  </div>
+                  <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
+                    <input
+                      style={input}
+                      placeholder="Correo (opcional)"
+                      value={formCliente.correo}
+                      onChange={(e) => setFormCliente((f) => ({ ...f, correo: e.target.value }))}
+                    />
+                    <select
+                      style={input}
+                      value={formCliente.tipo_cliente}
+                      onChange={(e) => setFormCliente((f) => ({ ...f, tipo_cliente: e.target.value }))}
+                    >
+                      <option value="MINORISTA">Minorista</option>
+                      <option value="MAYORISTA">Mayorista</option>
+                    </select>
+                  </div>
+                  <div style={{ ...field, marginBottom: "0.5rem", maxWidth: 220 }}>
+                    <label style={label}>Limite de deuda</label>
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      style={input}
+                      placeholder="500"
+                      value={formCliente.limite_deuda}
+                      onChange={(e) => setFormCliente((f) => ({ ...f, limite_deuda: e.target.value }))}
+                    />
+                  </div>
+                  <p style={{ fontSize: "0.75rem", color: "var(--muted)", marginTop: -4, marginBottom: "0.5rem" }}>
+                    Por defecto queda con un limite de Q{LIMITE_DEUDA_DEFECTO} — puedes cambiarlo aqui o despues desde Deudas.
+                  </p>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const nuevo = await crearCliente();
+                        if (nuevo) seleccionarCliente(nuevo);
+                      }}
+                      disabled={guardandoCliente}
+                      style={{
+                        padding: "0.3rem 0.8rem",
+                        borderRadius: 6,
+                        background: "#52b788",
+                        color: "#fff",
+                        border: "none",
+                        cursor: guardandoCliente ? "default" : "pointer",
+                        fontSize: "0.85rem",
+                      }}
+                    >
+                      {guardandoCliente ? "Creando..." : "Crear cliente"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCreandoCliente(false);
+                        setFormCliente(clienteFormVacio);
+                      }}
+                      style={{
+                        padding: "0.3rem 0.8rem",
+                        borderRadius: 6,
+                        background: "var(--surface2)",
+                        border: "1px solid var(--border)",
+                        cursor: "pointer",
+                        fontSize: "0.85rem",
+                      }}
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {clienteSeleccionado && (
+                <p style={{ fontSize: "0.78rem", color: "var(--muted)", marginTop: 4 }}>
+                  {clienteSeleccionado.correo && <>{clienteSeleccionado.correo} · </>}
+                  {clienteSeleccionado.tipo_cliente === "MAYORISTA" ? "Mayorista" : "Minorista"}
+                </p>
+              )}
             </div>
 
             <div style={field}>
@@ -335,8 +632,11 @@ export default function OrdenesPage() {
               <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
                 {lineas.map((ln) => {
                   const pSel = ln.id_producto ? productoPorId.get(Number(ln.id_producto)) : undefined;
+                  const presentaciones = ln.id_producto ? presentacionesPorProducto[Number(ln.id_producto)] : undefined;
+                  const factor = factorDeLinea(ln);
+                  const qBase = cantidadBaseDeLinea(ln);
                   return (
-                    <div key={ln.key} style={{ display: "grid", gridTemplateColumns: "1fr 140px 100px 120px auto", gap: "0.5rem", alignItems: "end" }}>
+                    <div key={ln.key} style={{ display: "grid", gridTemplateColumns: "1fr 160px 100px 120px auto", gap: "0.5rem", alignItems: "end" }}>
                       <div style={field}>
                         <label style={label}>Producto</label>
                         <select value={ln.id_producto} onChange={(e) => onProductoChange(ln.key, e.target.value)} style={input}>
@@ -349,17 +649,24 @@ export default function OrdenesPage() {
                         </select>
                       </div>
                       <div style={field}>
-                        <label style={label}>Bodega (opc.)</label>
-                        <select value={ln.id_bodega} onChange={(e) => { actualizarLinea(ln.key, { id_bodega: e.target.value }); setError(null); setOkMsg(null); }} style={input}>
-                          <option value="">-- Sin asignar --</option>
-                          {bodegas.map((b) => (
-                            <option key={b.id_bodega} value={b.id_bodega}>{b.nombre_bodega}</option>
+                        <label style={label}>Presentacion (opc.)</label>
+                        <select
+                          value={ln.id_presentacion}
+                          onChange={(e) => { actualizarLinea(ln.key, { id_presentacion: e.target.value }); setError(null); setOkMsg(null); }}
+                          style={input}
+                          disabled={!ln.id_producto || !presentaciones || presentaciones.length === 0}
+                        >
+                          <option value="">-- Unidad base --</option>
+                          {(presentaciones || []).map((p) => (
+                            <option key={p.id_presentacion} value={p.id_presentacion}>
+                              {p.nombre_presentacion} (x{p.factor_conversion})
+                            </option>
                           ))}
                         </select>
                       </div>
                       <div style={field}>
                         <label style={label}>Cantidad</label>
-                        <input type="number" min="0.001" step="0.001" value={ln.cantidad} onChange={(e) => actualizarLinea(ln.key, { cantidad: e.target.value })} style={input} />
+                        <input type="number" min="0.001" step="1" value={ln.cantidad} onChange={(e) => actualizarLinea(ln.key, { cantidad: e.target.value })} style={input} />
                       </div>
                       <div style={field}>
                         <label style={label}>P. unitario</label>
@@ -388,6 +695,9 @@ export default function OrdenesPage() {
                       {pSel && (
                         <span style={{ gridColumn: "1 / -1", fontSize: "0.78rem", color: "var(--muted)" }}>
                           Unidad: {pSel.unidad_medida}
+                          {factor > 1 && qBase > 0 && (
+                            <> · Equivale a {qBase} {pSel.unidad_medida}</>
+                          )}
                         </span>
                       )}
                     </div>
@@ -498,9 +808,18 @@ export default function OrdenesPage() {
                             <span style={{ color: "var(--text)" }}>{pr.codigo_producto}</span>{" "}
                             x {Number(pr.cantidad).toFixed(3)} @ Q{Number(pr.precio_unitario).toFixed(2)}{" "}
                             {"->"} Q{Number(pr.subtotal).toFixed(2)}
-                            {pr.nombre_bodega && (
-                              <span style={{ color: "var(--muted)", fontSize: "0.75rem" }}> [{pr.nombre_bodega}]</span>
+                            {pr.nombre_presentacion && pr.cantidad_presentacion && (
+                              <span style={{ color: "var(--muted)", fontSize: "0.75rem" }}>
+                                {" "}({Number(pr.cantidad_presentacion).toFixed(0)} × {pr.nombre_presentacion})
+                              </span>
                             )}
+                            <div style={{ fontSize: "0.75rem", color: "var(--muted)", marginTop: "0.1rem" }}>
+                              {pr.nombre_bodega ? (
+                                <>Sacar de: <strong style={{ color: accent }}>{pr.nombre_bodega}</strong></>
+                              ) : (
+                                <span style={{ color: "var(--red)" }}>Sin bodega con stock registrado</span>
+                              )}
+                            </div>
                           </div>
                         ))}
                       </td>
