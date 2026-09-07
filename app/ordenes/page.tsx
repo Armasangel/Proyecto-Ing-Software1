@@ -431,7 +431,7 @@ export default function OrdenesPage() {
             </div>
             <div>
               <p style={{ margin: 0, color: "var(--muted)", fontSize: "0.88rem" }}>
-                Crear una orden de compra. Los productos se registran con cantidades y precios; el sistema asigna automaticamente la bodega con mas existencias de cada producto (se muestra en "Ordenes recientes").
+                Crear una orden de compra. Los productos se registran con cantidades y precios; el sistema asigna automaticamente la bodega con mas existencias de cada producto (se muestra en Ordenes recientes).
               </p>
             </div>
           </div>
