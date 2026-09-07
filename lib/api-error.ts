@@ -30,3 +30,15 @@ export function validationError(message: string): NextResponse {
 export function unauthorizedError(): NextResponse {
   return NextResponse.json({ error: "No autorizado" }, { status: 403 });
 }
+//exportar el tooManyRequestsError para usarlo en rateLimit.ts
+export function tooManyRequestsError(retryAfter: number): NextResponse {
+  return NextResponse.json(
+    { error: "Demasiadas solicitudes, intente nuevamente más tarde" },
+    {
+      status: 429,
+      headers: {
+        "Retry-After": retryAfter.toString(),
+      },
+    }
+  );
+}

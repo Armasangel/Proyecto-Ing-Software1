@@ -78,8 +78,9 @@ export async function POST(req: NextRequest) {
       nombre: string;
       correo: string;
       tipo_usuario: string;
+      id_bodega: number | null;
     }>(
-      `SELECT id_usuario, nombre, correo, tipo_usuario FROM usuario WHERE id_usuario = $1 AND estado_usuario = TRUE`,
+      `SELECT id_usuario, nombre, correo, tipo_usuario, id_bodega FROM usuario WHERE id_usuario = $1 AND estado_usuario = TRUE`,
       [idUsuario]
     );
 
