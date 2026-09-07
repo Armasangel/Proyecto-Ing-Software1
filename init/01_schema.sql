@@ -8,7 +8,8 @@
 --  sobre una base vacía.
 --
 --  Se unificaron aquí los antiguos scripts 02_ordenes, 03_facturacion,
---  04_detalle_venta, 05_codigo_verificacion, 03_indices y 03_datos_venta.
+--  04_detalle_venta, 05_codigo_verificacion, 03_indices, 03_datos_venta,
+--  02_add_fecha_caducidad y 03_add_requiere_2fa.
 
 -- CATEGORIA
 CREATE TABLE categoria (
@@ -102,6 +103,12 @@ CREATE TABLE usuario (
     contrasena_hash   VARCHAR(255)    NOT NULL,
     tipo_usuario      VARCHAR(20)     NOT NULL CHECK (tipo_usuario IN ('DUENO', 'EMPLEADO', 'BODEGUERO')),
     estado_usuario    BOOLEAN         NOT NULL DEFAULT TRUE,
+    -- Exime a colaboradores puntuales del código de verificación por correo
+    -- (2FA) sin tocar su tipo_usuario. Por defecto TRUE para no bajar la
+    -- seguridad de nadie. Solo tiene efecto real sobre usuarios EMPLEADO:
+    -- DUENO y BODEGUERO nunca pasan por 2FA sin importar este valor (ver
+    -- app/api/login/route.ts).
+    requiere_2fa      BOOLEAN         NOT NULL DEFAULT TRUE,
     -- Bodega fija asignada (obligatoria solo para BODEGUERO). La FK hacia
     -- bodega(id_bodega) se agrega más abajo con ALTER TABLE porque la tabla
     -- bodega todavía no existe en este punto del script.
@@ -372,6 +379,18 @@ INSERT INTO usuario (nombre, correo, telefono, contrasena_hash, tipo_usuario) VA
 
 INSERT INTO usuario (nombre, correo, telefono, contrasena_hash, tipo_usuario, id_bodega) VALUES
   ('Luis Bodeguero', 'bodega@tienda.com', '50208889999', '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm', 'BODEGUERO', 1);
+
+-- Colaborador de prueba eximido de 2FA (para probar el flujo de login sin
+-- código de verificación por correo).
+INSERT INTO usuario (nombre, correo, telefono, contrasena_hash, tipo_usuario, requiere_2fa)
+VALUES (
+  'Empleado Sin 2FA',
+  'sin2fa@tienda.com',
+  '50205556666',
+  '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm',
+  'EMPLEADO',
+  FALSE
+);
 
 INSERT INTO producto (codigo_producto, nombre_producto, precio_unitario, precio_mayoreo, unidad_medida, id_categoria, id_marca)
 VALUES
