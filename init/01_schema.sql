@@ -291,13 +291,26 @@ CREATE TABLE detalle_orden (
     id_detalle      SERIAL          PRIMARY KEY,
     id_orden        INT             NOT NULL,
     id_producto     INT             NOT NULL,
+    -- Bodega de la que se debería surtir esta línea. Ya no la elige el
+    -- colaborador: el backend la asigna automáticamente a la bodega con
+    -- mayor cantidad_disponible del producto al crear la orden (ver
+    -- POST /api/ordenes). Se conserva como columna normal porque el
+    -- bodeguero la usa para saber qué pedidos le corresponden.
     id_bodega       INT,
     cantidad        NUMERIC(12,3)   NOT NULL,
     precio_unitario NUMERIC(10,2)   NOT NULL,
     subtotal        NUMERIC(12,2)   NOT NULL,
+    -- Si el colaborador capturó la línea en una presentación de mayoreo
+    -- (ej. "Caja de 24", creada por el dueño), guardamos aquí la
+    -- presentación y la cantidad en esa presentación como dato
+    -- informativo; `cantidad` arriba siempre queda en unidad base del
+    -- producto (igual que en kardex).
+    id_presentacion       INT,
+    cantidad_presentacion NUMERIC(12,3),
     CONSTRAINT fk_do_orden    FOREIGN KEY (id_orden)    REFERENCES orden(id_orden) ON DELETE CASCADE,
     CONSTRAINT fk_do_producto FOREIGN KEY (id_producto) REFERENCES producto(id_producto),
-    CONSTRAINT fk_do_bodega   FOREIGN KEY (id_bodega)   REFERENCES bodega(id_bodega)
+    CONSTRAINT fk_do_bodega   FOREIGN KEY (id_bodega)   REFERENCES bodega(id_bodega),
+    CONSTRAINT fk_do_presentacion FOREIGN KEY (id_presentacion) REFERENCES presentacion_producto(id_presentacion)
 );
 
 --  VISTA: deudores en tiempo real (sin tabla redundante)

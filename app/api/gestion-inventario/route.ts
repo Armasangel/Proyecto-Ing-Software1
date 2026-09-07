@@ -1,15 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
-import { isDuenoTipo } from "@/lib/roles";
+import { isStaffTipo } from "@/lib/roles";
 
 /**
  * GET /api/gestion-inventario
- * Stock por bodega + producto (para pantalla "Gestión inventario" — solo dueño).
+ * Stock por bodega + producto. Antes solo dejaba pasar al dueño, pero la
+ * pantalla de Ventas (colaborador) también la consulta para mostrar el
+ * disponible en bodega al armar una venta — con ese guard esa llamada
+ * siempre recibía 403 y el front caía en `stock: []`, por eso el disponible
+ * salía en 0 aunque sí hubiera existencias. Se amplía a todo el staff
+ * (dueño y colaborador); las subrutas de escritura (ajuste, transferencia,
+ * stock-minimo) siguen siendo solo del dueño.
  */
 export async function GET(req: NextRequest) {
   const usuario = getUsuarioFromRequest(req);
-  if (!usuario || !isDuenoTipo(usuario.tipo_usuario)) {
+  if (!usuario || !isStaffTipo(usuario.tipo_usuario)) {
     return NextResponse.json({ error: "No autorizado" }, { status: 403 });
   }
 
