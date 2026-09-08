@@ -194,4 +194,71 @@ describe("FacturacionPage", () => {
     await waitFor(() => expect(screen.getByText("Cliente 15")).toBeInTheDocument());
     expect(screen.getByText("1 / 1")).toBeInTheDocument();
   });
+
+  // DEV-118: vista de detalle/impresión de una factura ya emitida.
+  it("shows a 'Ver factura' button for already-invoiced sales, and opens the detail on click", async () => {
+    setupServerVentas([ventaBase()]);
+    server.use(
+      rest.get("/api/facturacion/1", (_req, res, ctx) =>
+        res(
+          ctx.json({
+            factura: {
+              id_venta: 1,
+              fecha_venta: "2026-07-01T10:00:00.000Z",
+              total: 100,
+              estado_venta: "CONFIRMADO",
+              nombre: "Carlos Ruiz",
+              correo: "carlos@email.com",
+              id_factura: 1,
+              numero_factura: "FACT-000001",
+              nombre_cliente: "Carlos Ruiz",
+              nit_cliente: "CF",
+              total_factura: 100,
+              productos: [
+                {
+                  id_detalle: 1,
+                  codigo_producto: "P-01",
+                  nombre_producto: "Arroz 5lb",
+                  cantidad: 2,
+                  precio_unitario: 25,
+                  subtotal: 50,
+                },
+              ],
+            },
+          })
+        )
+      )
+    );
+    const user = userEvent.setup();
+    render(<FacturacionPage />);
+
+    await screen.findByText("Carlos Ruiz");
+    // No debe haber botón "Emitir" para una venta ya facturada.
+    expect(screen.queryByRole("button", { name: "Emitir" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Ver factura" }));
+
+    expect(await screen.findByText("Factura FACT-000001")).toBeInTheDocument();
+    expect(screen.getByText("Arroz 5lb")).toBeInTheDocument();
+    expect(screen.getByText("Total: Q100.00")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Cerrar" }));
+    expect(screen.queryByText("Factura FACT-000001")).not.toBeInTheDocument();
+  });
+
+  it("shows an error message if the invoice detail fails to load", async () => {
+    setupServerVentas([ventaBase()]);
+    server.use(
+      rest.get("/api/facturacion/1", (_req, res, ctx) =>
+        res(ctx.status(404), ctx.json({ error: "Venta no encontrada" }))
+      )
+    );
+    const user = userEvent.setup();
+    render(<FacturacionPage />);
+
+    await screen.findByText("Carlos Ruiz");
+    await user.click(screen.getByRole("button", { name: "Ver factura" }));
+
+    expect(await screen.findByText("Venta no encontrada")).toBeInTheDocument();
+  });
 });
