@@ -76,6 +76,8 @@ function num(v: string | number | unknown): number {
 function buildHistorialParams(opts: {
   q: string;
   periodo: string;
+  fechaDesde: string;
+  fechaHasta: string;
   idProducto: number | null;
   idCliente: number | null;
   idProveedor: number | null;
@@ -90,6 +92,8 @@ function buildHistorialParams(opts: {
   const sp = new URLSearchParams();
   if (opts.q.trim()) sp.set("q", opts.q.trim());
   if (opts.periodo) sp.set("periodo", opts.periodo);
+  if (opts.fechaDesde) sp.set("fecha_desde", opts.fechaDesde);
+  if (opts.fechaHasta) sp.set("fecha_hasta", opts.fechaHasta);
   if (opts.idProducto != null) sp.set("id_producto", String(opts.idProducto));
   if (opts.idCliente != null) sp.set("id_cliente", String(opts.idCliente));
   if (opts.idProveedor != null) sp.set("id_proveedor", String(opts.idProveedor));
@@ -117,6 +121,8 @@ export default function HistorialVentasPage() {
   const [panelFiltros, setPanelFiltros] = useState(false);
 
   const [periodo, setPeriodo] = useState("");
+  const [fechaDesde, setFechaDesde] = useState("");
+  const [fechaHasta, setFechaHasta] = useState("");
   const [idProducto, setIdProducto] = useState<number | null>(null);
   const [idCliente, setIdCliente] = useState<number | null>(null);
   const [idProveedor, setIdProveedor] = useState<number | null>(null);
@@ -155,8 +161,8 @@ export default function HistorialVentasPage() {
 
   const structuralKey = useMemo(
     () =>
-      `${debouncedQ}|${periodo}|${idProducto ?? ""}|${idCliente ?? ""}|${idProveedor ?? ""}`,
-    [debouncedQ, periodo, idProducto, idCliente, idProveedor]
+      `${debouncedQ}|${periodo}|${fechaDesde}|${fechaHasta}|${idProducto ?? ""}|${idCliente ?? ""}|${idProveedor ?? ""}`,
+    [debouncedQ, periodo, fechaDesde, fechaHasta, idProducto, idCliente, idProveedor]
   );
 
   const fetchHistorial = useCallback(
@@ -168,6 +174,8 @@ export default function HistorialVentasPage() {
       const params = buildHistorialParams({
         q: debouncedQ,
         periodo,
+        fechaDesde,
+        fechaHasta,
         idProducto,
         idCliente,
         idProveedor,
@@ -192,6 +200,8 @@ export default function HistorialVentasPage() {
     [
       debouncedQ,
       periodo,
+      fechaDesde,
+      fechaHasta,
       idProducto,
       idCliente,
       idProveedor,
@@ -491,22 +501,86 @@ export default function HistorialVentasPage() {
             <div style={s.drawerBody}>
               <label style={s.label}>Periodo</label>
               <div style={s.btnRow}>
-                {PERIODOS.map((p) => (
-                  <button
-                    key={p.value || "all"}
-                    type="button"
-                    onClick={() => setPeriodo(p.value)}
-                    style={{
-                      ...s.chip,
-                      background: periodo === p.value ? ACCENT_SOFT : "var(--surface2)",
-                      borderColor: periodo === p.value ? ACCENT : "var(--border)",
-                      color: periodo === p.value ? "#b7e4c7" : "var(--text)",
-                    }}
-                  >
-                    {p.label}
-                  </button>
-                ))}
+                {PERIODOS.map((p) => {
+                  const fechaActiva = Boolean(fechaDesde || fechaHasta);
+                  const disabled = fechaActiva && p.value !== "";
+                  return (
+                    <button
+                      key={p.value || "all"}
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => {
+                        setFechaDesde("");
+                        setFechaHasta("");
+                        setPeriodo(p.value);
+                      }}
+                      style={{
+                        ...s.chip,
+                        background: periodo === p.value ? ACCENT_SOFT : "var(--surface2)",
+                        borderColor: periodo === p.value ? ACCENT : "var(--border)",
+                        color: periodo === p.value ? "#b7e4c7" : "var(--text)",
+                        opacity: disabled ? 0.45 : 1,
+                        cursor: disabled ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      {p.label}
+                    </button>
+                  );
+                })}
               </div>
+
+              <label style={s.label}>Rango de fechas</label>
+              <div
+                style={{
+                  display: "flex",
+                  gap: "0.5rem",
+                  alignItems: "flex-end",
+                  opacity: periodo ? 0.45 : 1,
+                }}
+              >
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                  <label htmlFor="fecha-desde" style={s.dateLabel}>Desde</label>
+                  <input
+                    id="fecha-desde"
+                    type="date"
+                    value={fechaDesde}
+                    disabled={Boolean(periodo)}
+                    max={fechaHasta || undefined}
+                    onChange={(e) => {
+                      setPeriodo("");
+                      setFechaDesde(e.target.value);
+                    }}
+                    style={s.dateInput}
+                  />
+                </div>
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                  <label htmlFor="fecha-hasta" style={s.dateLabel}>Hasta</label>
+                  <input
+                    id="fecha-hasta"
+                    type="date"
+                    value={fechaHasta}
+                    disabled={Boolean(periodo)}
+                    min={fechaDesde || undefined}
+                    onChange={(e) => {
+                      setPeriodo("");
+                      setFechaHasta(e.target.value);
+                    }}
+                    style={s.dateInput}
+                  />
+                </div>
+              </div>
+              {(fechaDesde || fechaHasta) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFechaDesde("");
+                    setFechaHasta("");
+                  }}
+                  style={s.linkBtn}
+                >
+                  Quitar filtro de fechas
+                </button>
+              )}
 
               <label style={s.label}>Total venta (Q)</label>
               {!rangosMontosListos ? (
@@ -874,6 +948,21 @@ const s: Record<string, CSSProperties> = {
     color: "var(--muted)",
   },
   rangeVal: { fontVariantNumeric: "tabular-nums" },
+  dateLabel: {
+    fontSize: "0.72rem",
+    color: "var(--muted)",
+  },
+  dateInput: {
+    background: "var(--surface2)",
+    border: "1px solid var(--border)",
+    borderRadius: 10,
+    padding: "0.55rem 0.7rem",
+    color: "var(--text)",
+    fontSize: "0.85rem",
+    fontFamily: "var(--font-body)",
+    colorScheme: "dark",
+    outline: "none",
+  },
   btnPicker: {
     width: "100%",
     textAlign: "left",
