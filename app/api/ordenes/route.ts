@@ -27,15 +27,19 @@ export async function GET(req: NextRequest) {
   const page = Math.max(1, Number(searchParams.get("page") ?? "1"));
   const limit = Math.min(100, Math.max(1, Number(searchParams.get("limit") ?? "50")));
   const offset = (page - 1) * limit;
-  const estadoFilter = searchParams.get("estado");
 
   try {
-    const countResult = await pool.query(`SELECT COUNT(*)::int AS total FROM orden`);
+    const estadoFilter = searchParams.get("estado");
+    const estadoFiltrado = estadoFilter && ESTADOS_ORDEN.includes(estadoFilter as typeof ESTADOS_ORDEN[number]);
+
+    const countResult = estadoFiltrado
+      ? await pool.query(`SELECT COUNT(*)::int AS total FROM orden WHERE estado = $1`, [estadoFilter])
+      : await pool.query(`SELECT COUNT(*)::int AS total FROM orden`);
     const total: number = countResult.rows[0]?.total ?? 0;
 
     let whereClause = "";
     const params: unknown[] = [limit, offset];
-    if (estadoFilter && ESTADOS_ORDEN.includes(estadoFilter as typeof ESTADOS_ORDEN[number])) {
+    if (estadoFiltrado) {
       whereClause = "WHERE o.estado = $3";
       params.push(estadoFilter);
     }

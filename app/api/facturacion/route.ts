@@ -19,13 +19,13 @@ export async function GET(req: NextRequest) {
         v.fecha_venta,
         v.total,
         v.estado_venta,
-        u.nombre,
-        u.correo,
+        c.nombre,
+        c.correo,
         f.id_factura,
         f.numero_factura,
         f.total_factura
       FROM venta v
-      JOIN cliente u ON u.id_cliente = v.id_cliente
+      JOIN cliente c ON c.id_cliente = v.id_cliente
       LEFT JOIN factura f ON f.id_venta = v.id_venta
       ORDER BY v.fecha_venta DESC
     `);

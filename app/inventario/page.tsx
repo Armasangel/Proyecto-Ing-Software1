@@ -550,7 +550,7 @@ export default function InventarioPage() {
                         <td style={s.td}>{r.bajo_minimo ? <span style={s.badgeWarn}>Bajo mínimo</span> : <span style={s.badgeOk}>OK</span>}</td>
                         <td style={{ ...s.td, fontSize: "0.82rem", color: "var(--muted)" }}>{new Date(r.ultima_actualizacion).toLocaleString("es-GT")}</td>
                         <td style={s.td}>
-                          <button type="button" style={{ ...s.btnPrimary, color: "#0000000" }} onClick={() => void patchMinimo(r.id_bodega, r.id_producto)}>Guardar</button>
+                          <button type="button" style={{ ...s.btnPrimary, color: "#000000" }} onClick={() => void patchMinimo(r.id_bodega, r.id_producto)}>Guardar</button>
                         </td>
                       </tr>
                     );

@@ -9,8 +9,6 @@ import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { isStaffTipo } from "@/lib/roles";
 
-// ... (tipos y helpers idénticos al archivo original / fix bug #3)
-
 const ESTADOS_VENTA = ["PENDIENTE", "CONFIRMADO", "ENTREGADO", "PAGADO"] as const;
 const TIPOS_VENTA = ["MINORISTA", "MAYORISTA"] as const;
 const TIPOS_ENTREGA = ["EN_TIENDA", "DOMICILIO"] as const;

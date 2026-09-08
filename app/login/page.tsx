@@ -285,31 +285,6 @@ export default function LoginPage() {
               </div>
             </form>
           )}
-
-          {/* Usuarios de prueba */}
-          {paso === "credenciales" && (
-            <div className="mt-5 p-4 bg-white rounded-card border border-[var(--border)]">
-              <p className="text-ink-muted text-[0.78rem] mb-2 m-0">Usuarios de prueba (password123):</p>
-              <div className="flex gap-2 flex-wrap">
-                {[
-                  { label: "Dueño (entra directo)", correo: "dueno@tienda.com" },
-                  { label: "Colaborador (2FA por correo)", correo: "armasangel193@gmail.com"},
-                  { label : "Bodega", correo : "bodega@tienda.com"},
-                  { label : "colaborador sin 2FA", correo :"sin2fa@tienda.com"},
-                ].map((u) => (
-                  <button
-                    key={u.correo}
-                    type="button"
-                    onClick={() => setUsername(u.correo)}
-                    className="bg-cream border border-[var(--border)] rounded-control px-3 py-1.5 text-ink text-[0.78rem] transition-colors hover:bg-market-50 hover:border-market/30"
-                  >
-                    {u.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
         </div>
       </div>
     </main>

@@ -28,7 +28,9 @@ export type IconName =
   | "transfer"
   | "setting"
   | "close"
-  | "ticket";
+  | "ticket"
+  | "hourglass"
+  | "truck";
 
 type Props = {
   name: IconName;

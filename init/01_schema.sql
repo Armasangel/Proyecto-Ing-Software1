@@ -206,11 +206,16 @@ CREATE TABLE detalle_venta (
     id_detalle_venta    SERIAL          PRIMARY KEY,
     id_venta            INT             NOT NULL,
     id_producto         INT             NOT NULL,
+    -- Bodega de la que salió el producto en esta línea. Necesaria para poder
+    -- restaurar el stock correctamente al deshacer/anular una venta
+    -- (migración 04). NULL solo para ventas registradas antes de la migración.
+    id_bodega           INT,
     cantidad            NUMERIC(12,3)   NOT NULL,
     precio_unitario     NUMERIC(10,2)   NOT NULL,
     subtotal            NUMERIC(12,2)   NOT NULL,
     CONSTRAINT fk_dv_venta    FOREIGN KEY (id_venta)    REFERENCES venta(id_venta) ON DELETE CASCADE,
-    CONSTRAINT fk_dv_producto FOREIGN KEY (id_producto) REFERENCES producto(id_producto)
+    CONSTRAINT fk_dv_producto FOREIGN KEY (id_producto) REFERENCES producto(id_producto),
+    CONSTRAINT fk_dv_bodega   FOREIGN KEY (id_bodega)   REFERENCES bodega(id_bodega)
 );
 
 -- PAGO
@@ -271,6 +276,21 @@ CREATE TABLE deuda_producto (
     CONSTRAINT fk_dp_deuda    FOREIGN KEY (id_deuda)    REFERENCES deuda(id_deuda) ON DELETE CASCADE,
     CONSTRAINT fk_dp_producto FOREIGN KEY (id_producto) REFERENCES producto(id_producto)
 );
+
+-- PAGO_DEUDA (abonos/pagos parciales sobre una deuda, migración 02)
+CREATE TABLE pago_deuda (
+    id_pago         SERIAL          PRIMARY KEY,
+    id_deuda        INT             NOT NULL,
+    monto           NUMERIC(12,2)   NOT NULL CHECK (monto > 0),
+    fecha_pago      TIMESTAMP       NOT NULL DEFAULT NOW(),
+    id_usuario      INT             NOT NULL,
+    metodo_pago     VARCHAR(30),
+    nota            VARCHAR(200),
+    CONSTRAINT fk_pago_deuda    FOREIGN KEY (id_deuda)   REFERENCES deuda(id_deuda) ON DELETE CASCADE,
+    CONSTRAINT fk_pago_usuario  FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario)
+);
+
+CREATE INDEX idx_pago_deuda_id_deuda ON pago_deuda(id_deuda);
 
 -- ORDEN (órdenes de compra)
 CREATE TABLE orden (
@@ -337,6 +357,15 @@ CREATE TABLE login_intento (
     intentos        INT             NOT NULL DEFAULT 0,
     bloqueado_hasta TIMESTAMP,
     ultimo_intento  TIMESTAMP       NOT NULL DEFAULT NOW()
+);
+
+-- API_RATE_LIMIT (contador genérico de rate limiting, migración 03)
+-- Ventana fija; se usa primero en /api/usuarios y es reutilizable para
+-- cualquier endpoint futuro (ver lib/api-rate-limit.ts).
+CREATE TABLE api_rate_limit (
+    clave           VARCHAR(150)    PRIMARY KEY,
+    contador        INT             NOT NULL DEFAULT 0,
+    ventana_inicio  TIMESTAMP       NOT NULL DEFAULT NOW()
 );
 
 -- ──────────────────────────────────────────────────────────────────────────

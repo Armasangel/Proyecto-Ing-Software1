@@ -1,0 +1,29 @@
+# docker-compose.prod.yml — override de producción.
+# Uso:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# Cambia el servicio `app` para que use la imagen compilada (target
+# `production` del Dockerfile) y sirva con `next start`, sin montar el
+# source como volumen ni ejecutar `next dev`. La base de datos, pgadmin y el
+# respaldo siguen idénticos al compose base.
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    environment:
+      - NODE_ENV=production
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET no está definido — copia .env.example a .env}
+      - DATABASE_URL=postgresql://dsm_user:dsm_password@db:5432/deposito_san_miguel
+      - GMAIL_USER=${GMAIL_USER}
+      - GMAIL_APP_PASSWORD=${GMAIL_APP_PASSWORD}
+    # `!reset` anula los volúmenes heredados del compose base: sin
+    # bind-mount del source ni de node_modules/.next — el código y el bundle
+    # ya vienen dentro de la imagen compilada.
+    volumes: !reset []
+    restart: unless-stopped
+    # Sobrescribe el `command: npm run dev` del compose base: en producción
+    # se sirve el bundle compilado con next start.
+    command: !reset ["npm", "start"]

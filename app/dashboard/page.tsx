@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { StaffShell } from "@/components/StaffShell";
 import { useStaffSession } from "@/hooks/useStaffSession";
-import { Icon, type IconName } from "@/components/Icon";
+import { Icon } from "@/components/Icon";
 
 export default function DashboardPage() {
   const usuario = useStaffSession();
@@ -111,7 +111,7 @@ export default function DashboardPage() {
               className={`${stat.cardBg} rounded-card p-5 border border-[var(--border)] flex flex-col gap-2 shadow-warm transition-transform hover:-translate-y-0.5`}
             >
               <div className={`${stat.iconBg} w-11 h-11 rounded-control flex items-center justify-center mb-1`}>
-                <Icon name={stat.icon as IconName} variant="dark" size={24} />
+                <Icon name={stat.icon} variant="dark" size={24} />
               </div>
               <div className={`font-head text-[2rem] font-extrabold leading-none ${stat.valueClass}`}>
                 {stat.value.toLocaleString("es-GT")}
