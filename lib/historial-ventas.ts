@@ -75,6 +75,34 @@ const PERIODO_INTERVAL: Record<string, string> = {
   year: "365 days",
 };
 
+const FECHA_ISO_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Valida y normaliza una fecha `YYYY-MM-DD` (calendarcheck incluido). Devuelve la fecha normalizada o null. */
+export function parseHistorialFecha(raw: string): string | null {
+  const t = raw.trim();
+  if (!FECHA_ISO_RE.test(t)) return null;
+  const [yStr, mStr, dStr] = t.split("-");
+  const y = Number(yStr);
+  const m = Number(mStr);
+  const d = Number(dStr);
+  if (y < 100 || m < 1 || m > 12) return null;
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) {
+    return null;
+  }
+  return t;
+}
+
+/** Devuelve el día siguiente en formato `YYYY-MM-DD` (para acotar el "hasta" como fin de día). */
+export function diaSiguienteFechaIso(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + 1));
+  const y2 = String(dt.getUTCFullYear()).padStart(4, "0");
+  const m2 = String(dt.getUTCMonth() + 1).padStart(2, "0");
+  const d2 = String(dt.getUTCDate()).padStart(2, "0");
+  return `${y2}-${m2}-${d2}`;
+}
+
 export function historialVentasPeriodosValidos(): string[] {
   return Object.keys(PERIODO_INTERVAL);
 }
@@ -116,6 +144,22 @@ export function validateHistorialQueryParams(
     return "periodo inválido (use day, week, month o year)";
   }
 
+  const rawDesde = sp.get("fecha_desde");
+  const desde = rawDesde !== null && rawDesde.trim() !== "" ? parseHistorialFecha(rawDesde) : null;
+  if (rawDesde !== null && rawDesde.trim() !== "" && desde === null) {
+    return "fecha_desde inválida (use YYYY-MM-DD)";
+  }
+
+  const rawHasta = sp.get("fecha_hasta");
+  const hasta = rawHasta !== null && rawHasta.trim() !== "" ? parseHistorialFecha(rawHasta) : null;
+  if (rawHasta !== null && rawHasta.trim() !== "" && hasta === null) {
+    return "fecha_hasta inválida (use YYYY-MM-DD)";
+  }
+
+  if (desde !== null && hasta !== null && desde > hasta) {
+    return "fecha_desde no puede ser mayor que fecha_hasta";
+  }
+
   return null;
 }
 
@@ -154,6 +198,25 @@ export function buildHistorialVentasWhere(
     parts.push(
       `v.fecha_venta >= NOW() - INTERVAL '${PERIODO_INTERVAL[periodo]}'`
     );
+  }
+
+  const rawDesde = sp.get("fecha_desde");
+  if (rawDesde !== null && rawDesde.trim() !== "") {
+    const desde = parseHistorialFecha(rawDesde);
+    if (desde) {
+      parts.push(`v.fecha_venta >= $${values.length + 1}`);
+      values.push(`${desde} 00:00:00`);
+    }
+  }
+
+  const rawHasta = sp.get("fecha_hasta");
+  if (rawHasta !== null && rawHasta.trim() !== "") {
+    const hasta = parseHistorialFecha(rawHasta);
+    if (hasta) {
+      // Fin de día inclusivo: `fecha_hasta` se cubre con `< (hasta + 1 día) 00:00:00`.
+      parts.push(`v.fecha_venta < $${values.length + 1}`);
+      values.push(`${diaSiguienteFechaIso(hasta)} 00:00:00`);
+    }
   }
 
   if (!options.omitAmountRange) {

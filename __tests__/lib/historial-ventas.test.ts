@@ -7,6 +7,8 @@ import {
   validateHistorialQueryParams,
   historialVentasLikePattern,
   buildHistorialVentasWhere,
+  parseHistorialFecha,
+  diaSiguienteFechaIso,
 } from "@/lib/historial-ventas";
 
 function sp(params: Record<string, string>): URLSearchParams {
@@ -123,6 +125,52 @@ describe("historialVentasPeriodosValidos", () => {
   });
 });
 
+describe("parseHistorialFecha", () => {
+  it("parses a valid ISO date", () => {
+    expect(parseHistorialFecha("2026-01-15")).toBe("2026-01-15");
+  });
+
+  it("trims whitespace", () => {
+    expect(parseHistorialFecha("  2026-01-15  ")).toBe("2026-01-15");
+  });
+
+  it("rejects non-ISO formats", () => {
+    expect(parseHistorialFecha("15/01/2026")).toBeNull();
+    expect(parseHistorialFecha("2026-1-1")).toBeNull();
+    expect(parseHistorialFecha("abc")).toBeNull();
+    expect(parseHistorialFecha("")).toBeNull();
+  });
+
+  it("rejects impossible calendar dates", () => {
+    expect(parseHistorialFecha("2026-02-30")).toBeNull();
+    expect(parseHistorialFecha("2026-13-01")).toBeNull();
+    expect(parseHistorialFecha("2026-00-10")).toBeNull();
+  });
+
+  it("accepts leap day", () => {
+    expect(parseHistorialFecha("2024-02-29")).toBe("2024-02-29");
+    expect(parseHistorialFecha("2026-02-29")).toBeNull();
+  });
+});
+
+describe("diaSiguienteFechaIso", () => {
+  it("returns next day within a month", () => {
+    expect(diaSiguienteFechaIso("2026-01-15")).toBe("2026-01-16");
+  });
+
+  it("rolls over month end", () => {
+    expect(diaSiguienteFechaIso("2026-01-31")).toBe("2026-02-01");
+  });
+
+  it("rolls over year end", () => {
+    expect(diaSiguienteFechaIso("2026-12-31")).toBe("2027-01-01");
+  });
+
+  it("handles leap days", () => {
+    expect(diaSiguienteFechaIso("2024-02-29")).toBe("2024-03-01");
+  });
+});
+
 describe("validateHistorialQueryParams", () => {
   it("returns null when no params provided", () => {
     expect(validateHistorialQueryParams(sp({}))).toBeNull();
@@ -208,6 +256,61 @@ describe("validateHistorialQueryParams", () => {
     expect(validateHistorialQueryParams(sp({ periodo: "year" }))).toBeNull();
   });
 
+  it("accepts valid fecha_desde", () => {
+    expect(
+      validateHistorialQueryParams(sp({ fecha_desde: "2026-01-01" }))
+    ).toBeNull();
+  });
+
+  it("accepts valid fecha_hasta", () => {
+    expect(
+      validateHistorialQueryParams(sp({ fecha_hasta: "2026-01-31" }))
+    ).toBeNull();
+  });
+
+  it("accepts fecha_desde == fecha_hasta", () => {
+    expect(
+      validateHistorialQueryParams(
+        sp({ fecha_desde: "2026-01-15", fecha_hasta: "2026-01-15" })
+      )
+    ).toBeNull();
+  });
+
+  it("rejects invalid fecha_desde format", () => {
+    expect(
+      validateHistorialQueryParams(sp({ fecha_desde: "01-01-2026" }))
+    ).toBe("fecha_desde inválida (use YYYY-MM-DD)");
+    expect(
+      validateHistorialQueryParams(sp({ fecha_desde: "abc" }))
+    ).toBe("fecha_desde inválida (use YYYY-MM-DD)");
+  });
+
+  it("rejects non-calendar dates", () => {
+    expect(
+      validateHistorialQueryParams(sp({ fecha_desde: "2026-13-01" }))
+    ).toBe("fecha_desde inválida (use YYYY-MM-DD)");
+    expect(
+      validateHistorialQueryParams(sp({ fecha_desde: "2026-02-30" }))
+    ).toBe("fecha_desde inválida (use YYYY-MM-DD)");
+    expect(
+      validateHistorialQueryParams(sp({ fecha_hasta: "2025-00-10" }))
+    ).toBe("fecha_hasta inválida (use YYYY-MM-DD)");
+  });
+
+  it("rejects fecha_desde > fecha_hasta", () => {
+    expect(
+      validateHistorialQueryParams(
+        sp({ fecha_desde: "2026-02-01", fecha_hasta: "2026-01-31" })
+      )
+    ).toBe("fecha_desde no puede ser mayor que fecha_hasta");
+  });
+
+  it("treats empty fecha params as omitted", () => {
+    expect(
+      validateHistorialQueryParams(sp({ fecha_desde: "", fecha_hasta: "" }))
+    ).toBeNull();
+  });
+
   it("returns null when empty string params are passed (treated as omitted)", () => {
     expect(
       validateHistorialQueryParams(
@@ -281,6 +384,68 @@ describe("buildHistorialVentasWhere", () => {
       "v.fecha_venta >= NOW() - INTERVAL '30 days'"
     );
     expect(result.values).toEqual([]);
+  });
+
+  it("filters by fecha_desde as start of day", () => {
+    const result = buildHistorialVentasWhere(sp({ fecha_desde: "2026-01-01" }));
+    expect(result.whereSql).toContain("v.fecha_venta >= $1");
+    expect(result.values).toEqual(["2026-01-01 00:00:00"]);
+  });
+
+  it("filters by fecha_hasta inclusive to end of day", () => {
+    const result = buildHistorialVentasWhere(sp({ fecha_hasta: "2026-01-31" }));
+    expect(result.whereSql).toContain("v.fecha_venta < $1");
+    expect(result.values).toEqual(["2026-02-01 00:00:00"]);
+  });
+
+  it("filters by both fecha_desde and fecha_hasta", () => {
+    const result = buildHistorialVentasWhere(
+      sp({ fecha_desde: "2026-01-01", fecha_hasta: "2026-01-31" })
+    );
+    expect(result.whereSql).toContain("v.fecha_venta >= $1");
+    expect(result.whereSql).toContain("v.fecha_venta < $2");
+    expect(result.values).toEqual([
+      "2026-01-01 00:00:00",
+      "2026-02-01 00:00:00",
+    ]);
+  });
+
+  it("ignores invalid fecha params", () => {
+    const result = buildHistorialVentasWhere(
+      sp({ fecha_desde: "abc", fecha_hasta: "2026-13-40" })
+    );
+    expect(result.whereSql).toBe("TRUE");
+    expect(result.values).toEqual([]);
+  });
+
+  it("keeps parameter numbering when combined with date range", () => {
+    const result = buildHistorialVentasWhere(
+      sp({
+        fecha_desde: "2026-01-01",
+        min_total: "100",
+        id_cliente: "42",
+        fecha_hasta: "2026-01-31",
+      })
+    );
+    expect(result.whereSql).toContain("v.fecha_venta >= $1");
+    expect(result.whereSql).toContain("v.fecha_venta < $2");
+    expect(result.whereSql).toContain("v.total >= $3");
+    expect(result.whereSql).toContain("v.id_cliente = $4");
+    expect(result.values).toEqual([
+      "2026-01-01 00:00:00",
+      "2026-02-01 00:00:00",
+      100,
+      42,
+    ]);
+  });
+
+  it("applies date range with omitAmountRange", () => {
+    const result = buildHistorialVentasWhere(
+      sp({ fecha_desde: "2026-01-01", min_total: "100" }),
+      { omitAmountRange: true }
+    );
+    expect(result.whereSql).toContain("v.fecha_venta >= $1");
+    expect(result.values).toEqual(["2026-01-01 00:00:00"]);
   });
 
   it("filters by min_total", () => {

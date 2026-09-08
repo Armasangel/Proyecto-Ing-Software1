@@ -56,6 +56,43 @@ describe("GET /api/historial-ventas", () => {
     expect(res.status).toBe(400);
   });
 
+  it("returns validation error for invalid fecha_desde", async () => {
+    const req = createMockRequest("/api/historial-ventas?fecha_desde=abc", { user: testUserDueno });
+    const res = await GET(req);
+    expect(res.status).toBe(400);
+  });
+
+  it("returns validation error for fecha_desde > fecha_hasta", async () => {
+    const req = createMockRequest(
+      "/api/historial-ventas?fecha_desde=2026-02-01&fecha_hasta=2026-01-31",
+      { user: testUserDueno }
+    );
+    const res = await GET(req);
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 200 with a valid date range", async () => {
+    mockPool.query.mockResolvedValue({ rows: [mockVenta] });
+    const req = createMockRequest(
+      "/api/historial-ventas?fecha_desde=2026-01-01&fecha_hasta=2026-01-31",
+      { user: testUserDueno }
+    );
+    const res = await GET(req);
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.ventas).toHaveLength(1);
+    const sql = mockPool.query.mock.calls[0][0] as string;
+    expect(sql).toContain("v.fecha_venta >= $1");
+    expect(sql).toContain("v.fecha_venta < $2");
+    // whereValues + fetchLimit(51) + offset(0) adjuntos por la ruta
+    expect(mockPool.query.mock.calls[0][1]).toEqual([
+      "2026-01-01 00:00:00",
+      "2026-02-01 00:00:00",
+      51,
+      0,
+    ]);
+  });
+
   it("includes totales when meta_totales is requested", async () => {
     mockPool.query
       .mockResolvedValueOnce({ rows: [{ min_total: 10, max_total: 500 }] })
