@@ -92,7 +92,16 @@ services:
       - HEALTHCHECK_PORT=8080
     volumes:
       - ./backups:/backups
-
+  k6:
+    image: grafana/k6:latest
+    environment:
+      - BASE_URL=http://app:3000
+    volumes:
+      - .:/scripts
+      - ./k6_tests/resultados:/resultados
+    depends_on:
+      - app
+    profiles: ["k6"]
 volumes:
   postgres_data:
   pgadmin_data:
