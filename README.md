@@ -68,6 +68,15 @@ docker compose exec app npm test
 
 Si cambiaste dependencias, reconstruye la imagen: `docker compose build --no-cache app`.
 
+> Si necesitás resetear todo desde cero (borrar la base de datos, las
+> imágenes locales, y reconstruir), en vez de hacer `down -v` + borrar
+> imágenes a mano + `up --build` por separado, hay un solo comando:
+> ```bash
+> ./scripts/dev-reset.sh
+> ```
+> Pide confirmación antes de borrar nada. `./backups` no se toca — los
+> respaldos sobreviven al reset.
+
 ---
 
 ## 🔐 Configuración (`.env`)
@@ -222,6 +231,10 @@ El sistema diferencia dos roles con permisos distintos:
 ├── init/
 │   └── 01_schema.sql         → Schema + índices + datos de prueba (corre automático)
 ├── __tests__/                → Tests (unit, API, integración, páginas, hooks)
+├── scripts/
+│   ├── backup-db.sh          → Respaldo manual puntual de la BD
+│   ├── restore-db.sh         → Restaurar la BD desde un respaldo
+│   └── dev-reset.sh          → Reiniciar todo el entorno (down -v + rebuild) en un paso
 ├── docker-compose.yml
 └── Dockerfile
 ```
@@ -237,6 +250,79 @@ El sistema diferencia dos roles con permisos distintos:
 | http://localhost:3001/dashboard | Dashboard con KPIs |
 | http://localhost:3001/api/health | Verificar conexión a PostgreSQL |
 | http://localhost:5050 | pgAdmin (admin@dsm.com / admin123) |
+
+---
+
+## 💾 Respaldo y recuperación de la base de datos
+
+El proyecto incluye un sistema de respaldo automático para PostgreSQL, además
+de scripts para respaldos y restauraciones manuales.
+
+### Respaldos automáticos
+
+El servicio `db_backup` (imagen [`prodrigestivill/postgres-backup-local`](https://github.com/prodrigestivill/docker-postgres-backup-local))
+corre junto a los demás con `docker compose up` y genera un dump comprimido
+(`.sql.gz`) de la base de datos todos los días, sin que tengas que hacer nada.
+
+Los respaldos se guardan en `./backups/` (fuera de los volúmenes de Docker,
+así que sobreviven a un `docker compose down -v`), organizados en:
+
+```
+backups/
+├── daily/     → últimos 7 días
+├── weekly/    → últimas 4 semanas
+└── monthly/   → últimos 6 meses
+```
+
+Los más viejos se van rotando (borrando) automáticamente según esa
+retención. Podés ajustar la frecuencia (`SCHEDULE`) o cuánto se guarda
+(`BACKUP_KEEP_DAYS/WEEKS/MONTHS`) en el servicio `db_backup` de
+`docker-compose.yml`.
+
+> ⚠️ Estos respaldos automáticos **no están cifrados** — quedan en texto
+> plano (comprimido) dentro de `./backups/`. Es una decisión consciente:
+> cifrarlos ahí adentro requeriría meterle mano a la rotación interna de la
+> imagen `db_backup` y es fácil terminar rompiéndola. Mientras esa carpeta
+> se quede en tu máquina (está en `.gitignore`, no se sube al repo) el
+> riesgo es bajo. Si necesitás sacar uno de esos respaldos de la máquina
+> (mandarlo a otro lado, subirlo a algún servicio externo), primero pasalo
+> por un respaldo manual cifrado — ver abajo.
+
+### Respaldo manual (cifrado)
+
+Para tomar un respaldo puntual (por ejemplo, antes de una migración o un
+cambio riesgoso al schema, o antes de sacar un respaldo de tu máquina):
+
+```bash
+./scripts/backup-db.sh
+```
+
+Esto crea un archivo en `./backups/manual/`. Si configuraste
+`BACKUP_ENCRYPTION_KEY` en tu `.env` (ver `.env.example` — generá una buena
+con `openssl rand -base64 32`), el archivo queda **cifrado con OpenSSL
+(AES-256)** como `deposito_san_miguel_<fecha>.sql.gz.enc`. Si no la
+configuraste, el script te avisa y lo deja sin cifrar (`.sql.gz`).
+
+### Restaurar un respaldo
+
+⚠️ Esto sobrescribe la base de datos actual — pide confirmación antes de
+continuar.
+
+```bash
+./scripts/restore-db.sh ./backups/manual/deposito_san_miguel_20260830_120000.sql.gz.enc
+# también funciona con los automáticos (sin cifrar), p. ej.:
+./scripts/restore-db.sh ./backups/daily/deposito_san_miguel-YYYY-MM-DD.sql.gz
+```
+
+Antes de tocar la base de datos, el script valida que el archivo sea
+realmente un respaldo — por su extensión **y** revisando los primeros
+bytes del archivo (la firma de gzip o de OpenSSL, según corresponda). No
+alcanza con renombrar cualquier archivo a `.sql.gz` para que lo acepte. Si
+el respaldo está cifrado, necesita la misma `BACKUP_ENCRYPTION_KEY` que se
+usó para generarlo — sin eso no hay forma de descifrarlo.
+
+> En Windows, corré estos scripts desde Git Bash o WSL (no PowerShell/CMD).
+> Si un script no tiene permiso de ejecución, corré antes `chmod +x scripts/*.sh`.
 
 ---
 

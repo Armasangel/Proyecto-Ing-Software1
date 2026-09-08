@@ -68,6 +68,31 @@ services:
     volumes:
       - pgadmin_data:/var/lib/pgadmin
 
+  # Respaldo automático de PostgreSQL: dumps periódicos con rotación (diaria/
+  # semanal/mensual). Guarda todo en ./backups (fuera de los volúmenes de
+  # Docker) para que sobreviva a un `docker compose down -v`.
+  #
+  db_backup:
+    image: prodrigestivill/postgres-backup-local:16
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - POSTGRES_HOST=db
+      - POSTGRES_DB=deposito_san_miguel
+      - POSTGRES_USER=dsm_user
+      - POSTGRES_PASSWORD=dsm_password
+      - POSTGRES_EXTRA_OPTS=-Z6 --schema=public --blobs
+      - SCHEDULE=@daily
+      - BACKUP_ON_START=TRUE
+      - BACKUP_KEEP_DAYS=7
+      - BACKUP_KEEP_WEEKS=4
+      - BACKUP_KEEP_MONTHS=6
+      - HEALTHCHECK_PORT=8080
+    volumes:
+      - ./backups:/backups
+
 volumes:
   postgres_data:
   pgadmin_data:

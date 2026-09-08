@@ -5,6 +5,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { StaffShell } from "@/components/StaffShell";
 import { useDuenoSession } from "@/hooks/useDuenoSession";
 import { Icon, type IconName } from "@/components/Icon";
+import { matchesQuery } from "@/lib/ui-table";
 
 const MIS_ITEMS = [
   {label: "editar", icon: "pencil"},
@@ -35,6 +36,27 @@ interface Marca {
   id_marca: number;
   nombre_marca: string;
 }
+interface Proveedor {
+  id_proveedor: number;
+  nombre_proveedor: string;
+  nit_proveedor: string;
+  correo_contacto: string | null;
+  telefono: string | null;
+}
+type PresentacionForm = { nombre_presentacion: string; factor_conversion: string };
+
+// Mismo heurístico que valida /api/productos en el servidor: por el nombre
+// de la unidad de medida detectamos si es un líquido embotellado (requiere
+// caja obligatoria) o si se mide en libras (puede ofrecerse como "saco").
+const UNIDADES_LIQUIDAS = ["botella", "litro", "lt", "ml", "galon", "galón"];
+function esUnidadLiquida(unidad: string): boolean {
+  return UNIDADES_LIQUIDAS.some((k) => unidad.trim().toLowerCase().includes(k));
+}
+function esUnidadLibra(unidad: string): boolean {
+  return unidad.trim().toLowerCase().includes("libra");
+}
+
+const PROVEEDOR_VACIO = { nombre_proveedor: "", nit_proveedor: "", correo_contacto: "", telefono: "" };
 
 const EMPTY_FORM = {
   codigo_producto: "",
@@ -45,6 +67,7 @@ const EMPTY_FORM = {
   id_categoria: "",
   id_marca: "",
   caducidad: false,
+  fecha_caducidad: "",
   exento_iva: false,
   estado_producto: true,
 };
@@ -68,6 +91,29 @@ export default function CatalogoPage() {
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
+
+  // Proveedores: buscador + selección múltiple + alta rápida
+  const [proveedores, setProveedores] = useState<Proveedor[]>([]);
+  const [proveedorQuery, setProveedorQuery] = useState("");
+  const [proveedorSugerenciasAbiertas, setProveedorSugerenciasAbiertas] = useState(false);
+  const [proveedoresSeleccionados, setProveedoresSeleccionados] = useState<Proveedor[]>([]);
+  const [creandoProveedor, setCreandoProveedor] = useState(false);
+  const [formProveedorNuevo, setFormProveedorNuevo] = useState(PROVEEDOR_VACIO);
+  const [guardandoProveedor, setGuardandoProveedor] = useState(false);
+  const [errorProveedor, setErrorProveedor] = useState("");
+
+  // Categoría / marca: alta rápida sin salir del modal
+  const [creandoCategoria, setCreandoCategoria] = useState(false);
+  const [nuevaCategoriaNombre, setNuevaCategoriaNombre] = useState("");
+  const [guardandoCategoria, setGuardandoCategoria] = useState(false);
+  const [errorCategoria, setErrorCategoria] = useState("");
+  const [creandoMarca, setCreandoMarca] = useState(false);
+  const [nuevaMarcaNombre, setNuevaMarcaNombre] = useState("");
+  const [guardandoMarca, setGuardandoMarca] = useState(false);
+  const [errorMarca, setErrorMarca] = useState("");
+
+  // Presentaciones por mayor (ej. "Caja de 24", "Saco de 50 libras")
+  const [presentacionesForm, setPresentacionesForm] = useState<PresentacionForm[]>([]);
 
   // Confirm delete
   const [confirmId, setConfirmId] = useState<number | null>(null);
@@ -97,13 +143,46 @@ export default function CatalogoPage() {
     cargarProductos();
     fetch("/api/categorias").then((r) => r.json()).then((d) => setCategorias(d.categorias || []));
     fetch("/api/marcas").then((r) => r.json()).then((d) => setMarcas(d.marcas || []));
+    fetch("/api/proveedores")
+      .then((r) => (r.ok ? r.json() : { proveedores: [] }))
+      .then((d) => setProveedores(d.proveedores || []))
+      .catch(() => setProveedores([]));
   }, [usuario, cargarProductos]);
 
+  const proveedoresFiltrados = proveedores.filter(
+    (p) =>
+      !proveedoresSeleccionados.some((s) => s.id_proveedor === p.id_proveedor) &&
+      matchesQuery(proveedorQuery, p.nombre_proveedor, p.nit_proveedor)
+  );
+
+  const liquidoRequiereCaja = esUnidadLiquida(form.unidad_medida);
+  const esLibra = esUnidadLibra(form.unidad_medida);
+  const presentacionesValidas = presentacionesForm.filter(
+    (p) => p.nombre_presentacion.trim() && Number(p.factor_conversion) > 0
+  );
+  const faltaCajaObligatoria = !editando && liquidoRequiereCaja && presentacionesValidas.length === 0;
+
   // ── Modal helpers ──────────────────────────────────────────────────────────
+  const resetExtras = () => {
+    setProveedoresSeleccionados([]);
+    setProveedorQuery("");
+    setCreandoProveedor(false);
+    setFormProveedorNuevo(PROVEEDOR_VACIO);
+    setErrorProveedor("");
+    setPresentacionesForm([]);
+    setCreandoCategoria(false);
+    setNuevaCategoriaNombre("");
+    setErrorCategoria("");
+    setCreandoMarca(false);
+    setNuevaMarcaNombre("");
+    setErrorMarca("");
+  };
+
   const abrirCrear = () => {
     setEditando(null);
     setForm({ ...EMPTY_FORM });
     setFormError("");
+    resetExtras();
     setModalOpen(true);
   };
 
@@ -118,31 +197,134 @@ export default function CatalogoPage() {
       id_categoria: String(p.id_categoria),
       id_marca: String(p.id_marca),
       caducidad: p.caducidad,
+      fecha_caducidad: "",
       exento_iva: p.exento_iva,
       estado_producto: p.estado_producto,
     });
     setFormError("");
+    resetExtras();
     setModalOpen(true);
   };
 
-  const cerrarModal = () => { setModalOpen(false); setEditando(null); };
+  const cerrarModal = () => { setModalOpen(false); setEditando(null); resetExtras(); };
+
+  const agregarProveedor = (p: Proveedor) => {
+    setProveedoresSeleccionados((prev) => [...prev, p]);
+    setProveedorQuery("");
+    setProveedorSugerenciasAbiertas(false);
+  };
+
+  const quitarProveedor = (id: number) => {
+    setProveedoresSeleccionados((prev) => prev.filter((p) => p.id_proveedor !== id));
+  };
+
+  const guardarProveedorNuevo = async () => {
+    setErrorProveedor("");
+    if (!formProveedorNuevo.nombre_proveedor.trim() || !formProveedorNuevo.nit_proveedor.trim()) {
+      setErrorProveedor("Nombre y NIT son obligatorios");
+      return;
+    }
+    setGuardandoProveedor(true);
+    try {
+      const res = await fetch("/api/proveedores", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formProveedorNuevo),
+      });
+      const data = await res.json();
+      if (!res.ok) setErrorProveedor(data.error || "Error al crear el proveedor");
+      else {
+        setProveedores((prev) => [...prev, data.proveedor]);
+        agregarProveedor(data.proveedor);
+        setFormProveedorNuevo(PROVEEDOR_VACIO);
+        setCreandoProveedor(false);
+      }
+    } catch { setErrorProveedor("Error de conexión"); }
+    finally { setGuardandoProveedor(false); }
+  };
+
+  const guardarCategoriaNueva = async () => {
+    setErrorCategoria("");
+    if (!nuevaCategoriaNombre.trim()) { setErrorCategoria("El nombre es obligatorio"); return; }
+    setGuardandoCategoria(true);
+    try {
+      const res = await fetch("/api/categorias", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nombre_categoria: nuevaCategoriaNombre.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) setErrorCategoria(data.error || "Error al crear la categoría");
+      else {
+        setCategorias((prev) => [...prev, data.categoria].sort((a, b) => a.nombre_categoria.localeCompare(b.nombre_categoria)));
+        setForm((f) => ({ ...f, id_categoria: String(data.categoria.id_categoria) }));
+        setNuevaCategoriaNombre("");
+        setCreandoCategoria(false);
+      }
+    } catch { setErrorCategoria("Error de conexión"); }
+    finally { setGuardandoCategoria(false); }
+  };
+
+  const guardarMarcaNueva = async () => {
+    setErrorMarca("");
+    if (!nuevaMarcaNombre.trim()) { setErrorMarca("El nombre es obligatorio"); return; }
+    setGuardandoMarca(true);
+    try {
+      const res = await fetch("/api/marcas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nombre_marca: nuevaMarcaNombre.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) setErrorMarca(data.error || "Error al crear la marca");
+      else {
+        setMarcas((prev) => [...prev, data.marca].sort((a, b) => a.nombre_marca.localeCompare(b.nombre_marca)));
+        setForm((f) => ({ ...f, id_marca: String(data.marca.id_marca) }));
+        setNuevaMarcaNombre("");
+        setCreandoMarca(false);
+      }
+    } catch { setErrorMarca("Error de conexión"); }
+    finally { setGuardandoMarca(false); }
+  };
+
+  const agregarFilaPresentacion = (nombrePreset = "") => {
+    setPresentacionesForm((prev) => [...prev, { nombre_presentacion: nombrePreset, factor_conversion: "" }]);
+  };
+  const actualizarPresentacion = (idx: number, campo: keyof PresentacionForm, valor: string) => {
+    setPresentacionesForm((prev) => prev.map((p, i) => (i === idx ? { ...p, [campo]: valor } : p)));
+  };
+  const quitarPresentacionFila = (idx: number) => {
+    setPresentacionesForm((prev) => prev.filter((_, i) => i !== idx));
+  };
 
   const handleGuardar = async () => {
     if (!form.codigo_producto || !form.nombre_producto || !form.unidad_medida || !form.id_categoria || !form.id_marca) {
       setFormError("Completa todos los campos obligatorios (*)");
       return;
     }
+    if (faltaCajaObligatoria) {
+      setFormError("Los productos con unidad líquida (botella, litro, ml, galón) necesitan al menos una presentación tipo caja. Agrégala abajo en \"Presentaciones por mayor\".");
+      return;
+    }
     setSaving(true);
     setFormError("");
     const url = editando ? `/api/productos/${editando.id_producto}` : "/api/productos";
     const method = editando ? "PUT" : "POST";
-    const payload = {
+    const payload: Record<string, unknown> = {
       ...form,
       precio_unitario: form.precio_unitario ? Number(form.precio_unitario) : null,
       precio_mayoreo: form.precio_mayoreo ? Number(form.precio_mayoreo) : null,
+      fecha_caducidad: form.caducidad && form.fecha_caducidad ? form.fecha_caducidad : null,
       id_categoria: Number(form.id_categoria),
       id_marca: Number(form.id_marca),
     };
+    if (!editando) {
+      payload.id_proveedores = proveedoresSeleccionados.map((p) => p.id_proveedor);
+      payload.presentaciones = presentacionesValidas.map((p) => ({
+        nombre_presentacion: p.nombre_presentacion.trim(),
+        factor_conversion: Number(p.factor_conversion),
+      }));
+    }
     try {
       const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const data = await res.json();
@@ -351,30 +533,86 @@ export default function CatalogoPage() {
 
       {/* ── Modal Crear / Editar producto ── */}
       {modalOpen && (
-        <div style={s.overlay} onClick={(e) => { if (e.target === e.currentTarget) cerrarModal(); }}>
-          <div style={s.modal}>
-            <div style={s.modalHeader}>
-              <h2 style={s.modalTitle}>{editando ? "Editar producto" : "Nuevo producto"}</h2>
-              <button type="button" onClick={cerrarModal} style={s.closeBtn}>✕</button>
+        <div
+          style={{
+            ...s.overlay,
+            position: "fixed",
+            top: 0,
+            left: 0,
+            width: "100vw",
+            height: "100vh",
+            backgroundColor: "rgba(0, 0, 0, 0.5)", // Oscurece el fondo
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 101,
+          }}
+          onClick={(e) => { if (e.target === e.currentTarget) cerrarModal(); }}
+        >
+          <div
+            style={{
+              ...s.modal,
+              backgroundColor: "#ffffff", // Fondo blanco sólido
+              color: "#1a1a1a",           // Texto legible y oscuro
+              borderRadius: "12px",
+              width: "90%",
+              maxWidth: "600px",
+              maxHeight: "90vh",
+              boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.3)",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+            }}
+          >
+            <div style={{ ...s.modalHeader, padding: "1.25rem 1.5rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <h2 style={{ ...s.modalTitle, margin: 0, color: "#1a1a1a" }}>
+                {editando ? "Editar producto" : "Nuevo producto"}
+              </h2>
+              <button 
+                type="button" 
+                onClick={cerrarModal} 
+                style={{ ...s.closeBtn, color: "#1a1a1a", background: "transparent", border: "none", cursor: "pointer" }}
+              >
+                ✕
+              </button>
             </div>
-            <div style={s.modalBody}>
+            <div style={{ ...s.modalBody, padding: "0 1.5rem 1.5rem", overflowY: "auto" }}>
               <div style={s.fila}>
                 <Field label="Código *" style={{ flex: "0 0 140px" }}>
-                  <input style={s.input} value={form.codigo_producto} onChange={(e) => setForm(f => ({ ...f, codigo_producto: e.target.value }))} placeholder="ARR-001" autoFocus />
+                  <input 
+                    style={{ ...s.input, backgroundColor: "#f4f4f5", color: "#1a1a1a", border: "1px solid #e4e4e7" }} 
+                    value={form.codigo_producto} 
+                    onChange={(e) => setForm(f => ({ ...f, codigo_producto: e.target.value }))} 
+                    placeholder="ARR-001" 
+                    autoFocus 
+                  />
                 </Field>
                 <Field label="Nombre del producto *" style={{ flex: 1 }}>
-                  <input style={s.input} value={form.nombre_producto} onChange={(e) => setForm(f => ({ ...f, nombre_producto: e.target.value }))} placeholder="Arroz 1 libra" />
+                  <input 
+                    style={{ ...s.input, backgroundColor: "#f4f4f5", color: "#1a1a1a", border: "1px solid #e4e4e7" }} 
+                    value={form.nombre_producto} 
+                    onChange={(e) => setForm(f => ({ ...f, nombre_producto: e.target.value }))} 
+                    placeholder="Arroz 1 libra" 
+                  />
                 </Field>
               </div>
               <div style={s.fila}>
                 <Field label="Categoría *" style={{ flex: 1 }}>
-                  <select style={s.input} value={form.id_categoria} onChange={(e) => setForm(f => ({ ...f, id_categoria: e.target.value }))}>
+                  <select 
+                    style={{ ...s.input, backgroundColor: "#f4f4f5", color: "#1a1a1a", border: "1px solid #e4e4e7" }} 
+                    value={form.id_categoria} 
+                    onChange={(e) => setForm(f => ({ ...f, id_categoria: e.target.value }))}
+                  >
                     <option value="">— Selecciona —</option>
                     {categorias.map((c) => <option key={c.id_categoria} value={c.id_categoria}>{c.nombre_categoria}</option>)}
                   </select>
                 </Field>
                 <Field label="Marca *" style={{ flex: 1 }}>
-                  <select style={s.input} value={form.id_marca} onChange={(e) => setForm(f => ({ ...f, id_marca: e.target.value }))}>
+                  <select 
+                    style={{ ...s.input, backgroundColor: "#f4f4f5", color: "#1a1a1a", border: "1px solid #e4e4e7" }} 
+                    value={form.id_marca} 
+                    onChange={(e) => setForm(f => ({ ...f, id_marca: e.target.value }))}
+                  >
                     <option value="">— Selecciona —</option>
                     {marcas.map((m) => <option key={m.id_marca} value={m.id_marca}>{m.nombre_marca}</option>)}
                   </select>
@@ -382,25 +620,129 @@ export default function CatalogoPage() {
               </div>
               <div style={s.fila}>
                 <Field label="Precio unitario" style={{ flex: 1 }}>
-                  <input style={s.input} type="number" step="0.01" min="0" value={form.precio_unitario} onChange={(e) => setForm(f => ({ ...f, precio_unitario: e.target.value }))} placeholder="0.00" />
+                  <input 
+                    style={{ ...s.input, backgroundColor: "#f4f4f5", color: "#1a1a1a", border: "1px solid #e4e4e7" }} 
+                    type="number" 
+                    step="0.01" 
+                    min="0" 
+                    value={form.precio_unitario} 
+                    onChange={(e) => setForm(f => ({ ...f, precio_unitario: e.target.value }))} 
+                    placeholder="0.00" 
+                  />
                 </Field>
                 <Field label="Precio mayoreo" style={{ flex: 1 }}>
-                  <input style={s.input} type="number" step="0.01" min="0" value={form.precio_mayoreo} onChange={(e) => setForm(f => ({ ...f, precio_mayoreo: e.target.value }))} placeholder="0.00" />
+                  <input 
+                    style={{ ...s.input, backgroundColor: "#f4f4f5", color: "#1a1a1a", border: "1px solid #e4e4e7" }} 
+                    type="number" 
+                    step="0.01" 
+                    min="0" 
+                    value={form.precio_mayoreo} 
+                    onChange={(e) => setForm(f => ({ ...f, precio_mayoreo: e.target.value }))} 
+                    placeholder="0.00" 
+                  />
                 </Field>
                 <Field label="Unidad de medida *" style={{ flex: 1 }}>
-                  <input style={s.input} value={form.unidad_medida} onChange={(e) => setForm(f => ({ ...f, unidad_medida: e.target.value }))} placeholder="libra, litro, unidad…" />
+                  <input 
+                    style={{ ...s.input, backgroundColor: "#f4f4f5", color: "#1a1a1a", border: "1px solid #e4e4e7" }} 
+                    value={form.unidad_medida} 
+                    onChange={(e) => setForm(f => ({ ...f, unidad_medida: e.target.value }))} 
+                    placeholder="libra, litro, unidad…" 
+                  />
                 </Field>
               </div>
-              <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap", marginTop: "0.25rem" }}>
+              <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap", marginTop: "0.25rem", color: "#1a1a1a" }}>
                 <CheckField label="Producto con fecha de caducidad" checked={form.caducidad} onChange={(v) => setForm(f => ({ ...f, caducidad: v }))} />
                 <CheckField label="Exento de IVA" checked={form.exento_iva} onChange={(v) => setForm(f => ({ ...f, exento_iva: v }))} />
                 <CheckField label="Producto activo" checked={form.estado_producto} onChange={(v) => setForm(f => ({ ...f, estado_producto: v }))} />
               </div>
+              {form.caducidad && (
+                <Field label="Fecha de caducidad" style={{ maxWidth: 220 }}>
+                  <input style={s.input} type="date" value={form.fecha_caducidad} onChange={(e) => setForm(f => ({ ...f, fecha_caducidad: e.target.value }))} />
+                  <span style={{ fontSize: "0.72rem", color: "var(--muted)" }}>Referencia general del producto (no por lote).</span>
+                </Field>
+              )}
+
+              {!editando && (
+                <>
+                  {/* ── Proveedores ── */}
+                  <div style={{ borderTop: "1px solid var(--border)", paddingTop: "1rem" }}>
+                    <label style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)", letterSpacing: "0.04em", textTransform: "uppercase" }}>Proveedores</label>
+                    <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.4rem" }}>
+                      <div style={{ position: "relative", flex: "1 1 240px" }}>
+                        <input
+                          style={s.input}
+                          placeholder="Buscar proveedor por nombre o NIT…"
+                          value={proveedorQuery}
+                          onChange={(e) => { setProveedorQuery(e.target.value); setProveedorSugerenciasAbiertas(true); }}
+                          onFocus={() => setProveedorSugerenciasAbiertas(true)}
+                          onBlur={() => setTimeout(() => setProveedorSugerenciasAbiertas(false), 150)}
+                        />
+                        {proveedorSugerenciasAbiertas && proveedorQuery.trim() !== "" && (
+                          <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6, marginTop: 2, zIndex: 20, maxHeight: 180, overflowY: "auto", boxShadow: "0 4px 10px rgba(0,0,0,0.12)" }}>
+                            {proveedoresFiltrados.length === 0 ? (
+                              <div style={{ padding: "0.5rem 0.7rem", fontSize: "0.85rem", color: "var(--muted)" }}>Sin resultados — prueba &quot;+ Proveedor nuevo&quot;.</div>
+                            ) : (
+                              proveedoresFiltrados.slice(0, 8).map((p) => (
+                                <div key={p.id_proveedor} onMouseDown={() => agregarProveedor(p)} style={{ padding: "0.45rem 0.7rem", cursor: "pointer", fontSize: "0.85rem", borderBottom: "1px solid var(--border)" }}>
+                                  {p.nombre_proveedor} <span style={{ color: "var(--muted)" }}>({p.nit_proveedor})</span>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <button type="button" onClick={() => setCreandoProveedor(v => !v)} style={s.btnSecondary}>+ Proveedor nuevo</button>
+                    </div>
+                    {proveedoresSeleccionados.length > 0 && (
+                      <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginTop: "0.6rem" }}>
+                        {proveedoresSeleccionados.map((p) => (
+                          <span key={p.id_proveedor} style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 999, padding: "0.25rem 0.6rem", fontSize: "0.8rem" }}>
+                            {p.nombre_proveedor}
+                            <button type="button" onClick={() => quitarProveedor(p.id_proveedor)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}>×</button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {creandoProveedor && (
+                      <div style={{ marginTop: "0.75rem", padding: "0.85rem", background: "var(--surface2)", borderRadius: 8, display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.6rem" }}>
+                        <Field label="Nombre *"><input style={s.input} value={formProveedorNuevo.nombre_proveedor} onChange={(e) => setFormProveedorNuevo(f => ({ ...f, nombre_proveedor: e.target.value }))} /></Field>
+                        <Field label="NIT *"><input style={s.input} value={formProveedorNuevo.nit_proveedor} onChange={(e) => setFormProveedorNuevo(f => ({ ...f, nit_proveedor: e.target.value }))} /></Field>
+                        <Field label="Correo"><input style={s.input} value={formProveedorNuevo.correo_contacto} onChange={(e) => setFormProveedorNuevo(f => ({ ...f, correo_contacto: e.target.value }))} /></Field>
+                        <Field label="Teléfono"><input style={s.input} value={formProveedorNuevo.telefono} onChange={(e) => setFormProveedorNuevo(f => ({ ...f, telefono: e.target.value }))} /></Field>
+                        {errorProveedor && <div style={{ gridColumn: "1 / -1", color: "var(--red)", fontSize: "0.82rem" }}>{errorProveedor}</div>}
+                        <div style={{ gridColumn: "1 / -1" }}>
+                          <button type="button" onClick={guardarProveedorNuevo} disabled={guardandoProveedor} style={s.btnSave}>{guardandoProveedor ? "Guardando…" : "Guardar proveedor"}</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ── Presentaciones por mayor ── */}
+                  <div style={{ borderTop: "1px solid var(--border)", paddingTop: "1rem" }}>
+                    <label style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)", letterSpacing: "0.04em", textTransform: "uppercase" }}>
+                      Presentaciones por mayor {liquidoRequiereCaja ? "(obligatoria para líquidos)" : "(opcional)"}
+                    </label>
+                    <p style={{ fontSize: "0.78rem", color: "var(--muted)", margin: "0.3rem 0 0.6rem" }}>Ej. &quot;Caja de 24&quot; = 24 unidades base, &quot;Saco de 50&quot; = 50 libras base.</p>
+                    {presentacionesForm.map((p, idx) => (
+                      <div key={idx} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem", alignItems: "center" }}>
+                        <input style={{ ...s.input, flex: "1 1 200px" }} value={p.nombre_presentacion} onChange={(e) => actualizarPresentacion(idx, "nombre_presentacion", e.target.value)} placeholder="Ej: Caja de 24" />
+                        <input style={{ ...s.input, width: 170 }} type="number" min="0" step="1" value={p.factor_conversion} onChange={(e) => actualizarPresentacion(idx, "factor_conversion", e.target.value)} placeholder="Cantidad de unidades base" />
+                        <button type="button" onClick={() => quitarPresentacionFila(idx)} style={s.btnDel} title="Quitar"><Icon name="trash" size={14} /></button>
+                      </div>
+                    ))}
+                    <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                      <button type="button" onClick={() => agregarFilaPresentacion()} style={s.btnSecondary}>+ Agregar presentación</button>
+                      {liquidoRequiereCaja && <button type="button" onClick={() => agregarFilaPresentacion("Caja")} style={s.btnSecondary}>+ Agregar caja</button>}
+                      {esLibra && <button type="button" onClick={() => agregarFilaPresentacion("Saco")} style={s.btnSecondary}>+ Agregar saco</button>}
+                    </div>
+                  </div>
+                </>
+              )}
               {formError && <p style={s.formError}>{formError}</p>}
             </div>
-            <div style={s.modalFooter}>
+            <div style={{ ...s.modalFooter, padding: "1rem 1.5rem", display: "flex", justifyContent: "flex-end", gap: "0.75rem", borderTop: "1px solid #e4e4e7" }}>
               <button type="button" onClick={cerrarModal} style={s.btnSecondary} disabled={saving}>Cancelar</button>
-              <button type="button" onClick={handleGuardar} style={s.btnPrimary} disabled={saving}>{saving ? "Guardando…" : editando ? "Guardar cambios" : "Crear producto"}</button>
+              <button type="button" onClick={handleGuardar} style={s.btnSecondary} disabled={saving}>{saving ? "Guardando…" : editando ? "Guardar cambios" : "Crear producto"}</button>
             </div>
           </div>
         </div>
@@ -409,7 +751,7 @@ export default function CatalogoPage() {
       {/* ── Confirm delete ── */}
       {confirmId !== null && (
         <div style={s.overlay}>
-          <div style={{ ...s.modal, maxWidth: 400 }}>
+          <div style={{ ...s.modal, maxWidth: 400, background: "var(--accent)", color: "#fffffff"}}>
             <div style={s.modalHeader}><h2 style={s.modalTitle}>¿Eliminar producto?</h2></div>
             <div style={s.modalBody}>
               <p style={{ color: "var(--muted)", lineHeight: 1.6 }}>Si el producto tiene historial, será <strong style={{ color: "var(--text)" }}>desactivado</strong> en lugar de eliminado para conservar el registro.</p>
@@ -472,11 +814,11 @@ const s: Record<string, CSSProperties> = {
   btnCancel: { background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "0.3rem 0.75rem", fontSize: "0.82rem", cursor: "pointer", color: "var(--muted)" },
   priceInput: { width: 90, padding: "0.3rem 0.5rem", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)", fontSize: "0.88rem", outline: "none", textAlign: "right" } as CSSProperties,
   overlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,.65)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: "1rem" } as CSSProperties,
-  modal: { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, width: "100%", maxWidth: 620, boxShadow: "var(--shadow)", overflow: "hidden" },
+  modal: { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, width: "100%", maxWidth: 680, maxHeight: "90vh", boxShadow: "var(--shadow)", display: "flex", flexDirection: "column" },
   modalHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "1.25rem 1.5rem", borderBottom: "1px solid var(--border)" },
   modalTitle: { fontFamily: "var(--font-head)", fontSize: "1.1rem", fontWeight: 700, color: "var(--text)", margin: 0 },
   closeBtn: { background: "transparent", border: "none", color: "var(--muted)", fontSize: "1rem", cursor: "pointer", padding: "0.2rem 0.4rem" },
-  modalBody: { padding: "1.5rem", display: "flex", flexDirection: "column", gap: "1rem" } as CSSProperties,
+  modalBody: { padding: "1.5rem", display: "flex", flexDirection: "column", gap: "1rem", overflowY: "auto", flex: 1 } as CSSProperties,
   modalFooter: { display: "flex", justifyContent: "flex-end", gap: "0.75rem", padding: "1rem 1.5rem", borderTop: "1px solid var(--border)" },
   fila: { display: "flex", gap: "1rem", flexWrap: "wrap" },
   input: { background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "0.6rem 0.85rem", color: "var(--text)", fontSize: "0.9rem", outline: "none", width: "100%" },

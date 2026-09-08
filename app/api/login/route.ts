@@ -45,9 +45,11 @@ export async function POST(req: NextRequest) {
       nombre: string;
       correo: string;
       tipo_usuario: string;
+      id_bodega: number | null;
       contrasena_hash: string;
+      requiere_2fa: boolean;
     }>(
-      `SELECT id_usuario, nombre, correo, tipo_usuario, contrasena_hash
+      `SELECT id_usuario, nombre, correo, tipo_usuario, id_bodega, contrasena_hash, requiere_2fa
        FROM usuario
        WHERE LOWER(correo) = LOWER($1) AND estado_usuario = TRUE`,
       [username]
@@ -72,12 +74,17 @@ export async function POST(req: NextRequest) {
       nombre: row.nombre,
       correo: row.correo,
       tipo_usuario: row.tipo_usuario,
+      id_bodega: row.id_bodega,
     };
 
     // El 2FA es solo para colaboradores (EMPLEADO). El dueño entra directo
     // porque es el que administra el sistema y los códigos se mandan al
-    // correo configurado en GMAIL_USER (que puede no ser el del dueño).
-    if (row.tipo_usuario !== TIPOS_USUARIO.EMPLEADO) {
+    // correo configurado en GMAIL_USER (que puede no ser el del dueño). El
+    // bodeguero tampoco pasa por 2FA: no maneja dinero ni facturación.
+    // Dentro de los EMPLEADO, el dueño puede además eximir puntualmente a
+    // alguno del 2FA (columna requiere_2fa) — p. ej. mientras se resuelve
+    // un problema con su correo.
+    if (row.tipo_usuario !== TIPOS_USUARIO.EMPLEADO || row.requiere_2fa === false) {
       const token = signAuthToken(usuario);
       const response = NextResponse.json({
         ok: true,

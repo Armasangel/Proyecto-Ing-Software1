@@ -2,10 +2,22 @@ import { GET, POST } from "@/app/api/productos/route";
 import { createMockRequest, testUserDueno, testUserEmpleado } from "@/__tests__/utils/api-test-utils";
 
 jest.mock("@/lib/db", () => ({
-  pool: { query: jest.fn(), connect: jest.fn() },
+  pool: {
+    query: jest.fn(),
+    connect: jest.fn(),
+  },
 }));
 
-const mockPool = jest.requireMock("@/lib/db").pool as { query: jest.Mock };
+const mockPool = jest.requireMock("@/lib/db").pool as {
+  query: jest.Mock;
+  connect: jest.Mock;
+};
+
+const mockClient = {
+  query: jest.fn(),
+  release: jest.fn(),
+};
+
 
 const mockProductos = [
   {
@@ -59,7 +71,11 @@ describe("GET /api/productos", () => {
 });
 
 describe("POST /api/productos", () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+  jest.clearAllMocks();
+  mockClient.query.mockReset();
+  mockClient.release.mockReset();
+});
 
   it("returns 403 when unauthenticated", async () => {
     const req = createMockRequest("/api/productos", {
@@ -82,31 +98,64 @@ describe("POST /api/productos", () => {
     expect(data.error).toBe("Faltan campos obligatorios");
   });
 
-  it("returns 201 on success", async () => {
-    mockPool.query.mockResolvedValue({ rows: [{ id_producto: 99 }] });
-    const req = createMockRequest("/api/productos", {
-      method: "POST",
-      user: testUserDueno,
-      body: { codigo_producto: "NEW", nombre_producto: "Test", unidad_medida: "Unidad", id_categoria: 1, id_marca: 1 },
-    });
-    const res = await POST(req);
-    const data = await res.json();
-    expect(res.status).toBe(201);
-    expect(data.id_producto).toBe(99);
+it("returns 201 on success", async () => {
+  mockPool.connect.mockResolvedValue(mockClient);
+
+  mockClient.query
+    .mockResolvedValueOnce(undefined) // BEGIN
+    .mockResolvedValueOnce({ rows: [{ id_producto: 99 }] }) // INSERT
+    .mockResolvedValueOnce(undefined); // COMMIT
+
+  const req = createMockRequest("/api/productos", {
+    method: "POST",
+    user: testUserDueno,
+    body: {
+      codigo_producto: "NEW",
+      nombre_producto: "Test",
+      unidad_medida: "Unidad",
+      id_categoria: 1,
+      id_marca: 1,
+    },
   });
 
-  it("returns 409 on duplicate code", async () => {
-    const err = new Error("duplicate key") as any;
-    err.code = "23505";
-    mockPool.query.mockRejectedValue(err);
-    const req = createMockRequest("/api/productos", {
-      method: "POST",
-      user: testUserDueno,
-      body: { codigo_producto: "EXISTS", nombre_producto: "Test", unidad_medida: "Unidad", id_categoria: 1, id_marca: 1 },
-    });
-    const res = await POST(req);
-    const data = await res.json();
-    expect(res.status).toBe(409);
-    expect(data.error).toBe("El código de producto ya existe");
+  const res = await POST(req);
+  const data = await res.json();
+
+  expect(res.status).toBe(201);
+  expect(data.id_producto).toBe(99);
+  expect(mockClient.release).toHaveBeenCalled();
+});
+
+
+
+it("returns 409 on duplicate code", async () => {
+  const err = new Error("duplicate key") as any;
+  err.code = "23505";
+
+  mockPool.connect.mockResolvedValue(mockClient);
+
+  mockClient.query
+    .mockResolvedValueOnce(undefined) // BEGIN
+    .mockRejectedValueOnce(err)       // INSERT
+    .mockResolvedValueOnce(undefined); // ROLLBACK
+
+  const req = createMockRequest("/api/productos", {
+    method: "POST",
+    user: testUserDueno,
+    body: {
+      codigo_producto: "EXISTS",
+      nombre_producto: "Test",
+      unidad_medida: "Unidad",
+      id_categoria: 1,
+      id_marca: 1,
+    },
   });
+
+  const res = await POST(req);
+  const data = await res.json();
+
+  expect(res.status).toBe(409);
+  expect(data.error).toBe("El código de producto ya existe");
+  expect(mockClient.release).toHaveBeenCalled();
+});
 });

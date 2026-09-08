@@ -49,3 +49,6 @@ desktop.ini
 # (ajusta si usas dumps o backups en la raíz del repo)
 *.sql~
 postgres_data/
+
+# ── Respaldos de la base de datos (automáticos y manuales) ────────────────
+backups/
