@@ -539,8 +539,9 @@ export default function HistorialVentasPage() {
                 }}
               >
                 <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "0.3rem" }}>
-                  <span style={s.dateLabel}>Desde</span>
+                  <label htmlFor="fecha-desde" style={s.dateLabel}>Desde</label>
                   <input
+                    id="fecha-desde"
                     type="date"
                     value={fechaDesde}
                     disabled={Boolean(periodo)}
@@ -553,8 +554,9 @@ export default function HistorialVentasPage() {
                   />
                 </div>
                 <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "0.3rem" }}>
-                  <span style={s.dateLabel}>Hasta</span>
+                  <label htmlFor="fecha-hasta" style={s.dateLabel}>Hasta</label>
                   <input
+                    id="fecha-hasta"
                     type="date"
                     value={fechaHasta}
                     disabled={Boolean(periodo)}
