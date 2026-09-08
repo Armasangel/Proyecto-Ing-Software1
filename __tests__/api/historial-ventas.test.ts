@@ -82,12 +82,12 @@ describe("GET /api/historial-ventas", () => {
     const data = await res.json();
     expect(data.ventas).toHaveLength(1);
     const sql = mockPool.query.mock.calls[0][0] as string;
-    expect(sql).toContain("v.fecha_venta >= $1");
-    expect(sql).toContain("v.fecha_venta < $2");
-    // whereValues + fetchLimit(51) + offset(0) adjuntos por la ruta
+    expect(sql).toContain("v.fecha_venta >= $1::date");
+    expect(sql).toContain("v.fecha_venta < ($2::date + INTERVAL '1 day')");
+    // fechas (parametrizadas) + fetchLimit(51) + offset(0) adjuntos por la ruta
     expect(mockPool.query.mock.calls[0][1]).toEqual([
-      "2026-01-01 00:00:00",
-      "2026-02-01 00:00:00",
+      "2026-01-01",
+      "2026-01-31",
       51,
       0,
     ]);
