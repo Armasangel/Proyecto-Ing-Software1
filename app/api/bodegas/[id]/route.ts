@@ -106,9 +106,10 @@ export async function DELETE(
       );
     }
 
-    // Verificar que no tenga ventas asociadas
+    // Verificar que no tenga ventas asociadas (la bodega de una línea de
+    // venta vive en detalle_venta.id_bodega, no en venta)
     const conVentas = await pool.query(
-      `SELECT 1 FROM venta WHERE id_bodega = $1 LIMIT 1`,
+      `SELECT 1 FROM detalle_venta WHERE id_bodega = $1 LIMIT 1`,
       [idBodega]
     );
     if (conVentas.rowCount && conVentas.rowCount > 0) {

@@ -8,7 +8,8 @@
 --  sobre una base vacía.
 --
 --  Se unificaron aquí los antiguos scripts 02_ordenes, 03_facturacion,
---  04_detalle_venta, 05_codigo_verificacion, 03_indices y 03_datos_venta.
+--  04_detalle_venta, 05_codigo_verificacion, 03_indices, 03_datos_venta,
+--  02_add_fecha_caducidad y 03_add_requiere_2fa.
 
 -- CATEGORIA
 CREATE TABLE categoria (
@@ -45,6 +46,11 @@ CREATE TABLE producto (
     unidad_medida       VARCHAR(50)     NOT NULL,
     estado_producto     BOOLEAN         NOT NULL DEFAULT TRUE,
     caducidad           BOOLEAN         NOT NULL DEFAULT FALSE,
+    -- Fecha de caducidad de referencia para el producto (opcional). Es a
+    -- nivel de catálogo, no por lote — para trazabilidad por lote habría
+    -- que llevar la fecha en el kardex/entrada, esto es solo un recordatorio
+    -- general mostrado en el catálogo cuando caducidad = TRUE.
+    fecha_caducidad     DATE,
     exento_iva          BOOLEAN         NOT NULL DEFAULT FALSE,
     id_categoria        INT             NOT NULL,
     id_marca            INT             NOT NULL,
@@ -61,6 +67,19 @@ CREATE TABLE producto_proveedor (
     CONSTRAINT fk_pp_producto   FOREIGN KEY (id_producto)  REFERENCES producto(id_producto),
     CONSTRAINT fk_pp_proveedor  FOREIGN KEY (id_proveedor) REFERENCES proveedor(id_proveedor)
 );
+-- PRESENTACION_PRODUCTO (empaques/presentaciones de un producto para bodega,
+-- ej. "Caja de 24" con factor_conversion = 24 unidades base. Por ahora solo
+-- lo usa el módulo de bodega; facturación sigue trabajando en unidad base.)
+CREATE TABLE presentacion_producto (
+    id_presentacion     SERIAL          PRIMARY KEY,
+    id_producto         INT             NOT NULL,
+    nombre_presentacion VARCHAR(100)    NOT NULL,
+    factor_conversion   NUMERIC(12,3)   NOT NULL CHECK (factor_conversion > 0),
+    estado_presentacion BOOLEAN         NOT NULL DEFAULT TRUE,
+    CONSTRAINT fk_presentacion_producto FOREIGN KEY (id_producto) REFERENCES producto(id_producto),
+    CONSTRAINT uq_presentacion_nombre UNIQUE (id_producto, nombre_presentacion)
+);
+
 -- CLIENTE (compradores minoristas y mayoristas) 
 CREATE TABLE cliente (
     id_cliente      SERIAL          PRIMARY KEY,
@@ -82,10 +101,21 @@ CREATE TABLE usuario (
     correo            VARCHAR(200)    NOT NULL,
     telefono          VARCHAR(20),
     contrasena_hash   VARCHAR(255)    NOT NULL,
-    tipo_usuario      VARCHAR(20)     NOT NULL CHECK (tipo_usuario IN ('DUENO', 'EMPLEADO')),
+    tipo_usuario      VARCHAR(20)     NOT NULL CHECK (tipo_usuario IN ('DUENO', 'EMPLEADO', 'BODEGUERO')),
     estado_usuario    BOOLEAN         NOT NULL DEFAULT TRUE,
+    -- Exime a colaboradores puntuales del código de verificación por correo
+    -- (2FA) sin tocar su tipo_usuario. Por defecto TRUE para no bajar la
+    -- seguridad de nadie. Solo tiene efecto real sobre usuarios EMPLEADO:
+    -- DUENO y BODEGUERO nunca pasan por 2FA sin importar este valor (ver
+    -- app/api/login/route.ts).
+    requiere_2fa      BOOLEAN         NOT NULL DEFAULT TRUE,
+    -- Bodega fija asignada (obligatoria solo para BODEGUERO). La FK hacia
+    -- bodega(id_bodega) se agrega más abajo con ALTER TABLE porque la tabla
+    -- bodega todavía no existe en este punto del script.
+    id_bodega         INT,
     CONSTRAINT uq_usuario_correo    UNIQUE (correo),
-    CONSTRAINT uq_usuario_telefono  UNIQUE (telefono)
+    CONSTRAINT uq_usuario_telefono  UNIQUE (telefono),
+    CONSTRAINT chk_usuario_bodega   CHECK (tipo_usuario <> 'BODEGUERO' OR id_bodega IS NOT NULL)
 );
 
 -- CODIGO_VERIFICACION (2FA por correo)
@@ -112,6 +142,9 @@ CREATE TABLE bodega (
     ubicacion       VARCHAR(255)
 );
 
+ALTER TABLE usuario
+    ADD CONSTRAINT fk_usuario_bodega FOREIGN KEY (id_bodega) REFERENCES bodega(id_bodega);
+
 -- BODEGA_PRODUCTO (inventario)
 CREATE TABLE bodega_producto (
     id_bodega               INT             NOT NULL,
@@ -133,8 +166,20 @@ CREATE TABLE kardex (
     tipo_movimiento     VARCHAR(20)     NOT NULL CHECK (tipo_movimiento IN ('ENTRADA', 'SALIDA', 'AJUSTE')),
     cantidad            NUMERIC(12,3)   NOT NULL,
     descripcion         VARCHAR(255),
+    -- Quién registró el movimiento (NULL para movimientos generados por el
+    -- sistema antes de esta columna, o por procesos sin usuario asociado).
+    id_usuario          INT,
+    -- Motivo de una SALIDA manual (no aplica a ventas ni a AJUSTE).
+    motivo              VARCHAR(20)     CHECK (motivo IS NULL OR motivo IN ('MERMA', 'USO_INTERNO', 'TRASLADO')),
+    -- Si el movimiento se capturó en una presentación (ej. "Caja de 24"),
+    -- guardamos la presentación y la cantidad en esa presentación como dato
+    -- informativo; `cantidad` arriba siempre queda en unidad base del producto.
+    id_presentacion       INT,
+    cantidad_presentacion NUMERIC(12,3),
     CONSTRAINT fk_kardex_bp FOREIGN KEY (id_bodega, id_producto)
-        REFERENCES bodega_producto(id_bodega, id_producto)
+        REFERENCES bodega_producto(id_bodega, id_producto),
+    CONSTRAINT fk_kardex_usuario FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario),
+    CONSTRAINT fk_kardex_presentacion FOREIGN KEY (id_presentacion) REFERENCES presentacion_producto(id_presentacion)
 );
 
 -- VENTA
@@ -161,11 +206,16 @@ CREATE TABLE detalle_venta (
     id_detalle_venta    SERIAL          PRIMARY KEY,
     id_venta            INT             NOT NULL,
     id_producto         INT             NOT NULL,
+    -- Bodega de la que salió el producto en esta línea. Necesaria para poder
+    -- restaurar el stock correctamente al deshacer/anular una venta
+    -- (migración 04). NULL solo para ventas registradas antes de la migración.
+    id_bodega           INT,
     cantidad            NUMERIC(12,3)   NOT NULL,
     precio_unitario     NUMERIC(10,2)   NOT NULL,
     subtotal            NUMERIC(12,2)   NOT NULL,
     CONSTRAINT fk_dv_venta    FOREIGN KEY (id_venta)    REFERENCES venta(id_venta) ON DELETE CASCADE,
-    CONSTRAINT fk_dv_producto FOREIGN KEY (id_producto) REFERENCES producto(id_producto)
+    CONSTRAINT fk_dv_producto FOREIGN KEY (id_producto) REFERENCES producto(id_producto),
+    CONSTRAINT fk_dv_bodega   FOREIGN KEY (id_bodega)   REFERENCES bodega(id_bodega)
 );
 
 -- PAGO
@@ -227,6 +277,21 @@ CREATE TABLE deuda_producto (
     CONSTRAINT fk_dp_producto FOREIGN KEY (id_producto) REFERENCES producto(id_producto)
 );
 
+-- PAGO_DEUDA (abonos/pagos parciales sobre una deuda, migración 02)
+CREATE TABLE pago_deuda (
+    id_pago         SERIAL          PRIMARY KEY,
+    id_deuda        INT             NOT NULL,
+    monto           NUMERIC(12,2)   NOT NULL CHECK (monto > 0),
+    fecha_pago      TIMESTAMP       NOT NULL DEFAULT NOW(),
+    id_usuario      INT             NOT NULL,
+    metodo_pago     VARCHAR(30),
+    nota            VARCHAR(200),
+    CONSTRAINT fk_pago_deuda    FOREIGN KEY (id_deuda)   REFERENCES deuda(id_deuda) ON DELETE CASCADE,
+    CONSTRAINT fk_pago_usuario  FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario)
+);
+
+CREATE INDEX idx_pago_deuda_id_deuda ON pago_deuda(id_deuda);
+
 -- ORDEN (órdenes de compra)
 CREATE TABLE orden (
     id_orden        SERIAL          PRIMARY KEY,
@@ -246,13 +311,26 @@ CREATE TABLE detalle_orden (
     id_detalle      SERIAL          PRIMARY KEY,
     id_orden        INT             NOT NULL,
     id_producto     INT             NOT NULL,
+    -- Bodega de la que se debería surtir esta línea. Ya no la elige el
+    -- colaborador: el backend la asigna automáticamente a la bodega con
+    -- mayor cantidad_disponible del producto al crear la orden (ver
+    -- POST /api/ordenes). Se conserva como columna normal porque el
+    -- bodeguero la usa para saber qué pedidos le corresponden.
     id_bodega       INT,
     cantidad        NUMERIC(12,3)   NOT NULL,
     precio_unitario NUMERIC(10,2)   NOT NULL,
     subtotal        NUMERIC(12,2)   NOT NULL,
+    -- Si el colaborador capturó la línea en una presentación de mayoreo
+    -- (ej. "Caja de 24", creada por el dueño), guardamos aquí la
+    -- presentación y la cantidad en esa presentación como dato
+    -- informativo; `cantidad` arriba siempre queda en unidad base del
+    -- producto (igual que en kardex).
+    id_presentacion       INT,
+    cantidad_presentacion NUMERIC(12,3),
     CONSTRAINT fk_do_orden    FOREIGN KEY (id_orden)    REFERENCES orden(id_orden) ON DELETE CASCADE,
     CONSTRAINT fk_do_producto FOREIGN KEY (id_producto) REFERENCES producto(id_producto),
-    CONSTRAINT fk_do_bodega   FOREIGN KEY (id_bodega)   REFERENCES bodega(id_bodega)
+    CONSTRAINT fk_do_bodega   FOREIGN KEY (id_bodega)   REFERENCES bodega(id_bodega),
+    CONSTRAINT fk_do_presentacion FOREIGN KEY (id_presentacion) REFERENCES presentacion_producto(id_presentacion)
 );
 
 --  VISTA: deudores en tiempo real (sin tabla redundante)
@@ -279,6 +357,15 @@ CREATE TABLE login_intento (
     intentos        INT             NOT NULL DEFAULT 0,
     bloqueado_hasta TIMESTAMP,
     ultimo_intento  TIMESTAMP       NOT NULL DEFAULT NOW()
+);
+
+-- API_RATE_LIMIT (contador genérico de rate limiting, migración 03)
+-- Ventana fija; se usa primero en /api/usuarios y es reutilizable para
+-- cualquier endpoint futuro (ver lib/api-rate-limit.ts).
+CREATE TABLE api_rate_limit (
+    clave           VARCHAR(150)    PRIMARY KEY,
+    contador        INT             NOT NULL DEFAULT 0,
+    ventana_inicio  TIMESTAMP       NOT NULL DEFAULT NOW()
 );
 
 -- ──────────────────────────────────────────────────────────────────────────
@@ -332,6 +419,21 @@ INSERT INTO usuario (nombre, correo, telefono, contrasena_hash, tipo_usuario) VA
   ('Admin Dueño',    'dueno@tienda.com',        '50201234567', '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm', 'DUENO'),
   ('Carlos Empleado','armasangel193@gmail.com', '50207654321', '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm', 'EMPLEADO');
 
+INSERT INTO usuario (nombre, correo, telefono, contrasena_hash, tipo_usuario, id_bodega) VALUES
+  ('Luis Bodeguero', 'bodega@tienda.com', '50208889999', '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm', 'BODEGUERO', 1);
+
+-- Colaborador de prueba eximido de 2FA (para probar el flujo de login sin
+-- código de verificación por correo).
+INSERT INTO usuario (nombre, correo, telefono, contrasena_hash, tipo_usuario, requiere_2fa)
+VALUES (
+  'Empleado Sin 2FA',
+  'sin2fa@tienda.com',
+  '50205556666',
+  '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm',
+  'EMPLEADO',
+  FALSE
+);
+
 INSERT INTO producto (codigo_producto, nombre_producto, precio_unitario, precio_mayoreo, unidad_medida, id_categoria, id_marca)
 VALUES
   ('ARR-001', 'Arroz 1 libra',    4.50,  3.75, 'libra',  1, 1),
@@ -360,6 +462,18 @@ SELECT 1, p.id_producto, 100, 15
 FROM producto p
 WHERE p.codigo_producto IN ('FRI-001', 'BEB-001', 'BEB-002', 'LEC-002')
 ON CONFLICT (id_bodega, id_producto) DO NOTHING;
+
+-- ── Presentaciones de ejemplo (para bodega) ─────────────────────────────
+INSERT INTO presentacion_producto (id_producto, nombre_presentacion, factor_conversion)
+SELECT p.id_producto, v.nombre_presentacion, v.factor_conversion
+FROM producto p
+JOIN (VALUES
+  ('BEB-001', 'Caja de 24', 24),
+  ('BEB-002', 'Paquete de 6', 6),
+  ('BEB-002', 'Caja de 24', 24)
+) AS v(codigo_producto, nombre_presentacion, factor_conversion)
+  ON v.codigo_producto = p.codigo_producto
+ON CONFLICT (id_producto, nombre_presentacion) DO NOTHING;
 
 -- ── Más clientes (para "top clientes") ──────────────────────────────────
 INSERT INTO cliente (nombre, correo, telefono, tipo_cliente) VALUES

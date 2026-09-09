@@ -75,6 +75,24 @@ const PERIODO_INTERVAL: Record<string, string> = {
   year: "365 days",
 };
 
+const FECHA_ISO_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Valida y normaliza una fecha `YYYY-MM-DD` (calendarcheck incluido). Devuelve la fecha normalizada o null. */
+export function parseHistorialFecha(raw: string): string | null {
+  const t = raw.trim();
+  if (!FECHA_ISO_RE.test(t)) return null;
+  const [yStr, mStr, dStr] = t.split("-");
+  const y = Number(yStr);
+  const m = Number(mStr);
+  const d = Number(dStr);
+  if (y < 100 || m < 1 || m > 12) return null;
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) {
+    return null;
+  }
+  return t;
+}
+
 export function historialVentasPeriodosValidos(): string[] {
   return Object.keys(PERIODO_INTERVAL);
 }
@@ -116,6 +134,22 @@ export function validateHistorialQueryParams(
     return "periodo inválido (use day, week, month o year)";
   }
 
+  const rawDesde = sp.get("fecha_desde");
+  const desde = rawDesde !== null && rawDesde.trim() !== "" ? parseHistorialFecha(rawDesde) : null;
+  if (rawDesde !== null && rawDesde.trim() !== "" && desde === null) {
+    return "fecha_desde inválida (use YYYY-MM-DD)";
+  }
+
+  const rawHasta = sp.get("fecha_hasta");
+  const hasta = rawHasta !== null && rawHasta.trim() !== "" ? parseHistorialFecha(rawHasta) : null;
+  if (rawHasta !== null && rawHasta.trim() !== "" && hasta === null) {
+    return "fecha_hasta inválida (use YYYY-MM-DD)";
+  }
+
+  if (desde !== null && hasta !== null && desde > hasta) {
+    return "fecha_desde no puede ser mayor que fecha_hasta";
+  }
+
   return null;
 }
 
@@ -141,6 +175,9 @@ export function historialVentasLikePattern(raw: string): string {
 /**
  * Construye condiciones AND sobre `venta v` (y tablas ya unidas: `uc`, `ue`).
  * `omitAmountRange`: para `meta_totales`, excluye `min_total`/`max_total` y deja acotar el slider.
+ * Si hay `fecha_desde`/`fecha_hasta` válidos, el preset `periodo` se ignora (el rango personalizado
+ * tiene prioridad; son mutuamente excluyentes). Las fechas se pasan como parámetros y la aritmética
+ * de fin de día se hace en SQL: `($n::date + INTERVAL '1 day')`.
  */
 export function buildHistorialVentasWhere(
   sp: URLSearchParams,
@@ -149,11 +186,29 @@ export function buildHistorialVentasWhere(
   const parts: string[] = [];
   const values: unknown[] = [];
 
+  // Fechas normalizadas (null si ausentes o inválidas). Si hay rango personalizado,
+  // este tiene prioridad sobre el preset `periodo` (mutuamente excluyentes, igual que la UI).
+  const rawDesde = sp.get("fecha_desde");
+  const desdeNorm = rawDesde !== null ? parseHistorialFecha(rawDesde) : null;
+  const rawHasta = sp.get("fecha_hasta");
+  const hastaNorm = rawHasta !== null ? parseHistorialFecha(rawHasta) : null;
+
   const periodo = sp.get("periodo");
-  if (periodo && PERIODO_INTERVAL[periodo]) {
+  if (periodo && PERIODO_INTERVAL[periodo] && desdeNorm === null && hastaNorm === null) {
     parts.push(
       `v.fecha_venta >= NOW() - INTERVAL '${PERIODO_INTERVAL[periodo]}'`
     );
+  }
+
+  if (desdeNorm) {
+    parts.push(`v.fecha_venta >= $${values.length + 1}::date`);
+    values.push(desdeNorm);
+  }
+
+  if (hastaNorm) {
+    // Fin de día inclusivo con aritmética en SQL (evita casteos/zonas horarias en JS).
+    parts.push(`v.fecha_venta < ($${values.length + 1}::date + INTERVAL '1 day')`);
+    values.push(hastaNorm);
   }
 
   if (!options.omitAmountRange) {

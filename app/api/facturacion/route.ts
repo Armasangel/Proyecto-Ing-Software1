@@ -3,7 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { isStaffTipo } from "@/lib/roles";
-import { apiError, unauthorizedError, validationError } from "@/lib/api-error";
+import { apiError, unauthorizedError, validationError, tooManyRequestsError } from "@/lib/api-error";
+import { rateLimit, getClientKey } from "@/lib/rateLimit";
 
 export async function GET(req: NextRequest) {
   const usuario = getUsuarioFromRequest(req);
@@ -18,13 +19,13 @@ export async function GET(req: NextRequest) {
         v.fecha_venta,
         v.total,
         v.estado_venta,
-        u.nombre,
-        u.correo,
+        c.nombre,
+        c.correo,
         f.id_factura,
         f.numero_factura,
         f.total_factura
       FROM venta v
-      JOIN cliente u ON u.id_cliente = v.id_cliente
+      JOIN cliente c ON c.id_cliente = v.id_cliente
       LEFT JOIN factura f ON f.id_venta = v.id_venta
       ORDER BY v.fecha_venta DESC
     `);
@@ -38,6 +39,16 @@ export async function POST(req: NextRequest) {
   const usuario = getUsuarioFromRequest(req);
   if (!usuario) {
     return unauthorizedError();
+  }
+  // límite de tasa: 10 solicitudes por minuto por usuario
+  const { allowed, retryAfter } = rateLimit(
+    getClientKey(req, `facturacion:post:${usuario.id_usuario}`),
+    10,
+    60_000
+  );
+
+  if (!allowed) {
+    return tooManyRequestsError(retryAfter ?? 60_000);
   }
 
   try {

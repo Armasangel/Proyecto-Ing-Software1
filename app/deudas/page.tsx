@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { StaffShell } from "@/components/StaffShell";
 import { useStaffSession } from "@/hooks/useStaffSession";
+import { matchesQuery, paginar, PaginationBar, type PageSize } from "@/lib/ui-table";
 
 type ProductoDeuda = {
   id_producto: number;
@@ -10,6 +11,15 @@ type ProductoDeuda = {
   cantidad: string;
   precio_unitario: string;
   subtotal: string;
+};
+
+type PagoDeuda = {
+  id_pago: number;
+  monto: string;
+  fecha_pago: string;
+  metodo_pago: string | null;
+  nota: string | null;
+  registrado_por: string | null;
 };
 
 type Deuda = {
@@ -24,6 +34,10 @@ type Deuda = {
   id_cliente: number | null;
   limite_deuda: string | null;
   cliente_puede_comprar: boolean | null;
+  total_pagado: string;
+  saldo_pendiente: string;
+  porcentaje_cubierto: string;
+  pagos: PagoDeuda[];
 };
 
 type Producto = {
@@ -70,7 +84,7 @@ const clienteFormVacio = {
 
 const inputStyle: React.CSSProperties = {
   padding: "0.3rem 0.6rem",
-  borderRadius: 6,
+  borderRadius: 14,
   border: "1px solid var(--border)",
   width: "100%",
   background: "var(--surface)",
@@ -83,7 +97,7 @@ const badgeStyle = (bg: string): React.CSSProperties => ({
   color: "#fff",
   background: bg,
   padding: "1px 6px",
-  borderRadius: 4,
+  borderRadius: 8,
 });
 
 function diasRestantes(fecha: string | null): { texto: string; color: string } {
@@ -96,6 +110,191 @@ function diasRestantes(fecha: string | null): { texto: string; color: string } {
   if (dias === 0) return { texto: "Vence hoy", color: "#e63946" };
   if (dias <= 3) return { texto: `Vence en ${dias} día(s)`, color: "#e08e0b" };
   return { texto: `Vence en ${dias} día(s)`, color: "var(--muted)" };
+}
+
+function diasRestantesNum(fecha: string | null): number | null {
+  if (!fecha) return null;
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+  const limite = new Date(`${fecha}T00:00:00`);
+  return Math.round((limite.getTime() - hoy.getTime()) / 86400000);
+}
+
+type FiltroVencimiento = "todas" | "vencidas" | "proximas" | "sin_fecha";
+
+function cumpleFiltroVencimiento(fecha: string | null, filtro: FiltroVencimiento): boolean {
+  if (filtro === "todas") return true;
+  if (filtro === "sin_fecha") return !fecha;
+  const dias = diasRestantesNum(fecha);
+  if (dias === null) return false;
+  if (filtro === "vencidas") return dias < 0;
+  if (filtro === "proximas") return dias >= 0 && dias <= 3;
+  return true;
+}
+
+// Barra de progreso + monto restante. El % viene calculado por el backend
+// (porcentaje_cubierto), acá solo se pinta.
+function SaldoCubierto({ d }: { d: Deuda }) {
+  const pct = Math.max(0, Math.min(100, Number(d.porcentaje_cubierto) || 0));
+  const saldo = Number(d.saldo_pendiente);
+  if (d.estado_deuda === "PAGADA") {
+    return <span style={{ color: "#52b788", fontWeight: 600, fontSize: "0.82rem" }}>Cubierto al 100%</span>;
+  }
+  return (
+    <div>
+      <div style={{ fontSize: "0.8rem", marginBottom: 3 }}>
+        <strong>Q{saldo.toFixed(2)}</strong>
+        <span style={{ color: "var(--muted)" }}> pendiente · {pct}%</span>
+      </div>
+      <div
+        style={{
+          height: 6,
+          borderRadius: 999,
+          background: "var(--border)",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            height: "100%",
+            width: `${pct}%`,
+            borderRadius: 999,
+            background: "var(--accent)",
+            transition: "width 200ms ease",
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+// Formulario inline para registrar un abono contra una deuda específica.
+function FormPago({
+  saldo,
+  monto,
+  setMonto,
+  metodo,
+  setMetodo,
+  error,
+  guardando,
+  onGuardar,
+  onCancelar,
+}: {
+  saldo: number;
+  monto: string;
+  setMonto: (v: string) => void;
+  metodo: string;
+  setMetodo: (v: string) => void;
+  error: string;
+  guardando: boolean;
+  onGuardar: () => void;
+  onCancelar: () => void;
+}) {
+  return (
+    <div
+      style={{
+        background: "var(--surface2)",
+        border: "1px solid var(--border)",
+        borderRadius: 14,
+        padding: "0.9rem 1rem",
+        display: "flex",
+        flexWrap: "wrap",
+        gap: 10,
+        alignItems: "flex-end",
+        maxWidth: 560,
+      }}
+    >
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <label style={{ fontSize: "0.75rem", color: "var(--muted)" }}>Monto a abonar (saldo: Q{saldo.toFixed(2)})</label>
+        <input
+          type="number"
+          min="0.01"
+          step="0.01"
+          max={saldo}
+          value={monto}
+          onChange={(e) => setMonto(e.target.value)}
+          placeholder="0.00"
+          style={{
+            padding: "0.4rem 0.6rem",
+            borderRadius: 10,
+            border: "1px solid var(--border)",
+            background: "var(--surface)",
+            width: 130,
+            fontSize: "0.88rem",
+          }}
+        />
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <label style={{ fontSize: "0.75rem", color: "var(--muted)" }}>Método</label>
+        <select
+          value={metodo}
+          onChange={(e) => setMetodo(e.target.value)}
+          style={{
+            padding: "0.4rem 0.6rem",
+            borderRadius: 10,
+            border: "1px solid var(--border)",
+            background: "var(--surface)",
+            fontSize: "0.88rem",
+          }}
+        >
+          <option value="EFECTIVO">Efectivo</option>
+          <option value="TRANSFERENCIA">Transferencia</option>
+          <option value="TARJETA">Tarjeta</option>
+        </select>
+      </div>
+      <button
+        type="button"
+        onClick={() => setMonto(saldo.toFixed(2))}
+        style={{
+          padding: "0.4rem 0.7rem",
+          borderRadius: 10,
+          border: "1px solid var(--accent)",
+          background: "transparent",
+          color: "var(--accent2)",
+          fontSize: "0.78rem",
+          cursor: "pointer",
+        }}
+      >
+        Abonar todo
+      </button>
+      <button
+        type="button"
+        onClick={onGuardar}
+        disabled={guardando}
+        style={{
+          padding: "0.45rem 1rem",
+          borderRadius: 10,
+          border: "none",
+          background: "var(--accent)",
+          color: "#000000",
+          fontSize: "0.85rem",
+          fontWeight: 600,
+          cursor: guardando ? "default" : "pointer",
+          opacity: guardando ? 0.7 : 1,
+        }}
+      >
+        {guardando ? "Guardando…" : "Guardar pago"}
+      </button>
+      <button
+        type="button"
+        onClick={onCancelar}
+        style={{
+          padding: "0.45rem 0.9rem",
+          borderRadius: 10,
+          border: "1px solid var(--border)",
+          background: "transparent",
+          color: "var(--muted)",
+          fontSize: "0.85rem",
+          cursor: "pointer",
+        }}
+      >
+        Cancelar
+      </button>
+      {error && (
+        <div style={{ width: "100%", color: "#e63946", fontSize: "0.8rem" }}>{error}</div>
+      )}
+    </div>
+  );
 }
 
 export default function DeudasPage() {
@@ -114,6 +313,13 @@ export default function DeudasPage() {
   const [cambiandoId, setCambiandoId] = useState<number | null>(null);
   const [expandidos, setExpandidos] = useState<Set<string>>(new Set());
 
+  // Registrar pago parcial
+  const [pagandoId, setPagandoId] = useState<number | null>(null);
+  const [montoPago, setMontoPago] = useState("");
+  const [metodoPago, setMetodoPago] = useState("EFECTIVO");
+  const [guardandoPago, setGuardandoPago] = useState(false);
+  const [errorPago, setErrorPago] = useState("");
+
   // Búsqueda/autocompletar cliente en "Nueva deuda"
   const [busquedaCliente, setBusquedaCliente] = useState("");
   const [sugerenciasAbiertas, setSugerenciasAbiertas] = useState(false);
@@ -126,6 +332,14 @@ export default function DeudasPage() {
   // Edición de límites (pestaña "Límites de deuda")
   const [limitesEditando, setLimitesEditando] = useState<Record<number, string>>({});
   const [guardandoLimiteId, setGuardandoLimiteId] = useState<number | null>(null);
+
+  // Búsqueda/filtros y paginación de las tablas de la página
+  const [qDeudas, setQDeudas] = useState("");
+  const [qLimites, setQLimites] = useState("");
+  const [soloBloqueados, setSoloBloqueados] = useState(false);
+  const [filtroVencimiento, setFiltroVencimiento] = useState<FiltroVencimiento>("todas");
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState<PageSize>(10);
 
   async function cargarDeudas() {
     const res = await fetch("/api/deudas");
@@ -158,6 +372,10 @@ export default function DeudasPage() {
     cargarProductos();
     cargarClientes();
   }, []);
+
+  useEffect(() => {
+    setPage(1);
+  }, [tab, vista, qDeudas, qLimites, soloBloqueados, filtroVencimiento, perPage]);
 
   // Muestra el mensaje de alerta cuando una deuda vinculada a un cliente
   // acaba de bloquearlo o desbloquearlo por deuda.
@@ -292,6 +510,93 @@ export default function DeudasPage() {
     setGuardandoLimiteId(null);
   }
 
+  // Agrupa las deudas por cliente (o por nombre_deudor para las viejas que no
+  // están vinculadas a un cliente real) — usado en la vista "Acumulado". Se
+  // recalcula solo cuando cambia la lista de deudas.
+  const agruparPorCliente = useCallback(() => {
+    const map = new Map<
+      string,
+      {
+        key: string;
+        label: string;
+        telefono: string | null;
+        id_cliente: number | null;
+        cliente_puede_comprar: boolean | null;
+        limite_deuda: number | null;
+        totalPendiente: number;
+        deudas: Deuda[];
+      }
+    >();
+    for (const d of deudas) {
+      const key = d.id_cliente !== null ? `c${d.id_cliente}` : `n${d.nombre_deudor}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          label: d.nombre_deudor,
+          telefono: d.telefono_deudor,
+          id_cliente: d.id_cliente,
+          cliente_puede_comprar: d.cliente_puede_comprar,
+          limite_deuda: d.limite_deuda ? Number(d.limite_deuda) : null,
+          totalPendiente: 0,
+          deudas: [],
+        });
+      }
+      const g = map.get(key)!;
+      g.deudas.push(d);
+      if (d.estado_deuda === "PENDIENTE") g.totalPendiente += Number(d.monto_total);
+    }
+    return Array.from(map.values()).sort((a, b) => b.totalPendiente - a.totalPendiente);
+  }, [deudas]);
+
+  const deudasPorVencer = useCallback((): Deuda[] => {
+    return deudas
+      .filter((d) => d.estado_deuda === "PENDIENTE")
+      .slice()
+      .sort((a, b) => {
+        if (!a.fecha_limite_pago && !b.fecha_limite_pago) return 0;
+        if (!a.fecha_limite_pago) return 1;
+        if (!b.fecha_limite_pago) return -1;
+        return a.fecha_limite_pago.localeCompare(b.fecha_limite_pago);
+      });
+  }, [deudas]);
+
+  // Lista "Acumulado por cliente" filtrada por búsqueda y por bloqueo, y paginada.
+  const gruposFiltrados = useMemo(() => {
+    return agruparPorCliente().filter((g) => {
+      if (soloBloqueados && g.cliente_puede_comprar !== false) return false;
+      return matchesQuery(qDeudas, g.label, g.telefono);
+    });
+  }, [agruparPorCliente, qDeudas, soloBloqueados]);
+  const gruposPage = useMemo(
+    () => paginar(gruposFiltrados, page, perPage),
+    [gruposFiltrados, page, perPage]
+  );
+
+  // Lista "Próximas a vencer" filtrada por búsqueda, bloqueo y vencimiento, y paginada.
+  const vencimientoFiltrado = useMemo(() => {
+    return deudasPorVencer().filter((d) => {
+      if (soloBloqueados && d.cliente_puede_comprar !== false) return false;
+      if (!cumpleFiltroVencimiento(d.fecha_limite_pago, filtroVencimiento)) return false;
+      return matchesQuery(qDeudas, d.nombre_deudor, d.telefono_deudor);
+    });
+  }, [deudasPorVencer, qDeudas, soloBloqueados, filtroVencimiento]);
+  const vencimientoPage = useMemo(
+    () => paginar(vencimientoFiltrado, page, perPage),
+    [vencimientoFiltrado, page, perPage]
+  );
+
+  // Lista de clientes (pestaña "Límites de deuda") filtrada por búsqueda y bloqueo, y paginada.
+  const clientesFiltradosLimites = useMemo(() => {
+    return clientes.filter((c) => {
+      if (soloBloqueados && c.estado_cliente) return false;
+      return matchesQuery(qLimites, c.nombre, c.telefono, c.correo);
+    });
+  }, [clientes, qLimites, soloBloqueados]);
+  const clientesPage = useMemo(
+    () => paginar(clientesFiltradosLimites, page, perPage),
+    [clientesFiltradosLimites, page, perPage]
+  );
+
   if (!usuario) {
     return <p style={{ padding: "2rem", color: "var(--muted)" }}>Cargando…</p>;
   }
@@ -299,7 +604,7 @@ export default function DeudasPage() {
   if (usuario.tipo_usuario !== "DUENO") {
     return (
       <StaffShell usuario={usuario} title="Deudas" subtitle="">
-        <p style={{ color: "var(--muted)" }}>No tenés permiso para ver esta página.</p>
+        <p style={{ color: "var(--muted)" }}>No tienes permiso para ver esta página.</p>
       </StaffShell>
     );
   }
@@ -337,7 +642,7 @@ export default function DeudasPage() {
     setAlertaBloqueo("");
 
     if (!clienteSeleccionado) {
-      setError("Seleccioná (o creá) el cliente al que se le asigna la deuda.");
+      setError("Selecciona (o crea) el cliente al que se le asigna la deuda.");
       return;
     }
 
@@ -385,6 +690,49 @@ export default function DeudasPage() {
     setCambiandoId(null);
   }
 
+  function abrirPago(id_deuda: number) {
+    setPagandoId(id_deuda);
+    setMontoPago("");
+    setMetodoPago("EFECTIVO");
+    setErrorPago("");
+  }
+
+  function cerrarPago() {
+    setPagandoId(null);
+    setMontoPago("");
+    setErrorPago("");
+  }
+
+  async function registrarPago(id_deuda: number) {
+    const monto = Number(montoPago);
+    if (!Number.isFinite(monto) || monto <= 0) {
+      setErrorPago("Ingresá un monto válido, mayor a 0.");
+      return;
+    }
+    setGuardandoPago(true);
+    setErrorPago("");
+    setAlertaBloqueo("");
+    try {
+      const res = await fetch(`/api/deudas/${id_deuda}/pagos`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ monto, metodo_pago: metodoPago }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setErrorPago(data.error || "No se pudo registrar el pago.");
+        return;
+      }
+      mostrarAlerta(data.alerta);
+      cerrarPago();
+      await cargarDeudas();
+    } catch {
+      setErrorPago("No se pudo conectar con el servidor.");
+    } finally {
+      setGuardandoPago(false);
+    }
+  }
+
   function toggleExpandido(key: string) {
     setExpandidos((prev) => {
       const next = new Set(prev);
@@ -394,54 +742,6 @@ export default function DeudasPage() {
     });
   }
 
-  // Agrupa las deudas por cliente (o por nombre_deudor para las viejas que no
-  // están vinculadas a un cliente real) — usado en la vista "Acumulado".
-  function agruparPorCliente() {
-    const map = new Map<
-      string,
-      {
-        key: string;
-        label: string;
-        telefono: string | null;
-        id_cliente: number | null;
-        cliente_puede_comprar: boolean | null;
-        limite_deuda: number | null;
-        totalPendiente: number;
-        deudas: Deuda[];
-      }
-    >();
-    for (const d of deudas) {
-      const key = d.id_cliente !== null ? `c${d.id_cliente}` : `n${d.nombre_deudor}`;
-      if (!map.has(key)) {
-        map.set(key, {
-          key,
-          label: d.nombre_deudor,
-          telefono: d.telefono_deudor,
-          id_cliente: d.id_cliente,
-          cliente_puede_comprar: d.cliente_puede_comprar,
-          limite_deuda: d.limite_deuda ? Number(d.limite_deuda) : null,
-          totalPendiente: 0,
-          deudas: [],
-        });
-      }
-      const g = map.get(key)!;
-      g.deudas.push(d);
-      if (d.estado_deuda === "PENDIENTE") g.totalPendiente += Number(d.monto_total);
-    }
-    return Array.from(map.values()).sort((a, b) => b.totalPendiente - a.totalPendiente);
-  }
-
-  function deudasPorVencer(): Deuda[] {
-    return deudas
-      .filter((d) => d.estado_deuda === "PENDIENTE")
-      .slice()
-      .sort((a, b) => {
-        if (!a.fecha_limite_pago && !b.fecha_limite_pago) return 0;
-        if (!a.fecha_limite_pago) return 1;
-        if (!b.fecha_limite_pago) return -1;
-        return a.fecha_limite_pago.localeCompare(b.fecha_limite_pago);
-      });
-  }
 
   function formularioClienteNuevo(onCreado: (nuevo: Cliente) => void) {
     return (
@@ -449,7 +749,7 @@ export default function DeudasPage() {
         style={{
           padding: "0.75rem",
           border: "1px dashed var(--border)",
-          borderRadius: 8,
+          borderRadius: 14,
           marginTop: "0.5rem",
           marginBottom: "0.5rem",
         }}
@@ -527,7 +827,7 @@ export default function DeudasPage() {
             disabled={guardandoCliente}
             style={{
               padding: "0.3rem 0.8rem",
-              borderRadius: 6,
+              borderRadius: 14,
               background: "#52b788",
               color: "#fff",
               border: "none",
@@ -544,7 +844,7 @@ export default function DeudasPage() {
             }}
             style={{
               padding: "0.3rem 0.8rem",
-              borderRadius: 6,
+              borderRadius: 14,
               background: "var(--border)",
               border: "none",
               cursor: "pointer",
@@ -573,7 +873,7 @@ export default function DeudasPage() {
     <StaffShell
       usuario={usuario}
       title="Deudas"
-      subtitle="Registrá y llevá el control de las deudas pendientes"
+      subtitle="Registra y controla las deudas pendientes"
     >
       {mensaje && (
         <p style={{ color: "#52b788", marginBottom: "1rem", fontWeight: 600 }}>{mensaje}</p>
@@ -587,7 +887,7 @@ export default function DeudasPage() {
             color: "#fff",
             background: alertaBloqueo.startsWith("⚠️") ? "#e63946" : "#52b788",
             padding: "0.6rem 1rem",
-            borderRadius: 6,
+            borderRadius: 14,
             marginBottom: "1rem",
             fontWeight: 600,
           }}
@@ -637,7 +937,7 @@ export default function DeudasPage() {
               style={{
                 marginBottom: "1.5rem",
                 padding: "0.5rem 1.2rem",
-                borderRadius: 6,
+                borderRadius: 14,
                 background: "#52b788",
                 color: "#fff",
                 border: "none",
@@ -655,7 +955,7 @@ export default function DeudasPage() {
                 marginBottom: "1.5rem",
                 padding: "1rem",
                 border: "1px solid var(--border)",
-                borderRadius: 8,
+                borderRadius: 14,
                 maxWidth: 600,
               }}
             >
@@ -666,10 +966,10 @@ export default function DeudasPage() {
                   Cliente *
                 </label>
                 <div style={{ display: "flex", gap: "0.5rem" }}>
-                  <div style={{ position: "relative", flex: 1 }}>
+                  <div style={{ position: "relative", flex: 1, isolation: "isolate" }}>
                     <input
                       style={inputStyle}
-                      placeholder="Escribí el nombre para buscar…"
+                      placeholder="Escribe el nombre para buscar…"
                       value={busquedaCliente}
                       onChange={(e) => {
                         setBusquedaCliente(e.target.value);
@@ -683,21 +983,20 @@ export default function DeudasPage() {
                       <div
                         style={{
                           position: "absolute",
-                          top: "100%",
+                          top: "calc(100% + 2px)",
                           left: 0,
                           right: 0,
-                          background: "var(--surface)",
+                          background: "#ffffff",
                           border: "1px solid var(--border)",
-                          borderRadius: 6,
-                          marginTop: 2,
-                          zIndex: 20,
+                          borderRadius: 14,
+                          zIndex: 100,
                           maxHeight: 200,
                           overflowY: "auto",
-                          boxShadow: "0 4px 10px rgba(0,0,0,0.12)",
+                          boxShadow: "0 8px 20px rgba(80,60,20,0.22)",
                         }}
                       >
                         {clientesFiltrados.length === 0 && (
-                          <div style={{ padding: "0.5rem 0.7rem", fontSize: "0.85rem", color: "var(--muted)" }}>
+                          <div style={{ padding: "0.5rem 0.7rem", fontSize: "0.85rem", color: "var(--muted)", background: "#ffffff" }}>
                             Sin resultados — probá &quot;+ Cliente nuevo&quot;.
                           </div>
                         )}
@@ -710,6 +1009,7 @@ export default function DeudasPage() {
                               cursor: "pointer",
                               fontSize: "0.85rem",
                               borderBottom: "1px solid var(--border)",
+                              background: "#ffffff",
                             }}
                           >
                             {c.nombre} {c.estado_cliente ? "" : "(bloqueado)"}
@@ -722,7 +1022,7 @@ export default function DeudasPage() {
                     onClick={() => setCreandoCliente((v) => !v)}
                     style={{
                       padding: "0.3rem 0.8rem",
-                      borderRadius: 6,
+                      borderRadius: 14,
                       background: "var(--border)",
                       border: "none",
                       cursor: "pointer",
@@ -791,7 +1091,7 @@ export default function DeudasPage() {
                     value={linea.id_producto}
                     onChange={(e) => actualizarLinea(idx, "id_producto", e.target.value)}
                   >
-                    <option value="">Seleccioná un producto…</option>
+                    <option value="">Seleccionar un producto…</option>
                     {productos.map((p) => (
                       <option key={p.id_producto} value={p.id_producto}>
                         {p.nombre_producto} (Q{Number(p.precio_unitario).toFixed(2)}/{p.unidad_medida})
@@ -811,7 +1111,7 @@ export default function DeudasPage() {
                       onClick={() => quitarLinea(idx)}
                       style={{
                         padding: "0 0.6rem",
-                        borderRadius: 6,
+                        borderRadius: 14,
                         background: "var(--border)",
                         border: "none",
                         cursor: "pointer",
@@ -828,7 +1128,7 @@ export default function DeudasPage() {
                   marginTop: "0.25rem",
                   marginBottom: "1rem",
                   padding: "0.3rem 0.8rem",
-                  borderRadius: 6,
+                  borderRadius: 14,
                   background: "transparent",
                   border: "1px dashed var(--border)",
                   cursor: "pointer",
@@ -847,7 +1147,7 @@ export default function DeudasPage() {
                   onClick={crearDeuda}
                   style={{
                     padding: "0.4rem 1rem",
-                    borderRadius: 6,
+                    borderRadius: 14,
                     background: "#52b788",
                     color: "#fff",
                     border: "none",
@@ -860,7 +1160,7 @@ export default function DeudasPage() {
                   onClick={cerrarFormularioDeuda}
                   style={{
                     padding: "0.4rem 1rem",
-                    borderRadius: 6,
+                    borderRadius: 14,
                     background: "var(--border)",
                     border: "none",
                     cursor: "pointer",
@@ -881,6 +1181,56 @@ export default function DeudasPage() {
             </button>
           </div>
 
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              gap: "0.75rem",
+              marginBottom: "1rem",
+            }}
+          >
+            <input
+              type="search"
+              value={qDeudas}
+              onChange={(e) => setQDeudas(e.target.value)}
+              placeholder="Buscar por nombre o teléfono…"
+              aria-label="Buscar en deudas"
+              style={{ ...inputStyle, flex: "1 1 220px", minWidth: 200, width: "auto" }}
+            />
+            {vista === "vencimiento" && (
+              <select
+                value={filtroVencimiento}
+                onChange={(e) => setFiltroVencimiento(e.target.value as FiltroVencimiento)}
+                aria-label="Filtrar por vencimiento"
+                style={{ ...inputStyle, width: "auto", minWidth: 190 }}
+              >
+                <option value="todas">Todos los vencimientos</option>
+                <option value="vencidas">Vencidas</option>
+                <option value="proximas">Vencen en 3 días o menos</option>
+                <option value="sin_fecha">Sin fecha límite</option>
+              </select>
+            )}
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "0.4rem",
+                fontSize: "0.85rem",
+                color: "var(--muted)",
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={soloBloqueados}
+                onChange={(e) => setSoloBloqueados(e.target.checked)}
+              />
+              Solo clientes bloqueados
+            </label>
+          </div>
+
           {vista === "acumulado" && (
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
@@ -893,9 +1243,9 @@ export default function DeudasPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {agruparPorCliente().map((g) => (
-                    <>
-                      <tr key={g.key} style={{ borderBottom: "1px solid var(--border)" }}>
+                  {gruposPage.slice.map((g) => (
+                    <Fragment key={g.key}>
+                      <tr style={{ borderBottom: "1px solid var(--border)" }}>
                         <td style={{ padding: "0.75rem" }}>
                           {g.label}
                           {g.telefono && (
@@ -930,7 +1280,7 @@ export default function DeudasPage() {
                             onClick={() => toggleExpandido(g.key)}
                             style={{
                               padding: "0.3rem 0.8rem",
-                              borderRadius: 6,
+                              borderRadius: 14,
                               background: "var(--border)",
                               border: "none",
                               cursor: "pointer",
@@ -951,13 +1301,15 @@ export default function DeudasPage() {
                                   <th style={{ padding: "0.4rem" }}>Fecha límite</th>
                                   <th style={{ padding: "0.4rem" }}>Productos</th>
                                   <th style={{ padding: "0.4rem" }}>Monto</th>
+                                  <th style={{ padding: "0.4rem" }}>Saldo / cubierto</th>
                                   <th style={{ padding: "0.4rem" }}>Estado</th>
                                   <th style={{ padding: "0.4rem" }}></th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {g.deudas.map((d) => (
-                                  <tr key={d.id_deuda} style={{ borderTop: "1px solid var(--border)" }}>
+                                  <>
+                                    <tr key={d.id_deuda} style={{ borderTop: "1px solid var(--border)" }}>
                                     <td style={{ padding: "0.4rem" }}>
                                       {new Date(d.fecha_inicio).toLocaleDateString("es-GT")}
                                     </td>
@@ -974,6 +1326,9 @@ export default function DeudasPage() {
                                     <td style={{ padding: "0.4rem", fontWeight: 600 }}>
                                       Q{Number(d.monto_total).toFixed(2)}
                                     </td>
+                                    <td style={{ padding: "0.4rem", minWidth: 140 }}>
+                                      <SaldoCubierto d={d} />
+                                    </td>
                                     <td style={{ padding: "0.4rem" }}>
                                       <span
                                         style={{
@@ -985,45 +1340,91 @@ export default function DeudasPage() {
                                       </span>
                                     </td>
                                     <td style={{ padding: "0.4rem" }}>
-                                      <button
-                                        onClick={() => cambiarEstado(d.id_deuda)}
-                                        disabled={cambiandoId === d.id_deuda}
-                                        style={{
-                                          padding: "0.25rem 0.6rem",
-                                          borderRadius: 6,
-                                          background: d.estado_deuda === "PAGADA" ? "#e63946" : "#52b788",
-                                          color: "#fff",
-                                          border: "none",
-                                          cursor: cambiandoId === d.id_deuda ? "default" : "pointer",
-                                          opacity: cambiandoId === d.id_deuda ? 0.6 : 1,
-                                          fontSize: "0.75rem",
-                                        }}
-                                      >
-                                        {cambiandoId === d.id_deuda
-                                          ? "…"
-                                          : d.estado_deuda === "PAGADA"
-                                          ? "Marcar pendiente"
-                                          : "Marcar pagada"}
-                                      </button>
+                                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                                        {d.estado_deuda === "PENDIENTE" && (
+                                          <button
+                                            onClick={() => abrirPago(d.id_deuda)}
+                                            style={{
+                                              padding: "0.25rem 0.6rem",
+                                              borderRadius: 14,
+                                              background: "var(--accent)",
+                                              color: "#000000",
+                                              border: "none",
+                                              cursor: "pointer",
+                                              fontSize: "0.75rem",
+                                            }}
+                                          >
+                                            Registrar pago
+                                          </button>
+                                        )}
+                                        <button
+                                          onClick={() => cambiarEstado(d.id_deuda)}
+                                          disabled={cambiandoId === d.id_deuda}
+                                          style={{
+                                            padding: "0.25rem 0.6rem",
+                                            borderRadius: 14,
+                                            background: d.estado_deuda === "PAGADA" ? "#e63946" : "#52b788",
+                                            color: "#fff",
+                                            border: "none",
+                                            cursor: cambiandoId === d.id_deuda ? "default" : "pointer",
+                                            opacity: cambiandoId === d.id_deuda ? 0.6 : 1,
+                                            fontSize: "0.75rem",
+                                          }}
+                                        >
+                                          {cambiandoId === d.id_deuda
+                                            ? "…"
+                                            : d.estado_deuda === "PAGADA"
+                                            ? "Marcar pendiente"
+                                            : "Marcar pagada"}
+                                        </button>
+                                      </div>
                                     </td>
-                                  </tr>
+                                    </tr>
+                                    {pagandoId === d.id_deuda && (
+                                      <tr>
+                                        <td colSpan={7} style={{ padding: "0.5rem 0.4rem 0.9rem" }}>
+                                          <FormPago
+                                            saldo={Number(d.saldo_pendiente)}
+                                            monto={montoPago}
+                                            setMonto={setMontoPago}
+                                            metodo={metodoPago}
+                                            setMetodo={setMetodoPago}
+                                            error={errorPago}
+                                            guardando={guardandoPago}
+                                            onGuardar={() => registrarPago(d.id_deuda)}
+                                            onCancelar={cerrarPago}
+                                          />
+                                        </td>
+                                      </tr>
+                                    )}
+                                  </>
                                 ))}
                               </tbody>
                             </table>
                           </td>
                         </tr>
                       )}
-                    </>
+                    </Fragment>
                   ))}
-                  {deudas.length === 0 && (
+                  {gruposPage.slice.length === 0 && (
                     <tr>
                       <td colSpan={4} style={{ padding: "1.5rem", textAlign: "center", color: "var(--muted)" }}>
-                        No hay deudas registradas.
+                        {qDeudas.trim() || soloBloqueados
+                          ? "Ningún resultado para esa búsqueda o filtro."
+                          : "No hay deudas registradas."}
                       </td>
                     </tr>
                   )}
                 </tbody>
               </table>
+              <PaginationBar
+                total={gruposPage.total}
+                page={gruposPage.paginaSegura}
+                perPage={perPage}
+                onPage={setPage}
+                onPerPage={setPerPage}
+                noun="clientes"
+              />
             </div>
           )}
 
@@ -1034,63 +1435,110 @@ export default function DeudasPage() {
                   <tr style={{ borderBottom: "2px solid var(--border)", textAlign: "left" }}>
                     <th style={{ padding: "0.75rem" }}>Persona</th>
                     <th style={{ padding: "0.75rem" }}>Monto</th>
+                    <th style={{ padding: "0.75rem" }}>Saldo / cubierto</th>
                     <th style={{ padding: "0.75rem" }}>Fecha límite</th>
                     <th style={{ padding: "0.75rem" }}>Vencimiento</th>
                     <th style={{ padding: "0.75rem" }}>Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {deudasPorVencer().map((d) => {
+                  {vencimientoPage.slice.map((d) => {
                     const rest = diasRestantes(d.fecha_limite_pago);
                     return (
-                      <tr key={d.id_deuda} style={{ borderBottom: "1px solid var(--border)" }}>
-                        <td style={{ padding: "0.75rem" }}>
-                          {d.nombre_deudor}
-                          {d.id_cliente !== null && d.cliente_puede_comprar === false && (
-                            <span style={badgeStyle("#e63946")}>bloqueado</span>
-                          )}
-                        </td>
-                        <td style={{ padding: "0.75rem", fontWeight: 600 }}>
-                          Q{Number(d.monto_total).toFixed(2)}
-                        </td>
-                        <td style={{ padding: "0.75rem", color: "var(--muted)" }}>
-                          {d.fecha_limite_pago
-                            ? new Date(d.fecha_limite_pago).toLocaleDateString("es-GT")
-                            : "—"}
-                        </td>
-                        <td style={{ padding: "0.75rem", color: rest.color, fontWeight: 600 }}>
-                          {rest.texto}
-                        </td>
-                        <td style={{ padding: "0.75rem" }}>
-                          <button
-                            onClick={() => cambiarEstado(d.id_deuda)}
-                            disabled={cambiandoId === d.id_deuda}
-                            style={{
-                              padding: "0.3rem 0.8rem",
-                              borderRadius: 6,
-                              background: "#52b788",
-                              color: "#fff",
-                              border: "none",
-                              cursor: cambiandoId === d.id_deuda ? "default" : "pointer",
-                              opacity: cambiandoId === d.id_deuda ? 0.6 : 1,
-                              fontSize: "0.8rem",
-                            }}
-                          >
-                            {cambiandoId === d.id_deuda ? "Guardando…" : "Marcar pagada"}
-                          </button>
-                        </td>
-                      </tr>
+                      <>
+                        <tr key={d.id_deuda} style={{ borderBottom: "1px solid var(--border)" }}>
+                          <td style={{ padding: "0.75rem" }}>
+                            {d.nombre_deudor}
+                            {d.id_cliente !== null && d.cliente_puede_comprar === false && (
+                              <span style={badgeStyle("#e63946")}>bloqueado</span>
+                            )}
+                          </td>
+                          <td style={{ padding: "0.75rem", fontWeight: 600 }}>
+                            Q{Number(d.monto_total).toFixed(2)}
+                          </td>
+                          <td style={{ padding: "0.75rem", minWidth: 140 }}>
+                            <SaldoCubierto d={d} />
+                          </td>
+                          <td style={{ padding: "0.75rem", color: "var(--muted)" }}>
+                            {d.fecha_limite_pago
+                              ? new Date(d.fecha_limite_pago).toLocaleDateString("es-GT")
+                              : "—"}
+                          </td>
+                          <td style={{ padding: "0.75rem", color: rest.color, fontWeight: 600 }}>
+                            {rest.texto}
+                          </td>
+                          <td style={{ padding: "0.75rem" }}>
+                            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                              <button
+                                onClick={() => abrirPago(d.id_deuda)}
+                                style={{
+                                  padding: "0.3rem 0.8rem",
+                                  borderRadius: 14,
+                                  background: "var(--accent)",
+                                  color: "#fff",
+                                  border: "none",
+                                  cursor: "pointer",
+                                  fontSize: "0.8rem",
+                                }}
+                              >
+                                Registrar pago
+                              </button>
+                              <button
+                                onClick={() => cambiarEstado(d.id_deuda)}
+                                disabled={cambiandoId === d.id_deuda}
+                                style={{
+                                  padding: "0.3rem 0.8rem",
+                                  borderRadius: 14,
+                                  background: "#52b788",
+                                  color: "#fff",
+                                  border: "none",
+                                  cursor: cambiandoId === d.id_deuda ? "default" : "pointer",
+                                  opacity: cambiandoId === d.id_deuda ? 0.6 : 1,
+                                  fontSize: "0.8rem",
+                                }}
+                              >
+                                {cambiandoId === d.id_deuda ? "Guardando…" : "Marcar pagada"}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                        {pagandoId === d.id_deuda && (
+                          <tr>
+                            <td colSpan={6} style={{ padding: "0.5rem 0.75rem 1rem" }}>
+                              <FormPago
+                                saldo={Number(d.saldo_pendiente)}
+                                monto={montoPago}
+                                setMonto={setMontoPago}
+                                metodo={metodoPago}
+                                setMetodo={setMetodoPago}
+                                error={errorPago}
+                                guardando={guardandoPago}
+                                onGuardar={() => registrarPago(d.id_deuda)}
+                                onCancelar={cerrarPago}
+                              />
+                            </td>
+                          </tr>
+                        )}
+                      </>
                     );
                   })}
-                  {deudasPorVencer().length === 0 && (
+                  {vencimientoPage.slice.length === 0 && (
                     <tr>
-                      <td colSpan={5} style={{ padding: "1.5rem", textAlign: "center", color: "var(--muted)" }}>
+                      <td colSpan={6} style={{ padding: "1.5rem", textAlign: "center", color: "var(--muted)" }}>
                         No hay deudas pendientes.
                       </td>
                     </tr>
                   )}
                 </tbody>
               </table>
+              <PaginationBar
+                total={vencimientoPage.total}
+                page={vencimientoPage.paginaSegura}
+                perPage={perPage}
+                onPage={setPage}
+                onPerPage={setPerPage}
+                noun="deudas"
+              />
             </div>
           )}
         </>
@@ -1099,7 +1547,7 @@ export default function DeudasPage() {
       {tab === "limites" && (
         <>
           <p style={{ color: "var(--muted)", marginBottom: "1rem", maxWidth: 640 }}>
-            Definí el límite de deuda de cada cliente. Al llegar (o superar) ese monto en deudas
+            Define el límite de deuda de cada cliente. Al llegar (o superar) ese monto en deudas
             pendientes, el cliente queda bloqueado automáticamente para comprar o hacer pedidos —
             se desbloquea solo cuando su deuda pendiente vuelve a bajar del límite.
           </p>
@@ -1110,7 +1558,7 @@ export default function DeudasPage() {
               style={{
                 marginBottom: "1rem",
                 padding: "0.4rem 1rem",
-                borderRadius: 6,
+                borderRadius: 14,
                 background: "#52b788",
                 color: "#fff",
                 border: "none",
@@ -1128,6 +1576,43 @@ export default function DeudasPage() {
             </div>
           )}
 
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              gap: "0.75rem",
+              marginBottom: "1rem",
+            }}
+          >
+            <input
+              type="search"
+              value={qLimites}
+              onChange={(e) => setQLimites(e.target.value)}
+              placeholder="Buscar cliente por nombre, teléfono o correo…"
+              aria-label="Buscar clientes"
+              style={{ ...inputStyle, flex: "1 1 260px", minWidth: 220, width: "auto" }}
+            />
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "0.4rem",
+                fontSize: "0.85rem",
+                color: "var(--muted)",
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={soloBloqueados}
+                onChange={(e) => setSoloBloqueados(e.target.checked)}
+              />
+              Solo clientes bloqueados
+            </label>
+          </div>
+
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
               <thead>
@@ -1140,7 +1625,7 @@ export default function DeudasPage() {
                 </tr>
               </thead>
               <tbody>
-                {clientes.map((c) => (
+                {clientesPage.slice.map((c) => (
                   <tr key={c.id_cliente} style={{ borderBottom: "1px solid var(--border)" }}>
                     <td style={{ padding: "0.75rem" }}>
                       {c.nombre}
@@ -1178,7 +1663,7 @@ export default function DeudasPage() {
                         disabled={guardandoLimiteId === c.id_cliente}
                         style={{
                           padding: "0.3rem 0.8rem",
-                          borderRadius: 6,
+                          borderRadius: 14,
                           background: "var(--border)",
                           border: "none",
                           cursor: guardandoLimiteId === c.id_cliente ? "default" : "pointer",
@@ -1190,15 +1675,25 @@ export default function DeudasPage() {
                     </td>
                   </tr>
                 ))}
-                {clientes.length === 0 && (
+                {clientesPage.slice.length === 0 && (
                   <tr>
                     <td colSpan={5} style={{ padding: "1.5rem", textAlign: "center", color: "var(--muted)" }}>
-                      No hay clientes registrados.
+                      {qLimites.trim() || soloBloqueados
+                        ? "Ningún resultado para esa búsqueda o filtro."
+                        : "No hay clientes registrados."}
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
+            <PaginationBar
+              total={clientesPage.total}
+              page={clientesPage.paginaSegura}
+              perPage={perPage}
+              onPage={setPage}
+              onPerPage={setPerPage}
+              noun="clientes"
+            />
           </div>
         </>
       )}

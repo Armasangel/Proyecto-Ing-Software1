@@ -1,11 +1,13 @@
 /** Valores de `usuario.tipo_usuario` en la base de datos */
 export const TIPOS_USUARIO = {
   DUENO: "DUENO",
-  EMPLEADO: "EMPLEADO"
+  EMPLEADO: "EMPLEADO",
+  BODEGUERO: "BODEGUERO"
 } as const;
 
 export type TipoUsuarioDb = (typeof TIPOS_USUARIO)[keyof typeof TIPOS_USUARIO];
 
+/** Dueño o colaborador de tienda (no incluye bodeguero, que tiene su propio panel). */
 export function isStaffTipo(tipo: string): boolean {
   return tipo === TIPOS_USUARIO.DUENO || tipo === TIPOS_USUARIO.EMPLEADO;
 }
@@ -19,12 +21,19 @@ export function isColaboradorTipo(tipo: string): boolean {
   return tipo === TIPOS_USUARIO.EMPLEADO;
 }
 
+/** Colaborador de bodega: registra entradas/salidas en su bodega asignada. */
+export function isBodegueroTipo(tipo: string): boolean {
+  return tipo === TIPOS_USUARIO.BODEGUERO;
+}
+
 export function labelRol(tipo: string): string {
   switch (tipo) {
     case TIPOS_USUARIO.DUENO:
       return "Dueño";
     case TIPOS_USUARIO.EMPLEADO:
       return "Colaborador";
+    case TIPOS_USUARIO.BODEGUERO:
+      return "Bodeguero";
     default:
       return tipo;
   }
@@ -33,6 +42,7 @@ export function labelRol(tipo: string): string {
 export function postLoginPath(tipo: string): string {
   if (tipo === TIPOS_USUARIO.DUENO) return "/dashboard";
   if (tipo === TIPOS_USUARIO.EMPLEADO) return "/ventas";
+  if (tipo === TIPOS_USUARIO.BODEGUERO) return "/bodega";
   return "/dashboard";
 }
 

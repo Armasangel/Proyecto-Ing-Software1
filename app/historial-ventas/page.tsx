@@ -76,6 +76,8 @@ function num(v: string | number | unknown): number {
 function buildHistorialParams(opts: {
   q: string;
   periodo: string;
+  fechaDesde: string;
+  fechaHasta: string;
   idProducto: number | null;
   idCliente: number | null;
   idProveedor: number | null;
@@ -90,6 +92,8 @@ function buildHistorialParams(opts: {
   const sp = new URLSearchParams();
   if (opts.q.trim()) sp.set("q", opts.q.trim());
   if (opts.periodo) sp.set("periodo", opts.periodo);
+  if (opts.fechaDesde) sp.set("fecha_desde", opts.fechaDesde);
+  if (opts.fechaHasta) sp.set("fecha_hasta", opts.fechaHasta);
   if (opts.idProducto != null) sp.set("id_producto", String(opts.idProducto));
   if (opts.idCliente != null) sp.set("id_cliente", String(opts.idCliente));
   if (opts.idProveedor != null) sp.set("id_proveedor", String(opts.idProveedor));
@@ -117,6 +121,8 @@ export default function HistorialVentasPage() {
   const [panelFiltros, setPanelFiltros] = useState(false);
 
   const [periodo, setPeriodo] = useState("");
+  const [fechaDesde, setFechaDesde] = useState("");
+  const [fechaHasta, setFechaHasta] = useState("");
   const [idProducto, setIdProducto] = useState<number | null>(null);
   const [idCliente, setIdCliente] = useState<number | null>(null);
   const [idProveedor, setIdProveedor] = useState<number | null>(null);
@@ -155,8 +161,8 @@ export default function HistorialVentasPage() {
 
   const structuralKey = useMemo(
     () =>
-      `${debouncedQ}|${periodo}|${idProducto ?? ""}|${idCliente ?? ""}|${idProveedor ?? ""}`,
-    [debouncedQ, periodo, idProducto, idCliente, idProveedor]
+      `${debouncedQ}|${periodo}|${fechaDesde}|${fechaHasta}|${idProducto ?? ""}|${idCliente ?? ""}|${idProveedor ?? ""}`,
+    [debouncedQ, periodo, fechaDesde, fechaHasta, idProducto, idCliente, idProveedor]
   );
 
   const fetchHistorial = useCallback(
@@ -168,6 +174,8 @@ export default function HistorialVentasPage() {
       const params = buildHistorialParams({
         q: debouncedQ,
         periodo,
+        fechaDesde,
+        fechaHasta,
         idProducto,
         idCliente,
         idProveedor,
@@ -192,6 +200,8 @@ export default function HistorialVentasPage() {
     [
       debouncedQ,
       periodo,
+      fechaDesde,
+      fechaHasta,
       idProducto,
       idCliente,
       idProveedor,
@@ -449,13 +459,39 @@ export default function HistorialVentasPage() {
       {/* Panel lateral filtros */}
       {panelFiltros && (
         <>
+          {/* Overlay / Backdrop */}
           <button
             type="button"
             aria-label="Cerrar filtros"
             onClick={() => setPanelFiltros(false)}
-            style={s.drawerBackdrop}
+            style={{
+              ...s.drawerBackdrop,
+              position: "fixed",
+              top: 0,
+              left: 0,
+              width: "100vw",
+              height: "100vh",
+              backgroundColor: "rgba(0, 0, 0, 0.5)", // Oscurece el fondo
+              border: "none",
+              zIndex: 99,
+            }}
           />
-          <aside style={s.drawer}>
+          {/* Drawer / Panel lateral */}
+          <aside
+            style={{
+              ...s.drawer,
+              position: "fixed",
+              top: 0,
+              right: 0, // O left: 0 si lo prefieres a la izquierda
+              width: "320px",
+              height: "100vh",
+              backgroundColor: "var(--surface, #ffffff)", // Usa un color opaco (p. ej. #1e1e1e o #ffffff)
+              color: "var(--text, #1e1e1e)", // Corregido typo de color
+              zIndex: 100,
+              boxShadow: "-4px 0 12px rgba(0, 0, 0, 0.3)",
+              overflowY: "auto",
+            }}
+          >
             <div style={s.drawerHeader}>
               <h2 style={s.drawerTitle}>Filtros</h2>
               <button type="button" onClick={() => setPanelFiltros(false)} style={s.closeBtn}>
@@ -465,22 +501,86 @@ export default function HistorialVentasPage() {
             <div style={s.drawerBody}>
               <label style={s.label}>Periodo</label>
               <div style={s.btnRow}>
-                {PERIODOS.map((p) => (
-                  <button
-                    key={p.value || "all"}
-                    type="button"
-                    onClick={() => setPeriodo(p.value)}
-                    style={{
-                      ...s.chip,
-                      background: periodo === p.value ? ACCENT_SOFT : "var(--surface2)",
-                      borderColor: periodo === p.value ? ACCENT : "var(--border)",
-                      color: periodo === p.value ? "#b7e4c7" : "var(--text)",
-                    }}
-                  >
-                    {p.label}
-                  </button>
-                ))}
+                {PERIODOS.map((p) => {
+                  const fechaActiva = Boolean(fechaDesde || fechaHasta);
+                  const disabled = fechaActiva && p.value !== "";
+                  return (
+                    <button
+                      key={p.value || "all"}
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => {
+                        setFechaDesde("");
+                        setFechaHasta("");
+                        setPeriodo(p.value);
+                      }}
+                      style={{
+                        ...s.chip,
+                        background: periodo === p.value ? ACCENT_SOFT : "var(--surface2)",
+                        borderColor: periodo === p.value ? ACCENT : "var(--border)",
+                        color: periodo === p.value ? "#b7e4c7" : "var(--text)",
+                        opacity: disabled ? 0.45 : 1,
+                        cursor: disabled ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      {p.label}
+                    </button>
+                  );
+                })}
               </div>
+
+              <label style={s.label}>Rango de fechas</label>
+              <div
+                style={{
+                  display: "flex",
+                  gap: "0.5rem",
+                  alignItems: "flex-end",
+                  opacity: periodo ? 0.45 : 1,
+                }}
+              >
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                  <label htmlFor="fecha-desde" style={s.dateLabel}>Desde</label>
+                  <input
+                    id="fecha-desde"
+                    type="date"
+                    value={fechaDesde}
+                    disabled={Boolean(periodo)}
+                    max={fechaHasta || undefined}
+                    onChange={(e) => {
+                      setPeriodo("");
+                      setFechaDesde(e.target.value);
+                    }}
+                    style={s.dateInput}
+                  />
+                </div>
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                  <label htmlFor="fecha-hasta" style={s.dateLabel}>Hasta</label>
+                  <input
+                    id="fecha-hasta"
+                    type="date"
+                    value={fechaHasta}
+                    disabled={Boolean(periodo)}
+                    min={fechaDesde || undefined}
+                    onChange={(e) => {
+                      setPeriodo("");
+                      setFechaHasta(e.target.value);
+                    }}
+                    style={s.dateInput}
+                  />
+                </div>
+              </div>
+              {(fechaDesde || fechaHasta) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFechaDesde("");
+                    setFechaHasta("");
+                  }}
+                  style={s.linkBtn}
+                >
+                  Quitar filtro de fechas
+                </button>
+              )}
 
               <label style={s.label}>Total venta (Q)</label>
               {!rangosMontosListos ? (
@@ -556,15 +656,51 @@ export default function HistorialVentasPage() {
 
       {/* Modal pickers */}
       {picker && (
-        <div style={s.overlay} role="presentation" onClick={() => setPicker(null)}>
-          <div style={s.modal} role="dialog" onClick={(e) => e.stopPropagation()}>
-            <div style={s.modalHeader}>
-              <h3 style={s.modalTitle}>
+        <div
+          style={{
+            ...s.overlay,
+            position: "fixed",
+            top: 0,
+            left: 0,
+            width: "100vw",
+            height: "100vh",
+            backgroundColor: "rgba(0, 0, 0, 0.5)", // Oscurece la pantalla de atrás
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 101, // Mayor que el drawer lateral (100)
+          }}
+          role="presentation"
+          onClick={() => setPicker(null)}
+        >
+          <div
+            style={{
+              ...s.modal,
+              backgroundColor: "#ffffff", // Fondo blanco opaco
+              color: "#1a1a1a",           // Texto oscuro
+              borderRadius: "12px",
+              width: "90%",
+              maxWidth: "480px",
+              maxHeight: "80vh",
+              boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.3)",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+            }}
+            role="dialog"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ ...s.modalHeader, padding: "1.25rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <h3 style={{ ...s.modalTitle, margin: 0, color: "#1a1a1a" }}>
                 {picker === "producto" && "Elegir producto"}
                 {picker === "cliente" && "Elegir cliente"}
                 {picker === "proveedor" && "Elegir proveedor"}
               </h3>
-              <button type="button" style={s.closeBtn} onClick={() => setPicker(null)}>
+              <button
+                type="button"
+                style={{ ...s.closeBtn, color: "#1a1a1a", background: "transparent", border: "none", cursor: "pointer" }}
+                onClick={() => setPicker(null)}
+              >
                 ✕
               </button>
             </div>
@@ -574,23 +710,32 @@ export default function HistorialVentasPage() {
                 placeholder="Filtrar lista…"
                 value={pickerBusqueda}
                 onChange={(e) => setPickerBusqueda(e.target.value)}
-                style={s.searchInput}
+                style={{
+                  ...s.searchInput,
+                  backgroundColor: "#f4f4f5", // Fondo suave para el input
+                  color: "#1a1a1a",
+                  border: "1px solid #e4e4e7",
+                }}
               />
             </div>
-            <div style={s.modalList}>
+            <div style={{ ...s.modalList, overflowY: "auto", padding: "0 1.25rem 1.25rem" }}>
               {picker === "producto" &&
                 productosPickerFiltrados.map((p) => (
                   <button
                     key={p.id_producto}
                     type="button"
-                    style={s.listItem}
+                    style={{
+                      ...s.listItem,
+                      backgroundColor: "transparent",
+                      color: "#1a1a1a",
+                    }}
                     onClick={() => {
                       setIdProducto(p.id_producto);
                       setPicker(null);
                     }}
                   >
-                    <span style={{ fontWeight: 600 }}>{p.codigo_producto}</span>
-                    <span style={{ color: "var(--muted)", fontSize: "0.85rem" }}>{p.nombre_producto}</span>
+                    <span style={{ fontWeight: 600, display: "block" }}>{p.codigo_producto}</span>
+                    <span style={{ color: "#666666", fontSize: "0.85rem" }}>{p.nombre_producto}</span>
                   </button>
                 ))}
               {picker === "cliente" &&
@@ -598,14 +743,18 @@ export default function HistorialVentasPage() {
                   <button
                     key={c.id_usuario}
                     type="button"
-                    style={s.listItem}
+                    style={{
+                      ...s.listItem,
+                      backgroundColor: "transparent",
+                      color: "#1a1a1a",
+                    }}
                     onClick={() => {
                       setIdCliente(c.id_usuario);
                       setPicker(null);
                     }}
                   >
-                    <span style={{ fontWeight: 600 }}>{c.nombre}</span>
-                    <span style={{ color: "var(--muted)", fontSize: "0.85rem" }}>{c.correo}</span>
+                    <span style={{ fontWeight: 600, display: "block" }}>{c.nombre}</span>
+                    <span style={{ color: "#666666", fontSize: "0.85rem" }}>{c.correo}</span>
                   </button>
                 ))}
               {picker === "proveedor" &&
@@ -613,14 +762,18 @@ export default function HistorialVentasPage() {
                   <button
                     key={p.id_proveedor}
                     type="button"
-                    style={s.listItem}
+                    style={{
+                      ...s.listItem,
+                      backgroundColor: "transparent",
+                      color: "#1a1a1a",
+                    }}
                     onClick={() => {
                       setIdProveedor(p.id_proveedor);
                       setPicker(null);
                     }}
                   >
-                    <span style={{ fontWeight: 600 }}>{p.nombre_proveedor}</span>
-                    <span style={{ color: "var(--muted)", fontSize: "0.85rem" }}>NIT {p.nit_proveedor}</span>
+                    <span style={{ fontWeight: 600, display: "block" }}>{p.nombre_proveedor}</span>
+                    <span style={{ color: "#666666", fontSize: "0.85rem" }}>NIT {p.nit_proveedor}</span>
                   </button>
                 ))}
             </div>
@@ -795,6 +948,21 @@ const s: Record<string, CSSProperties> = {
     color: "var(--muted)",
   },
   rangeVal: { fontVariantNumeric: "tabular-nums" },
+  dateLabel: {
+    fontSize: "0.72rem",
+    color: "var(--muted)",
+  },
+  dateInput: {
+    background: "var(--surface2)",
+    border: "1px solid var(--border)",
+    borderRadius: 10,
+    padding: "0.55rem 0.7rem",
+    color: "var(--text)",
+    fontSize: "0.85rem",
+    fontFamily: "var(--font-body)",
+    colorScheme: "dark",
+    outline: "none",
+  },
   btnPicker: {
     width: "100%",
     textAlign: "left",
