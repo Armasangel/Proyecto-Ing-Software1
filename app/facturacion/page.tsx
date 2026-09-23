@@ -17,6 +17,30 @@ type Venta = {
   total_factura: number | null;
 };
 
+type ProductoFactura = {
+  id_detalle: number;
+  codigo_producto: string;
+  nombre_producto: string;
+  cantidad: number;
+  precio_unitario: number;
+  subtotal: number;
+};
+
+type FacturaDetalle = {
+  id_venta: number;
+  fecha_venta: string;
+  total: number;
+  estado_venta: string;
+  nombre: string;
+  correo: string;
+  id_factura: number;
+  numero_factura: string;
+  nombre_cliente: string;
+  nit_cliente: string;
+  total_factura: number;
+  productos: ProductoFactura[];
+};
+
 const inputClsTabla =
   "px-3.5 py-2.5 rounded-control border border-[var(--border)] bg-cream/60 text-ink text-sm outline-none focus:ring-2 focus:ring-market/40";
 
@@ -25,6 +49,11 @@ export default function FacturacionPage() {
   const [ventas, setVentas] = useState<Venta[]>([]);
   const [mensaje, setMensaje] = useState("");
   const [cargando, setCargando] = useState(false);
+
+  // DEV-118: vista de detalle/impresión de una factura ya emitida.
+  const [facturaDetalle, setFacturaDetalle] = useState<FacturaDetalle | null>(null);
+  const [cargandoDetalle, setCargandoDetalle] = useState(false);
+  const [errorDetalle, setErrorDetalle] = useState("");
 
   // Búsqueda, filtros y paginación de la tabla
   const [q, setQ] = useState("");
@@ -87,12 +116,34 @@ export default function FacturacionPage() {
     setCargando(false);
   }
 
+  async function verFactura(id_venta: number) {
+    setErrorDetalle("");
+    setCargandoDetalle(true);
+    try {
+      const res = await fetch(`/api/facturacion/${id_venta}`);
+      const data = await res.json();
+      if (res.ok) {
+        setFacturaDetalle(data.factura);
+      } else {
+        setErrorDetalle(data.error || "No se pudo cargar la factura");
+      }
+    } catch {
+      setErrorDetalle("No se pudo cargar la factura");
+    }
+    setCargandoDetalle(false);
+  }
+
   return (
     <StaffShell usuario={usuario} title="Facturación" subtitle="Registro y emisión de facturas por venta">
       {mensaje && (
         <p key={mensaje} className="text-market-600 mb-4 font-semibold flex items-center gap-2 animate-stamp">
           <span className="inline-flex w-5 h-5 rounded-full bg-market text-white items-center justify-center text-xs shrink-0">✓</span>
           {mensaje}
+        </p>
+      )}
+      {errorDetalle && (
+        <p key={errorDetalle} className="mb-4 font-semibold" style={{ color: "var(--red)" }}>
+          {errorDetalle}
         </p>
       )}
       {ventas.length === 0 ? (
@@ -179,13 +230,21 @@ export default function FacturacionPage() {
                       </td>
                       <td className="px-3.5 py-2.5 border-b border-[var(--border)] text-ink-muted">{v.numero_factura || "—"}</td>
                       <td className="px-3.5 py-2.5 border-b border-[var(--border)]">
-                        {!v.id_factura && (
+                        {!v.id_factura ? (
                           <button
                             onClick={() => emitirFactura(v.id_venta, v.nombre)}
                             disabled={cargando}
                             className="px-3 py-1.5 rounded-control bg-market text-white border-none text-[0.85rem] font-medium transition-transform active:scale-[0.97] hover:brightness-110 disabled:opacity-60"
                           >
                             Emitir
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => verFactura(v.id_venta)}
+                            disabled={cargandoDetalle}
+                            className="px-3 py-1.5 rounded-control bg-white text-market border border-market text-[0.85rem] font-medium transition-transform active:scale-[0.97] hover:bg-market/10 disabled:opacity-60"
+                          >
+                            Ver factura
                           </button>
                         )}
                       </td>
@@ -204,6 +263,83 @@ export default function FacturacionPage() {
             />
           </div>
         </>
+      )}
+      {facturaDetalle && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4">
+          <div className="w-full max-w-[560px] max-h-[90vh] overflow-y-auto rounded-card bg-white shadow-warm p-7">
+            <div id="factura-print-area">
+              <div className="flex items-start justify-between mb-5">
+                <div>
+                  <h2 className="text-lg font-bold text-ink">Factura {facturaDetalle.numero_factura}</h2>
+                  <p className="text-ink-muted text-sm">
+                    {new Date(facturaDetalle.fecha_venta).toLocaleDateString("es-GT")}
+                  </p>
+                </div>
+                <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-market-50 text-market-600">
+                  {facturaDetalle.estado_venta}
+                </span>
+              </div>
+
+              <div className="mb-5 text-sm">
+                <p className="text-ink">
+                  <span className="font-semibold">Cliente:</span> {facturaDetalle.nombre_cliente}
+                </p>
+                <p className="text-ink-muted">NIT: {facturaDetalle.nit_cliente}</p>
+                <p className="text-ink-muted">{facturaDetalle.correo}</p>
+              </div>
+
+              <table className="w-full border-collapse text-[0.85rem] mb-4">
+                <thead>
+                  <tr className="border-b border-[var(--border)]">
+                    <th className="py-1.5 text-left text-ink-muted font-semibold">Producto</th>
+                    <th className="py-1.5 text-right text-ink-muted font-semibold">Cant.</th>
+                    <th className="py-1.5 text-right text-ink-muted font-semibold">P. unit.</th>
+                    <th className="py-1.5 text-right text-ink-muted font-semibold">Subtotal</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {facturaDetalle.productos.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="py-3 text-center text-ink-muted">
+                        Sin productos registrados.
+                      </td>
+                    </tr>
+                  ) : (
+                    facturaDetalle.productos.map((p) => (
+                      <tr key={p.id_detalle} className="border-b border-[var(--border)]">
+                        <td className="py-1.5 text-ink">{p.nombre_producto}</td>
+                        <td className="py-1.5 text-right text-ink-muted">{p.cantidad}</td>
+                        <td className="py-1.5 text-right text-ink-muted">Q{Number(p.precio_unitario).toFixed(2)}</td>
+                        <td className="py-1.5 text-right text-ink">Q{Number(p.subtotal).toFixed(2)}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+
+              <div className="flex justify-end">
+                <p className="text-base font-bold text-ink">
+                  Total: Q{Number(facturaDetalle.total_factura).toFixed(2)}
+                </p>
+              </div>
+            </div>
+
+            <div className="no-print flex justify-end gap-2.5 mt-6">
+              <button
+                onClick={() => setFacturaDetalle(null)}
+                className="px-4 py-2 rounded-control bg-cream/60 text-ink border border-[var(--border)] text-sm font-medium hover:brightness-95"
+              >
+                Cerrar
+              </button>
+              <button
+                onClick={() => window.print()}
+                className="px-4 py-2 rounded-control bg-market text-white border-none text-sm font-medium hover:brightness-110"
+              >
+                Imprimir
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </StaffShell>
   );
