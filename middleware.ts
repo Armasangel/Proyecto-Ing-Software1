@@ -59,14 +59,21 @@ export async function middleware(request: NextRequest) {
   const ip = getClientIp(request);
   const method = request.method;
 
-  // Log de entrada de CADA request (páginas y API).
-  log.info({
+  // Retirar informacion delicada del searchParam
+  const queryParams = new URLSearchParams(request.nextUrl.search);
+  const safeQuery = {
+    page: queryParams.get('page'),
+    sort: queryParams.get('sort'),
+  };
+
+ // Log de entrada de CADA request (páginas y API).
+  const logData = {
     method,
     path: pathname,
     ip,
-    query: request.nextUrl.search || undefined,
-  }, `request ${method} ${pathname}`);
-
+    query: Object.keys(safeQuery).length > 0 ? safeQuery : undefined,
+  }; 
+  
   const needsAuth = PROTECTED_PREFIXES.some(
     (p) => pathname === p || pathname.startsWith(`${p}/`)
   );
