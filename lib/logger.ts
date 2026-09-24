@@ -80,8 +80,7 @@ export function createLogger(options: CreateLoggerOptions = {}): Logger {
     options.pretty ??
     (process.env.NODE_ENV === "development" && !isTest);
   const redact: LoggerOptions["redact"] =
-    options.redact ??
-    (isTest ? undefined : { paths: REDACT_PATHS, censor: "[REDACTED]" });
+    options.redact ?? { paths: REDACT_PATHS, censor: "[REDACTED]" };
 
   const loggerOptions: LoggerOptions = {
     level: options.level ?? resolveLogLevel(),
