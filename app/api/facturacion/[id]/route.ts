@@ -7,14 +7,15 @@ import { apiError, unauthorizedError, validationError } from "@/lib/api-error";
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const usuario = getUsuarioFromRequest(req);
   if (!usuario || !isStaffTipo(usuario.tipo_usuario)) {
     return unauthorizedError();
   }
 
-  const id_venta = Number(params.id);
+  const { id } = await params;
+  const id_venta = Number(id);
   if (!Number.isInteger(id_venta) || id_venta <= 0) {
     return validationError("id_venta inválido");
   }

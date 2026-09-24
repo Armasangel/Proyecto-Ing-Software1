@@ -19,6 +19,7 @@ services:
       - DATABASE_URL=postgresql://dsm_user:dsm_password@db:5432/deposito_san_miguel
       - GMAIL_USER=${GMAIL_USER}
       - GMAIL_APP_PASSWORD=${GMAIL_APP_PASSWORD}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
     # `!reset` anula los volúmenes heredados del compose base: sin
     # bind-mount del source ni de node_modules/.next — el código y el bundle
     # ya vienen dentro de la imagen compilada.

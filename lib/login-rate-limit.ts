@@ -1,5 +1,8 @@
 import type { NextRequest } from "next/server";
 import { pool } from "@/lib/db";
+import { getLogger } from "@/lib/logger";
+
+const log = getLogger("lib/login-rate-limit");
 
 export const LOGIN_RATE_LIMIT_MAX = 5;
 export const LOGIN_RATE_LIMIT_WINDOW_MS = 60_000;
@@ -62,6 +65,7 @@ export async function recordFailedLogin(ip: string): Promise<void> {
 
   const intentos = result.rows[0]?.intentos ?? 0;
   if (intentos >= LOGIN_RATE_LIMIT_MAX) {
+    log.warn({ ip, intentos, ventanaMin: LOGIN_RATE_LIMIT_WINDOW_MS / 60000 }, "IP bloqueada por intentos fallidos de login");
     await pool.query(
       `UPDATE login_intento
        SET bloqueado_hasta = NOW() + make_interval(secs => $2)

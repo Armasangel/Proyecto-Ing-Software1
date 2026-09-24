@@ -4,6 +4,9 @@ import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { isStaffTipo, TIPOS_USUARIO } from "@/lib/roles";
 import { apiError, unauthorizedError, validationError } from "@/lib/api-error";
 import { recalcularBloqueoCliente, verificarLimiteAntesDeDeuda } from "@/lib/deuda-alertas";
+import { getLogger } from "@/lib/logger";
+
+const log = getLogger("api/deudas");
 
 function esDueno(usuario: { tipo_usuario: string } | null) {
   return usuario?.tipo_usuario === TIPOS_USUARIO.DUENO;
@@ -186,6 +189,10 @@ export async function POST(req: NextRequest) {
       const verificacion = await verificarLimiteAntesDeDeuda(client, idClienteNum, montoTotal);
       if (!verificacion.permitido) {
         await client.query("ROLLBACK");
+        log.warn(
+          { id_cliente: idClienteNum, monto_total: montoTotal, motivo: verificacion.motivo },
+          "Deuda rechazada por límite de crédito del cliente"
+        );
         return validationError(verificacion.motivo || "No se puede registrar esta deuda.");
       }
     }
@@ -222,6 +229,10 @@ export async function POST(req: NextRequest) {
     }
 
     await client.query("COMMIT");
+    log.info(
+      { id_deuda: deuda.id_deuda, monto_total: Number(montoTotal.toFixed(2)), id_cliente: idClienteNum, usuario: usuario!.id_usuario },
+      "Deuda registrada"
+    );
     return NextResponse.json({ deuda, alerta }, { status: 201 });
   } catch (error) {
     await client.query("ROLLBACK");

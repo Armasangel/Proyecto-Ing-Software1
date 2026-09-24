@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { isStaffTipo, TIPOS_USUARIO } from "@/lib/roles";
+import { getLogger } from "@/lib/logger";
+
+const log = getLogger("api/ventas/[id]/anular");
 
 // Ventana de tiempo dentro de la cual una venta puede deshacerse. La UI
 // solo muestra el botón "Deshacer" ~60s tras registrar la venta, pero acá
@@ -14,14 +17,15 @@ const VENTANA_DESHACER_MINUTOS = 10;
 // POST /api/ventas/:id/anular — deshace una venta reciente.
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const usuario = getUsuarioFromRequest(req);
   if (!usuario || !isStaffTipo(usuario.tipo_usuario)) {
     return NextResponse.json({ error: "No autorizado" }, { status: 403 });
   }
 
-  const id_venta = Number(params.id);
+  const { id } = await params;
+  const id_venta = Number(id);
   if (!Number.isInteger(id_venta)) {
     return NextResponse.json({ error: "Id de venta inválido" }, { status: 400 });
   }
@@ -99,10 +103,11 @@ export async function POST(
     await client.query(`UPDATE venta SET estado_venta = 'CANCELADO' WHERE id_venta = $1`, [id_venta]);
 
     await client.query("COMMIT");
+    log.info({ id_venta, usuario: usuario.id_usuario }, "Venta deshecha (anulada)");
     return NextResponse.json({ mensaje: "Venta deshecha, el stock fue restaurado.", id_venta });
   } catch (error) {
     await client.query("ROLLBACK");
-    console.error("[VENTAS ANULAR]", error);
+    log.error({ err: error }, "Error al anular la venta");
     return NextResponse.json({ error: "No se pudo deshacer la venta" }, { status: 500 });
   } finally {
     client.release();

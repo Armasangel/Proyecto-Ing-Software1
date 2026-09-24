@@ -3,7 +3,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { AUTH_COOKIE, signAuthToken } from "@/lib/auth";
 import { apiError } from "@/lib/api-error";
+import { getLogger } from "@/lib/logger";
 import { compararCodigo, getMaxIntentos, verifyPreToken } from "@/lib/verificacion";
+
+const log = getLogger("api/login/verificar-codigo");
 
 export async function POST(req: NextRequest) {
   try {
@@ -20,6 +23,7 @@ export async function POST(req: NextRequest) {
 
     const idUsuario = verifyPreToken(preToken);
     if (!idUsuario) {
+      log.warn("Pre-token de verificación inválido o vencido");
       return NextResponse.json(
         { error: "La sesión de verificación expiró. Iniciá sesión de nuevo." },
         { status: 401 }
@@ -68,6 +72,7 @@ export async function POST(req: NextRequest) {
       await pool.query(`UPDATE codigo_verificacion SET intentos = intentos + 1 WHERE id_codigo = $1`, [
         fila.id_codigo,
       ]);
+      log.warn({ id_usuario: idUsuario }, "Código 2FA incorrecto");
       return NextResponse.json({ error: "Código incorrecto" }, { status: 401 });
     }
 
@@ -101,6 +106,8 @@ export async function POST(req: NextRequest) {
     });
 
     response.cookies.set("session", "", { path: "/", maxAge: 0 });
+
+    log.info({ id_usuario: usuario.id_usuario, tipo_usuario: usuario.tipo_usuario }, "Login exitoso (2FA verificado)");
 
     return response;
   } catch (error) {

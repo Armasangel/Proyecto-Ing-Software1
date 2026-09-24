@@ -13,6 +13,7 @@ services:
       - DATABASE_URL=postgresql://dsm_user:dsm_password@db:5432/deposito_san_miguel
       - GMAIL_USER=${GMAIL_USER}
       - GMAIL_APP_PASSWORD=${GMAIL_APP_PASSWORD}
+      - LOG_LEVEL=${LOG_LEVEL:-debug}
     volumes:
       - .:/app
       - /app/node_modules

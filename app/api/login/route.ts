@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { AUTH_COOKIE, signAuthToken, verifyPassword } from "@/lib/auth";
 import { apiError } from "@/lib/api-error";
+import { getLogger } from "@/lib/logger";
 import { TIPOS_USUARIO } from "@/lib/roles";
 import { enviarCodigoVerificacion } from "@/lib/mailer";
 import {
@@ -18,11 +19,14 @@ import {
   recordFailedLogin,
 } from "@/lib/login-rate-limit";
 
+const log = getLogger("api/login");
+
 export async function POST(req: NextRequest) {
   try {
     const ip = getClientIp(req);
 
     if (await isLoginRateLimited(ip)) {
+      log.warn({ ip }, "Intento de login bloqueado por rate limit");
       return NextResponse.json(
         { error: "Demasiados intentos. Intenta de nuevo en un minuto." },
         { status: 429 }
@@ -57,6 +61,7 @@ export async function POST(req: NextRequest) {
 
     if (result.rows.length === 0) {
       await recordFailedLogin(ip);
+      log.warn({ ip }, "Login fallido: usuario no encontrado");
       return NextResponse.json({ error: "Credenciales incorrectas" }, { status: 401 });
     }
 
@@ -64,6 +69,7 @@ export async function POST(req: NextRequest) {
 
     if (!verifyPassword(password, row.contrasena_hash)) {
       await recordFailedLogin(ip);
+      log.warn({ ip, id_usuario: row.id_usuario }, "Login fallido: contraseña incorrecta");
       return NextResponse.json({ error: "Credenciales incorrectas" }, { status: 401 });
     }
 
@@ -103,6 +109,8 @@ export async function POST(req: NextRequest) {
 
       response.cookies.set("session", "", { path: "/", maxAge: 0 });
 
+      log.info({ id_usuario: usuario.id_usuario, tipo_usuario: usuario.tipo_usuario, ip }, "Login exitoso (sin 2FA)");
+
       return response;
     }
 
@@ -121,8 +129,9 @@ export async function POST(req: NextRequest) {
 
     try {
       await enviarCodigoVerificacion(row.correo, codigo);
+      log.info({ id_usuario: row.id_usuario, ip }, "Código 2FA enviado por correo");
     } catch (mailError) {
-      console.error("Error enviando código de verificación:", mailError);
+      log.error({ err: mailError }, "No se pudo enviar el código de verificación");
       return NextResponse.json(
         { error: "No se pudo enviar el código de verificación. Intenta de nuevo en un momento." },
         { status: 502 }

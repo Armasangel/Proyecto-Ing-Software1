@@ -4,6 +4,9 @@ import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { isStaffTipo } from "@/lib/roles";
 import { apiError, unauthorizedError, validationError } from "@/lib/api-error";
 import { recalcularBloqueoCliente } from "@/lib/deuda-alertas";
+import { getLogger } from "@/lib/logger";
+
+const log = getLogger("api/deudas/[id]/pagos");
 
 // POST /api/deudas/:id/pagos — registra un abono parcial (o total) contra
 // una deuda. Si el abono cubre el saldo restante, la deuda pasa a PAGADA
@@ -12,14 +15,15 @@ import { recalcularBloqueoCliente } from "@/lib/deuda-alertas";
 // práctica es el empleado o el dueño quien recibe el dinero en caja.
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const usuario = getUsuarioFromRequest(req);
   if (!usuario || !isStaffTipo(usuario.tipo_usuario)) {
     return unauthorizedError();
   }
 
-  const id_deuda = Number(params.id);
+  const { id } = await params;
+  const id_deuda = Number(id);
   if (!Number.isInteger(id_deuda)) {
     return validationError("Id de deuda inválido");
   }
@@ -92,6 +96,10 @@ export async function POST(
     }
 
     await client.query("COMMIT");
+    log.info(
+      { id_pago: pagoRes.rows[0].id_pago, id_deuda, monto: Number(montoNum.toFixed(2)), estado_resultante: nuevoEstado, usuario: usuario!.id_usuario },
+      "Pago registrado"
+    );
     return NextResponse.json(
       {
         pago: pagoRes.rows[0],

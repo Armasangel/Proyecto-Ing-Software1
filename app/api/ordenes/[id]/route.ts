@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { isBodegueroTipo, isStaffTipo } from "@/lib/roles";
+import { getLogger } from "@/lib/logger";
+
+const log = getLogger("api/ordenes/[id]");
 
 const ESTADOS_ORDEN = ["PENDIENTE", "CONFIRMADO", "EN_PREPARACION", "ENVIADO", "ENTREGADO", "CANCELADO"] as const;
 type EstadoOrden = (typeof ESTADOS_ORDEN)[number];
@@ -21,7 +24,7 @@ const TRANSICIONES_BODEGUERO: Record<string, string[]> = {
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const usuario = getUsuarioFromRequest(req);
   const esStaff = !!usuario && isStaffTipo(usuario.tipo_usuario);
@@ -30,7 +33,8 @@ export async function PATCH(
     return NextResponse.json({ error: "No autorizado" }, { status: 403 });
   }
 
-  const idOrden = Number(params.id);
+  const { id } = await params;
+  const idOrden = Number(id);
   if (!idOrden || idOrden < 1) {
     return NextResponse.json({ error: "ID de orden invalido" }, { status: 400 });
   }
@@ -136,6 +140,7 @@ export async function PATCH(
         [idOrden]
       );
 
+      log.info({ id_orden: idOrden, estado, notas: notas ?? null, usuario: usuario.id_usuario }, "Orden actualizada");
       return NextResponse.json({ mensaje: "Orden actualizada", orden: updated.rows[0] ?? null });
     } catch (e) {
       await client.query("ROLLBACK");
@@ -144,21 +149,22 @@ export async function PATCH(
       client.release();
     }
   } catch (error) {
-    console.error("[ORDENES PATCH]", error);
+    log.error({ err: error }, "Error al actualizar la orden [PATCH]");
     return NextResponse.json({ error: "Error al actualizar la orden" }, { status: 500 });
   }
 }
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const usuario = getUsuarioFromRequest(req);
   if (!usuario || !isStaffTipo(usuario.tipo_usuario)) {
     return NextResponse.json({ error: "No autorizado" }, { status: 403 });
   }
 
-  const idOrden = Number(params.id);
+  const { id } = await params;
+  const idOrden = Number(id);
   if (!idOrden || idOrden < 1) {
     return NextResponse.json({ error: "ID de orden invalido" }, { status: 400 });
   }
@@ -192,6 +198,7 @@ export async function DELETE(
       );
 
       await client.query("COMMIT");
+      log.info({ id_orden: idOrden, usuario: usuario.id_usuario }, "Orden cancelada");
       return NextResponse.json({ mensaje: "Orden cancelada" });
     } catch (e) {
       await client.query("ROLLBACK");
@@ -200,7 +207,7 @@ export async function DELETE(
       client.release();
     }
   } catch (error) {
-    console.error("[ORDENES DELETE]", error);
+    log.error({ err: error }, "Error al cancelar la orden [DELETE]");
     return NextResponse.json({ error: "Error al cancelar la orden" }, { status: 500 });
   }
 }

@@ -9,13 +9,17 @@ import { apiError, unauthorizedError, validationError } from "@/lib/api-error";
  * Desactiva una presentación (soft-delete: el kardex histórico la sigue
  * referenciando). Solo el dueño administra el catálogo de presentaciones.
  */
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   const usuario = getUsuarioFromRequest(req);
   if (!usuario || !isDuenoTipo(usuario.tipo_usuario)) {
     return unauthorizedError();
   }
 
-  const idPresentacion = Number(params.id);
+  const { id } = await params;
+  const idPresentacion = Number(id);
   if (!idPresentacion) {
     return validationError("id de presentación inválido");
   }

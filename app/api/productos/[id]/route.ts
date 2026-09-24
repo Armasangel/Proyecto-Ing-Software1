@@ -4,7 +4,7 @@ import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { isStaffTipo } from "@/lib/roles";
 import { apiError, unauthorizedError, validationError } from "@/lib/api-error";
 
-type Params = { params: { id: string } };
+type Params = { params: Promise<{ id: string }> };
 
 // HEAD/PUT /api/productos/:id — actualiza los datos básicos de un producto
 // (queda igual que en el POST de /api/productos; id_proveedores y
@@ -15,7 +15,8 @@ export async function PUT(req: NextRequest, { params }: Params) {
     return unauthorizedError();
   }
 
-  const idProducto = Number(params.id);
+  const { id } = await params;
+  const idProducto = Number(id);
   if (!Number.isInteger(idProducto) || idProducto < 1) {
     return validationError("Id de producto inválido");
   }
@@ -121,7 +122,8 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     return unauthorizedError();
   }
 
-  const idProducto = Number(params.id);
+  const { id } = await params;
+  const idProducto = Number(id);
   if (!Number.isInteger(idProducto) || idProducto < 1) {
     return validationError("Id de producto inválido");
   }

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
+import { logger } from "@/lib/logger";
 
 export async function GET() {
   try {
@@ -14,7 +15,7 @@ export async function GET() {
       hora_servidor: result.rows[0].hora_servidor,
     });
   } catch (error) {
-    console.error("[HEALTH]", error);
+    logger.error({ err: error }, "Health check falló — conexión a PostgreSQL");
 
     // En producción no revelamos detalles del error de BD al cliente
     const detalle =
