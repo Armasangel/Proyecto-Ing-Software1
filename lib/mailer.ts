@@ -12,6 +12,9 @@
 //   3. Crear una contraseña de aplicación para "Correo" y pegarla en GMAIL_APP_PASSWORD.
 
 import nodemailer from "nodemailer";
+import { getLogger } from "@/lib/logger";
+
+const log = getLogger("lib/mailer");
 
 let transporter: nodemailer.Transporter | null = null;
 
@@ -38,6 +41,7 @@ function getTransporter(): nodemailer.Transporter {
 export async function enviarCodigoVerificacion(destinatario: string, codigo: string) {
   const remitente = process.env.GMAIL_USER;
 
+  log.debug({ destinatario }, "Enviando código de verificación");
   await getTransporter().sendMail({
     from: `"Tienda San Miguel" <${remitente}>`,
     to: destinatario,

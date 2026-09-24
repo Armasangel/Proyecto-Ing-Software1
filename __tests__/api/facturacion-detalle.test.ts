@@ -49,28 +49,28 @@ describe("GET /api/facturacion/:id", () => {
 
   it("returns 403 when unauthenticated", async () => {
     const req = makeReq("5", "none");
-    const res = await GET(req, { params: { id: "5" } });
+    const res = await GET(req, { params: Promise.resolve({ id: "5" }) });
     expect(res.status).toBe(403);
     expect(mockPool.query).not.toHaveBeenCalled();
   });
 
   it("rejects a non-numeric id", async () => {
     const req = makeReq("abc");
-    const res = await GET(req, { params: { id: "abc" } });
+    const res = await GET(req, { params: Promise.resolve({ id: "abc" }) });
     expect(res.status).toBe(400);
   });
 
   it("returns 404 when the venta does not exist", async () => {
     mockPool.query.mockResolvedValueOnce(mockQueryEmpty());
     const req = makeReq("999");
-    const res = await GET(req, { params: { id: "999" } });
+    const res = await GET(req, { params: Promise.resolve({ id: "999" }) });
     expect(res.status).toBe(404);
   });
 
   it("returns the invoice with its product lines for a dueño", async () => {
     mockPool.query.mockResolvedValueOnce(mockQueryResult([facturaCompleta]));
     const req = makeReq("5", "dueno");
-    const res = await GET(req, { params: { id: "5" } });
+    const res = await GET(req, { params: Promise.resolve({ id: "5" }) });
     const data = await res.json();
 
     expect(res.status).toBe(200);
@@ -82,7 +82,7 @@ describe("GET /api/facturacion/:id", () => {
   it("allows a colaborador (staff) to view the invoice too", async () => {
     mockPool.query.mockResolvedValueOnce(mockQueryResult([facturaCompleta]));
     const req = makeReq("5", "empleado");
-    const res = await GET(req, { params: { id: "5" } });
+    const res = await GET(req, { params: Promise.resolve({ id: "5" }) });
     expect(res.status).toBe(200);
   });
 
@@ -91,7 +91,7 @@ describe("GET /api/facturacion/:id", () => {
       mockQueryResult([{ ...facturaCompleta, productos: [] }])
     );
     const req = makeReq("5");
-    const res = await GET(req, { params: { id: "5" } });
+    const res = await GET(req, { params: Promise.resolve({ id: "5" }) });
     const data = await res.json();
     expect(data.factura.productos).toEqual([]);
   });
@@ -99,7 +99,7 @@ describe("GET /api/facturacion/:id", () => {
   it("returns 500 if the query fails", async () => {
     mockPool.query.mockRejectedValueOnce(new Error("boom"));
     const req = makeReq("5");
-    const res = await GET(req, { params: { id: "5" } });
+    const res = await GET(req, { params: Promise.resolve({ id: "5" }) });
     expect(res.status).toBe(500);
   });
 });

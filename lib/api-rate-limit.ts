@@ -1,4 +1,7 @@
 import { pool } from "@/lib/db";
+import { getLogger } from "@/lib/logger";
+
+const log = getLogger("lib/api-rate-limit");
 
 export type RateLimitResult = {
   limited: boolean;
@@ -46,6 +49,10 @@ export async function checkRateLimit(
   const limited = contador > max;
   const transcurridoMs = Date.now() - new Date(ventana_inicio).getTime();
   const retryAfterSeconds = Math.max(0, Math.ceil((windowMs - transcurridoMs) / 1000));
+
+  if (limited) {
+    log.warn({ clave, max, contador, retryAfterSeconds }, "Rate limit excedido");
+  }
 
   return {
     limited,

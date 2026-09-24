@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { isBodegueroTipo } from "@/lib/roles";
+import { getLogger } from "@/lib/logger";
+
+const log = getLogger("api/bodega/pedidos");
 
 // Tablero "en vivo" de pedidos para el panel de bodega: muestra las ordenes
 // creadas por dueno/colaborador (via /ordenes) que tienen al menos una linea
@@ -60,7 +63,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ pedidos: result.rows });
   } catch (error) {
-    console.error("[BODEGA PEDIDOS GET]", error);
+    log.error({ err: error }, "Error al consultar pedidos del tablero de bodega");
     return NextResponse.json({ error: "Error al consultar pedidos" }, { status: 500 });
   }
 }

@@ -1,12 +1,25 @@
 // middleware.ts
+//
+// Corre en el RUNTIME DE NODE.JS (config.runtime = "nodejs", estable desde
+// Next.js 15.5). A diferencia del Edge runtime, acá se puede importar
+// jsonwebtoken, la pool? no — SOLO utilidades ligeras y el logger pino.
+//
+// Además de la autenticación (que antes usaba Web Crypto para Edge), este
+// middleware loggea la ENTRADA de cada request HTTP (método, path, IP,
+// usuario) con pino. El matcher incluye `/api/:path*` para que el logging
+// también cubra las rutas de API.
+//
+// Limitación conocida: el middleware no puede observar el status HTTP final
+// de los requests que pasan de largo (NextResponse.next()). Por eso el log
+// es de entrada; los desenlaces (errores, eventos de negocio) se capturan en
+// los handlers con apiError + logs INFO/WARN (ver lib/logger.ts).
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { AUTH_COOKIE, verifyAuthToken } from "@/lib/auth";
+import { getLogger } from "@/lib/logger";
 
-// Constantes definidas localmente (y no importadas desde lib/auth) para evitar
-// empaquetar jsonwebtoken/bcryptjs en el bundle de Edge Runtime.
-const AUTH_COOKIE = "auth_token";
-const JWT_SECRET_MIN_LENGTH = 32;
+const log = getLogger("middleware");
 
 const PROTECTED_PREFIXES = [
   "/dashboard",
@@ -26,56 +39,41 @@ const PROTECTED_PREFIXES = [
   "/proveedores",
 ];
 
-/** Decodifica base64url a ArrayBuffer (compatible con Edge Runtime). */
-function base64urlToBuffer(b64url: string): ArrayBuffer {
-  const b64 = b64url.replace(/-/g, "+").replace(/_/g, "/");
-  const bin = atob(b64);
-  const buf = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
-  return buf.buffer;
-}
-
-/**
- * Verifica un JWT HS256 usando Web Crypto API (Edge-compatible).
- * Devuelve el payload si la firma es válida y el token no expiró;
- * lanza un error en caso contrario.
- */
-async function verifyJwtEdge(token: string, secret: string): Promise<Record<string, unknown>> {
-  const parts = token.split(".");
-  if (parts.length !== 3) throw new Error("JWT malformado");
-
-  const [headerB64, payloadB64, sigB64] = parts;
-
-  // Importar la clave
-  const keyMaterial = new TextEncoder().encode(secret);
-  const key = await crypto.subtle.importKey(
-    "raw",
-    keyMaterial,
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["verify"]
-  );
-
-  // Verificar firma
-  const data = new TextEncoder().encode(`${headerB64}.${payloadB64}`);
-  const sig = base64urlToBuffer(sigB64);
-  const valid = await crypto.subtle.verify("HMAC", key, sig, data);
-  if (!valid) throw new Error("Firma inválida");
-
-  // Decodificar payload
-  const payload = JSON.parse(atob(payloadB64.replace(/-/g, "+").replace(/_/g, "/"))) as Record<string, unknown>;
-
-  // Verificar expiración
-  if (typeof payload.exp === "number" && payload.exp < Math.floor(Date.now() / 1000)) {
-    throw new Error("Token expirado");
+function getClientIp(req: NextRequest): string {
+  const forwarded = req.headers.get("x-forwarded-for");
+  if (forwarded) {
+    const first = forwarded.split(",")[0]?.trim();
+    if (first) return first;
   }
-
-  return payload;
+  return req.headers.get("x-real-ip")?.trim() || "unknown";
 }
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // No saturar los logs con los health checks recurrentes.
+  if (pathname === "/api/health" || pathname.startsWith("/api/health/")) {
+    return NextResponse.next();
+  }
+
+  const ip = getClientIp(request);
+  const method = request.method;
+
+  // Retirar informacion delicada del searchParam
+  const queryParams = new URLSearchParams(request.nextUrl.search);
+  const safeQuery = {
+    page: queryParams.get('page'),
+    sort: queryParams.get('sort'),
+  };
+
+ // Log de entrada de CADA request (páginas y API).
+  const logData = {
+    method,
+    path: pathname,
+    ip,
+    query: Object.keys(safeQuery).length > 0 ? safeQuery : undefined,
+  }; 
+  
   const needsAuth = PROTECTED_PREFIXES.some(
     (p) => pathname === p || pathname.startsWith(`${p}/`)
   );
@@ -85,28 +83,30 @@ export async function middleware(request: NextRequest) {
 
   // Sin cookie → redirigir a login
   if (!token) {
+    log.warn({ path: pathname, ip }, "Acceso a ruta protegida sin sesión");
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // Verificar JWT (firma + expiración). Exigir un secreto fuerte: sin él, el
-  // middleware bloquea el acceso por seguridad (fail closed).
-  const secret = process.env.JWT_SECRET;
-  if (!secret || secret.length < JWT_SECRET_MIN_LENGTH) {
-    return NextResponse.redirect(new URL("/login", request.url));
-  }
-
-  try {
-    await verifyJwtEdge(token, secret);
-    return NextResponse.next();
-  } catch {
-    // Token inválido o expirado: limpiar cookie y redirigir
+  // Verifica JWT (firma + expiración). `verifyAuthToken` falla cerrado
+  // (devuelve null) si falta el secreto o es débil, o si el token es inválido.
+  const usuario = verifyAuthToken(token);
+  if (!usuario) {
+    log.warn({ path: pathname, ip }, "Token inválido o expirado en ruta protegida");
     const response = NextResponse.redirect(new URL("/login", request.url));
     response.cookies.set(AUTH_COOKIE, "", { path: "/", maxAge: 0 });
     return response;
   }
+
+  log.debug(
+    { id_usuario: usuario.id_usuario, tipo_usuario: usuario.tipo_usuario, path: pathname },
+    "Request autenticado"
+  );
+
+  return NextResponse.next();
 }
 
 export const config = {
+  runtime: "nodejs",
   matcher: [
     "/dashboard/:path*",
     "/inventario/:path*",
@@ -130,5 +130,7 @@ export const config = {
     "/catalogo/:path*",
     "/proveedores",
     "/proveedores/:path*",
+    "/api",
+    "/api/:path*",
   ],
 };

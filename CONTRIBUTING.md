@@ -174,6 +174,15 @@ jest.mock("next/navigation", () => ({
 }));
 ```
 
+### Logging (pino)
+
+- No usar `console.log` / `console.error`; usar el logger de `lib/logger.ts`.
+- Niveles: `error` (servidor), `warn` (rate limits, logins fallidos, stock), `info` (eventos de negocio), `debug` (detalle).
+- **Siempre** preceder el mensaje con un objeto de contexto: `log.info({ id_venta }, "Venta registrada")` (pino tipa el primer argumento).
+- Pasar errores como `{ err }` para que pino serialice `stack`/`type`.
+- Campos sensibles (`password`, `token`, cookies) se redactan automáticamente — no los loguees de todos modos.
+- Tests del logger: `__tests__/lib/logger.test.ts` (usa `createLogger({ destination })` para capturar las líneas NDJSON).
+
 - Los `<label>` sin `htmlFor` no se pueden consultar con `getByLabelText`; usar `getByPlaceholderText` o `getByText`
 - `<img alt="">` tiene rol `presentation`; usar `document.querySelector("img")` en lugar de `getByRole("img")`
 - Linter: `npm run lint` (Next.js ESLint config)

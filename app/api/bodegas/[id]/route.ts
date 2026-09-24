@@ -7,14 +7,15 @@ import { apiError } from "@/lib/api-error";
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const usuario = getUsuarioFromRequest(req);
   if (!usuario || !isDuenoTipo(usuario.tipo_usuario)) {
     return NextResponse.json({ error: "No autorizado" }, { status: 403 });
   }
 
-  const idBodega = Number(params.id);
+  const { id } = await params;
+  const idBodega = Number(id);
   if (!idBodega || idBodega < 1) {
     return NextResponse.json({ error: "ID de bodega inválido" }, { status: 400 });
   }
@@ -68,14 +69,15 @@ export async function PATCH(
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const usuario = getUsuarioFromRequest(req);
   if (!usuario || !isDuenoTipo(usuario.tipo_usuario)) {
     return NextResponse.json({ error: "No autorizado" }, { status: 403 });
   }
 
-  const idBodega = Number(params.id);
+  const { id } = await params;
+  const idBodega = Number(id);
   if (!idBodega || idBodega < 1) {
     return NextResponse.json({ error: "ID de bodega inválido" }, { status: 400 });
   }

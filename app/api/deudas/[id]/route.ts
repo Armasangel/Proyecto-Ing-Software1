@@ -4,19 +4,23 @@ import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { isStaffTipo } from "@/lib/roles";
 import { apiError, unauthorizedError, validationError } from "@/lib/api-error";
 import { recalcularBloqueoCliente } from "@/lib/deuda-alertas";
+import { getLogger } from "@/lib/logger";
+
+const log = getLogger("api/deudas/[id]");
 
 // PATCH /api/deudas/:id — cambia el estado de la deuda (PENDIENTE <-> PAGADA)
 // Este es el endpoint del botonCambioEstado (DEV-81).
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const usuario = getUsuarioFromRequest(req);
   if (!usuario || !isStaffTipo(usuario.tipo_usuario)) {
     return unauthorizedError();
   }
 
-  const id_deuda = Number(params.id);
+  const { id } = await params;
+  const id_deuda = Number(id);
   if (!Number.isInteger(id_deuda)) {
     return validationError("Id de deuda inválido");
   }
@@ -51,6 +55,10 @@ export async function PATCH(
     }
 
     await client.query("COMMIT");
+    log.info(
+      { id_deuda, de: actual.rows[0].estado_deuda, a: nuevoEstado, usuario: usuario.id_usuario },
+      "Estado de deuda cambiado"
+    );
     return NextResponse.json({ deuda: result.rows[0], alerta });
   } catch (error) {
     await client.query("ROLLBACK");

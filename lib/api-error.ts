@@ -2,6 +2,9 @@
 //NUNCA exponer stack traces o mensajes internos al cliente.
 
 import { NextResponse } from "next/server";
+import { getLogger } from "@/lib/logger";
+
+const log = getLogger("api-error");
 
 //Logea el error en el servidor y devuelve una respuesta genérica al cliente
 //Usar en todos los catch de las rutas de API.
@@ -11,8 +14,8 @@ export function apiError(
   error: unknown,
   status = 500
 ): NextResponse {
-  // El detalle completo solo va al servidor (logs de Docker / servidor)
-  console.error(`[${context}]`, error);
+  // El detalle completo solo va al servidor (logs, `docker compose logs`)
+  log.error({ err: error }, context);
  
   return NextResponse.json(
     { error: "Error interno del servidor" },

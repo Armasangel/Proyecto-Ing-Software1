@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { isStaffTipo } from "@/lib/roles";
+import { getLogger } from "@/lib/logger";
+
+const log = getLogger("api/ordenes");
 
 const ESTADOS_ORDEN = ["PENDIENTE", "CONFIRMADO", "EN_PREPARACION", "ENVIADO", "ENTREGADO", "CANCELADO"] as const;
 
@@ -99,7 +102,7 @@ export async function GET(req: NextRequest) {
       pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
     });
   } catch (error) {
-    console.error("[ORDENES GET]", error);
+    log.error({ err: error }, "Error al consultar ordenes [GET]");
     return NextResponse.json({ error: "Error al consultar ordenes" }, { status: 500 });
   }
 }
@@ -259,16 +262,17 @@ export async function POST(request: NextRequest) {
       }
 
       await client.query("COMMIT");
+      log.info({ id_orden: idOrden, id_cliente: idCliente, total }, "Orden creada");
       return NextResponse.json({ mensaje: "Orden creada correctamente", id_orden: idOrden, total }, { status: 201 });
     } catch (error) {
       await client.query("ROLLBACK");
-      console.error("[ORDENES POST]", error);
+      log.error({ err: error }, "Error al crear la orden [POST]");
       return NextResponse.json({ error: "Error al crear la orden" }, { status: 500 });
     } finally {
       client.release();
     }
   } catch (error) {
-    console.error("[ORDENES POST - parse]", error);
+    log.error({ err: error }, "Error al procesar la solicitud de orden [POST parse]");
     return NextResponse.json({ error: "Error al procesar la solicitud" }, { status: 500 });
   }
 }
