@@ -10,6 +10,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { isDuenoTipo } from "@/lib/roles";
+import { getLogger } from "@/lib/logger";
+
+const log = getLogger("api/ventas/recientes");
 
 export async function GET(req: NextRequest) {
   const usuario = getUsuarioFromRequest(req);
@@ -44,7 +47,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ ventas: result.rows, ultimo_id: maxId });
   } catch (err) {
-    console.error("Error en GET /api/ventas/recientes:", err);
+    log.error({ err }, "Error en GET /api/ventas/recientes");
     return NextResponse.json({ error: "Error al buscar ventas recientes" }, { status: 500 });
   }
 }

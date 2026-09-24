@@ -51,14 +51,14 @@ describe("POST /api/ventas/:id/anular", () => {
 
   it("returns 403 when unauthenticated", async () => {
     const req = makeReq("5", "none");
-    const res = await POST(req, { params: { id: "5" } });
+    const res = await POST(req, { params: Promise.resolve({ id: "5" }) });
     expect(res.status).toBe(403);
     expect(mockPool.connect).not.toHaveBeenCalled();
   });
 
   it("rejects a non-numeric id", async () => {
     const req = makeReq("abc");
-    const res = await POST(req, { params: { id: "abc" } });
+    const res = await POST(req, { params: Promise.resolve({ id: "abc" }) });
     expect(res.status).toBe(400);
   });
 
@@ -69,7 +69,7 @@ describe("POST /api/ventas/:id/anular", () => {
     client.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // ROLLBACK
 
     const req = makeReq("5");
-    const res = await POST(req, { params: { id: "5" } });
+    const res = await POST(req, { params: Promise.resolve({ id: "5" }) });
     expect(res.status).toBe(404);
     expect(client.query).toHaveBeenCalledWith("ROLLBACK");
   });
@@ -81,7 +81,7 @@ describe("POST /api/ventas/:id/anular", () => {
     client.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // ROLLBACK
 
     const req = makeReq("5", "empleado");
-    const res = await POST(req, { params: { id: "5" } });
+    const res = await POST(req, { params: Promise.resolve({ id: "5" }) });
     expect(res.status).toBe(403);
     expect((await res.json()).error).toMatch(/tus propias ventas/);
   });
@@ -102,7 +102,7 @@ describe("POST /api/ventas/:id/anular", () => {
     client.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // COMMIT
 
     const req = makeReq("5", "empleado");
-    const res = await POST(req, { params: { id: "5" } });
+    const res = await POST(req, { params: Promise.resolve({ id: "5" }) });
     expect(res.status).toBe(200);
   });
 
@@ -116,7 +116,7 @@ describe("POST /api/ventas/:id/anular", () => {
     client.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // ROLLBACK
 
     const req = makeReq("5");
-    const res = await POST(req, { params: { id: "5" } });
+    const res = await POST(req, { params: Promise.resolve({ id: "5" }) });
     expect(res.status).toBe(400);
     expect((await res.json()).error).toMatch(/ya está cancelada/);
   });
@@ -131,7 +131,7 @@ describe("POST /api/ventas/:id/anular", () => {
     client.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // ROLLBACK
 
     const req = makeReq("5");
-    const res = await POST(req, { params: { id: "5" } });
+    const res = await POST(req, { params: Promise.resolve({ id: "5" }) });
     expect(res.status).toBe(400);
     expect((await res.json()).error).toMatch(/más de 10 minutos/);
   });
@@ -152,7 +152,7 @@ describe("POST /api/ventas/:id/anular", () => {
     client.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // COMMIT
 
     const req = makeReq("5");
-    const res = await POST(req, { params: { id: "5" } });
+    const res = await POST(req, { params: Promise.resolve({ id: "5" }) });
     expect(res.status).toBe(200);
   });
 
@@ -164,7 +164,7 @@ describe("POST /api/ventas/:id/anular", () => {
     client.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // ROLLBACK
 
     const req = makeReq("5");
-    const res = await POST(req, { params: { id: "5" } });
+    const res = await POST(req, { params: Promise.resolve({ id: "5" }) });
     expect(res.status).toBe(400);
     expect((await res.json()).error).toMatch(/no tiene productos/);
   });
@@ -180,7 +180,7 @@ describe("POST /api/ventas/:id/anular", () => {
     client.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // ROLLBACK
 
     const req = makeReq("5");
-    const res = await POST(req, { params: { id: "5" } });
+    const res = await POST(req, { params: Promise.resolve({ id: "5" }) });
     expect(res.status).toBe(400);
     expect((await res.json()).error).toMatch(/antes de que existiera/);
   });
@@ -198,7 +198,7 @@ describe("POST /api/ventas/:id/anular", () => {
     client.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // COMMIT
 
     const req = makeReq("5");
-    const res = await POST(req, { params: { id: "5" } });
+    const res = await POST(req, { params: Promise.resolve({ id: "5" }) });
     const data = await res.json();
 
     expect(res.status).toBe(200);
@@ -237,7 +237,7 @@ describe("POST /api/ventas/:id/anular", () => {
     client.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // ROLLBACK
 
     const req = makeReq("5");
-    const res = await POST(req, { params: { id: "5" } });
+    const res = await POST(req, { params: Promise.resolve({ id: "5" }) });
     expect(res.status).toBe(500);
     expect(client.query).toHaveBeenCalledWith("ROLLBACK");
     expect(client.release).toHaveBeenCalled();

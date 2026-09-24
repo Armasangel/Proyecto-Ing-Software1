@@ -8,6 +8,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { isStaffTipo } from "@/lib/roles";
+import { getLogger } from "@/lib/logger";
+
+const log = getLogger("api/ventas");
 
 const ESTADOS_VENTA = ["PENDIENTE", "CONFIRMADO", "ENTREGADO", "PAGADO"] as const;
 const TIPOS_VENTA = ["MINORISTA", "MAYORISTA"] as const;
@@ -99,7 +102,7 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("[VENTAS GET]", error);
+    log.error({ err: error }, "Error al consultar ventas [GET]");
     return NextResponse.json(
       { error: "Error al consultar ventas" },
       { status: 500 }
@@ -250,6 +253,10 @@ export async function POST(request: NextRequest) {
         const disponible = stock.rowCount && stock.rows[0] ? Number(stock.rows[0].cantidad_disponible) : 0;
         if (disponible < p.cantidad) {
           await client.query("ROLLBACK");
+          log.warn(
+            { id_venta: idVenta, id_producto: p.id_producto, id_bodega: p.id_bodega, solicitado: p.cantidad, disponible, usuario: usuario.id_usuario },
+            "Venta rechazada por stock insuficiente"
+          );
           return NextResponse.json(
             { error: `Stock insuficiente para el producto id ${p.id_producto} en la bodega id ${p.id_bodega} (disponible: ${disponible})` },
             { status: 400 }
@@ -272,16 +279,17 @@ export async function POST(request: NextRequest) {
       }
 
       await client.query("COMMIT");
+      log.info({ id_venta: idVenta, id_cliente: idCliente, total, usuario: usuario.id_usuario }, "Venta registrada");
       return NextResponse.json({ mensaje: "Venta registrada correctamente", id_venta: idVenta, total });
     } catch (error) {
       await client.query("ROLLBACK");
-      console.error("[VENTAS POST]", error);
+      log.error({ err: error }, "Error al registrar la venta [POST]");
       return NextResponse.json({ error: "Error al registrar la venta" }, { status: 500 });
     } finally {
       client.release();
     }
   } catch (error) {
-    console.error("[VENTAS POST - parse]", error);
+    log.error({ err: error }, "Error al procesar la solicitud de venta [POST parse]");
     return NextResponse.json({ error: "Error al procesar la solicitud" }, { status: 500 });
   }
 }

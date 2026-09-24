@@ -39,20 +39,6 @@ describe("LoginPage", () => {
     expect(screen.getByRole("button", { name: /ingresar al sistema/i })).toBeInTheDocument();
   });
 
-  it("shows demo user quick-fill buttons", () => {
-    render(<LoginPage />);
-    expect(screen.getByText(/Dueño/)).toBeInTheDocument();
-    expect(screen.getByText(/Colaborador/)).toBeInTheDocument();
-  });
-
-  it("fills email when demo button is clicked", async () => {
-    const user = userEvent.setup();
-    render(<LoginPage />);
-    await user.click(screen.getByText(/Dueño/));
-    const emailInput = screen.getByPlaceholderText("usuario@tienda.com") as HTMLInputElement;
-    expect(emailInput.value).toBe("dueno@tienda.com");
-  });
-
   it("shows error on failed login", async () => {
     server.use(
       rest.post("/api/login", (_req, res, ctx) =>

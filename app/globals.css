@@ -59,3 +59,25 @@ a:hover {
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: var(--accent-light); border-radius: 3px; }
+
+/* DEV-118: al imprimir, solo se muestra el contenido marcado como
+   imprimible (la vista de detalle de factura); el resto de la página
+   (sidebar, topbar, overlay del modal, etc.) se oculta. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #factura-print-area,
+  #factura-print-area * {
+    visibility: visible;
+  }
+  #factura-print-area {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+  }
+  .no-print {
+    display: none !important;
+  }
+}

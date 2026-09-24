@@ -67,7 +67,7 @@ describe("POST /api/deudas/:id/pagos", () => {
       method: "POST",
       body: { monto: 10 },
     });
-    const res = await POST(req, { params: { id: "1" } });
+    const res = await POST(req, { params: Promise.resolve({ id: "1" }) });
     expect(res.status).toBe(403);
     expect(mockPool.connect).not.toHaveBeenCalled();
   });
@@ -85,7 +85,7 @@ describe("POST /api/deudas/:id/pagos", () => {
       user: testUserEmpleado,
       body: { monto: 30, metodo_pago: "EFECTIVO" },
     });
-    const res = await POST(req, { params: { id: "1" } });
+    const res = await POST(req, { params: Promise.resolve({ id: "1" }) });
     expect(res.status).toBe(201);
     const data = await res.json();
     expect(data.saldo_pendiente).toBe(70);
@@ -95,13 +95,13 @@ describe("POST /api/deudas/:id/pagos", () => {
 
   it("rejects a non-numeric debt id", async () => {
     const req = makeReq("abc", { monto: 10 });
-    const res = await POST(req, { params: { id: "abc" } });
+    const res = await POST(req, { params: Promise.resolve({ id: "abc" }) });
     expect(res.status).toBe(400);
   });
 
   it("rejects a monto <= 0", async () => {
     const req = makeReq("1", { monto: 0 });
-    const res = await POST(req, { params: { id: "1" } });
+    const res = await POST(req, { params: Promise.resolve({ id: "1" }) });
     expect(res.status).toBe(400);
     const data = await res.json();
     expect(data.error).toMatch(/mayor a 0/);
@@ -109,13 +109,13 @@ describe("POST /api/deudas/:id/pagos", () => {
 
   it("rejects a non-numeric monto", async () => {
     const req = makeReq("1", { monto: "abc" });
-    const res = await POST(req, { params: { id: "1" } });
+    const res = await POST(req, { params: Promise.resolve({ id: "1" }) });
     expect(res.status).toBe(400);
   });
 
   it("rejects an invalid metodo_pago type", async () => {
     const req = makeReq("1", { monto: 10, metodo_pago: 123 });
-    const res = await POST(req, { params: { id: "1" } });
+    const res = await POST(req, { params: Promise.resolve({ id: "1" }) });
     expect(res.status).toBe(400);
   });
 
@@ -126,7 +126,7 @@ describe("POST /api/deudas/:id/pagos", () => {
     client.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // ROLLBACK
 
     const req = makeReq("99", { monto: 10 });
-    const res = await POST(req, { params: { id: "99" } });
+    const res = await POST(req, { params: Promise.resolve({ id: "99" }) });
     expect(res.status).toBe(400);
     expect(client.query).toHaveBeenCalledWith("ROLLBACK");
     expect(client.release).toHaveBeenCalled();
@@ -142,7 +142,7 @@ describe("POST /api/deudas/:id/pagos", () => {
     client.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // ROLLBACK
 
     const req = makeReq("1", { monto: 10 });
-    const res = await POST(req, { params: { id: "1" } });
+    const res = await POST(req, { params: Promise.resolve(<{ id: "1" } }));
     expect(res.status).toBe(400);
     expect((await res.json()).error).toMatch(/ya está marcada como pagada/);
   });
@@ -155,7 +155,7 @@ describe("POST /api/deudas/:id/pagos", () => {
     client.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // ROLLBACK
 
     const req = makeReq("1", { monto: 100 });
-    const res = await POST(req, { params: { id: "1" } });
+    const res = await POST(req, { params: Promise.resolve({ id: "1" }) });
     expect(res.status).toBe(400);
     const data = await res.json();
     expect(data.error).toMatch(/mayor al saldo pendiente/);
@@ -171,7 +171,7 @@ describe("POST /api/deudas/:id/pagos", () => {
     client.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // COMMIT
 
     const req = makeReq("1", { monto: 40.01 });
-    const res = await POST(req, { params: { id: "1" } });
+    const res = await POST(req, { params: Promise.resolve({ id: "1" }) });
     expect(res.status).toBe(201);
   });
 
@@ -185,7 +185,7 @@ describe("POST /api/deudas/:id/pagos", () => {
     client.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // COMMIT
 
     const req = makeReq("1", { monto: 100 });
-    const res = await POST(req, { params: { id: "1" } });
+    const res = await POST(req, { params: Promise.resolve({ id: "1" }) });
     const data = await res.json();
     expect(res.status).toBe(201);
     expect(data.estado_deuda).toBe("PAGADA");
@@ -211,7 +211,7 @@ describe("POST /api/deudas/:id/pagos", () => {
     client.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // COMMIT
 
     const req = makeReq("1", { monto: 30 });
-    const res = await POST(req, { params: { id: "1" } });
+    const res = await POST(req, { params: Promise.resolve({ id: "1" }) });
     const data = await res.json();
     expect(res.status).toBe(201);
     expect(mockRecalcular).toHaveBeenCalledWith(client, 7);
@@ -236,7 +236,7 @@ describe("POST /api/deudas/:id/pagos", () => {
     client.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // COMMIT
 
     const req = makeReq("1", { monto: 30 });
-    const res = await POST(req, { params: { id: "1" } });
+    const res = await POST(req, { params: Promise.resolve({ id: "1" }) });
     const data = await res.json();
     expect(res.status).toBe(201);
     expect(mockRecalcular).not.toHaveBeenCalled();
@@ -250,7 +250,7 @@ describe("POST /api/deudas/:id/pagos", () => {
     client.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // ROLLBACK
 
     const req = makeReq("1", { monto: 30 });
-    const res = await POST(req, { params: { id: "1" } });
+    const res = await POST(req, { params: Promise.resolve({ id: "1" }) });
     expect(res.status).toBe(500);
     expect(client.query).toHaveBeenCalledWith("ROLLBACK");
     expect(client.release).toHaveBeenCalled();

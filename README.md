@@ -88,6 +88,7 @@ Copia `.env.example` a `.env` y completa estos valores:
 | `JWT_SECRET` | Secreto para firmar los tokens (mínimo 32 caracteres). Cámbialo en producción. |
 | `GMAIL_USER` | Correo Gmail que envía los códigos de verificación 2FA. |
 | `GMAIL_APP_PASSWORD` | Contraseña de aplicación de Gmail (16 caracteres en grupos de 4). |
+| `LOG_LEVEL` | Nivel mínimo de logs de pino. Vacío = automático (`development`→`debug`, `production`→`info`, `test`→silent). Si se define, tiene prioridad. |
 
 `DATABASE_URL` **no** va en `.env`: está fija en `docker-compose.yml`.
 
@@ -137,9 +138,65 @@ El envío usa **Gmail SMTP** (gratis, con contraseña de aplicación). Para conf
 | Base de datos | PostgreSQL 16 |
 | Autenticación | JWT (jsonwebtoken + bcryptjs) + 2FA por correo |
 | ORM / Queries | pg (node-postgres) |
+| Logs | pino (NDJSON) + pino-pretty en desarrollo |
 | Tests | Jest 29 + React Testing Library + MSW |
 | Contenedores | Docker + Docker Compose |
 | Admin BD | pgAdmin 4 |
+
+---
+
+## 📊 Logs
+
+La app usa **pino** para loguear eventos de negocio, errores y la entrada de cada
+request HTTP. Los logs salen a **stdout** en formato **NDJSON** (una línea JSON por
+evento), por lo que son fáciles de consumir con herramientas como `jq`, Loki o
+CloudWatch.
+
+**Niveles usados en el proyecto**:
+
+| Nivel  | Para qué se usa                                               |
+|--------|---------------------------------------------------------------|
+| `error`| Errores de servidor (`apiError`, fallos de DB, SMTP, …)       |
+| `warn` | Rate limits, logins fallidos, stock insuficiente, tokens vencidos |
+| `info` | Eventos de negocio: ventas, órdenes, pagos, logins exitosos, requests |
+| `debug`| Detalle de operaciones (p. ej. envío de código 2FA, requests autenticados) |
+
+**Ver logs en vivo** (todas las apps):
+
+```bash
+docker compose logs -f app
+docker compose logs -f --no-log-prefix app | npm run logs      # con colores y formato legible
+```
+
+### Nivel mínimo (`LOG_LEVEL`)
+
+- Vacío (recomendado): automático por entorno (`development`→`debug`, `production`→`info`, `test`→silent).
+- Definido: siempre tiene prioridad. Valores válidos: `trace`, `debug`, `info`, `warn`, `error`, `fatal`.
+
+### Redacción de datos sensibles
+
+Por defecto pino **redacta** (oculta) campos como `password`, `token`,
+`authorization`, cookies y secretos antes de escribirlos en consola, así que no se
+cuelan en los logs. Ver `REDACT_PATHS` en `lib/logger.ts`.
+
+### Cómo loguear en el código
+
+Todas las rutas/librerías usan el logger central de `lib/logger.ts`:
+
+```ts
+import { getLogger } from "@/lib/logger";
+
+const log = getLogger("api/ventas");
+
+// Siempre: objeto de contexto PRIMERO, mensaje después.
+log.info({ id_venta: 5, total: 120.5 }, "Venta registrada");
+log.warn({ id_producto: 3, disponible: 0 }, "Stock insuficiente");
+log.error({ err }, "Error al consultar ventas [GET]");
+```
+
+**Cobertura**: el `middleware` (runtime Node.js) loggea la entrada de cada request
+HTTP de páginas protegidas y rutas `/api/*`; los handlers loguean el desenlace
+(errores y eventos de negocio).
 
 ---
 
@@ -345,6 +402,8 @@ usó para generarlo — sin eso no hay forma de descifrarlo.
 
 - Las contraseñas en `init/01_schema.sql` son hashes bcrypt solo para desarrollo
 - El `JWT_SECRET` en `.env` debe cambiarse en producción
+- El `middleware` corre en **Node.js runtime** (Next.js ≥ 15.5). Si algún día se
+  baja de versión, habría que volver a Web Crypto / Edge.
 - El schema está consolidado en un **solo archivo** (`init/01_schema.sql`): tablas,
   secuencias, vista, índices y datos de prueba. Para desplegar a un servidor nuevo
   basta con ejecutarlo una sola vez sobre una base vacía.

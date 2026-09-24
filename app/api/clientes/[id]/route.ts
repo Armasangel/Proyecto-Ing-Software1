@@ -9,14 +9,15 @@ import { recalcularBloqueoCliente } from "@/lib/deuda-alertas";
 // del cliente (limite_deuda: number | null, null = sin límite).
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const usuario = getUsuarioFromRequest(req);
   if (!usuario || usuario.tipo_usuario !== TIPOS_USUARIO.DUENO) {
     return unauthorizedError();
   }
 
-  const id_cliente = Number(params.id);
+  const { id } = await params;
+  const id_cliente = Number(id);
   if (!Number.isInteger(id_cliente)) {
     return validationError("Id de cliente inválido");
   }

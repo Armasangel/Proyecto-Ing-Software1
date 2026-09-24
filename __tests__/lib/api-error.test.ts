@@ -1,6 +1,23 @@
 import { apiError, validationError, unauthorizedError } from "@/lib/api-error";
+import { getLogger } from "@/lib/logger";
+
+jest.mock("@/lib/logger", () => {
+  const mockChild = { error: jest.fn() };
+  return {
+    logger: { child: jest.fn(() => mockChild) },
+    getLogger: jest.fn(() => mockChild),
+  };
+});
+
+function mockErrorCall(): jest.Mock {
+  return (getLogger("api-error") as { error: jest.Mock }).error;
+}
 
 describe("apiError", () => {
+  beforeEach(() => {
+    mockErrorCall().mockClear();
+  });
+
   it("returns 500 with generic error message by default", async () => {
     const res = apiError("TEST", new Error("db failure"));
     expect(res.status).toBe(500);
@@ -34,11 +51,9 @@ describe("apiError", () => {
     expect(res2.status).toBe(500);
   });
 
-  it("includes the context prefix in the server log", () => {
-    const spy = jest.spyOn(console, "error").mockImplementation(() => {});
+  it("loggea el error completo con su contexto vía pino", () => {
     apiError("MI_CONTEXTO", new Error("test"));
-    expect(spy).toHaveBeenCalledWith("[MI_CONTEXTO]", expect.any(Error));
-    spy.mockRestore();
+    expect(mockErrorCall()).toHaveBeenCalledWith({ err: expect.any(Error) }, "MI_CONTEXTO");
   });
 });
 
