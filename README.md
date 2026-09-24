@@ -165,7 +165,7 @@ CloudWatch.
 
 ```bash
 docker compose logs -f app
-docker compose logs -f app | npm run logs      # con colores y formato legible
+docker compose logs -f --no-log-prefix app | npm run logs      # con colores y formato legible
 ```
 
 ### Nivel mínimo (`LOG_LEVEL`)
