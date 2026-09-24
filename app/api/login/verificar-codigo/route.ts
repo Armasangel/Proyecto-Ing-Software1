@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
 
     const idUsuario = verifyPreToken(preToken);
     if (!idUsuario) {
-      log.warn("Pre-token de verificación inválido o vencido");
+      log.warn({}, "Pre-token de verificación inválido o vencido");
       return NextResponse.json(
         { error: "La sesión de verificación expiró. Iniciá sesión de nuevo." },
         { status: 401 }
