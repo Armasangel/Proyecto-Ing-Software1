@@ -26,7 +26,6 @@ type NavItem = {
 const NAV: NavItem[] = [
   { href: "/dashboard",        label: "Dashboard",       icon: "dashboard"     },
   { href: "/inventario",       label: "Inventario",      icon: "inventory"     },
-  { href: "/catalogo",         label: "Catálogo",        icon: "catalogue"     },
   { href: "/ordenes",          label: "Órdenes",         icon: "ticket"        },
   { href: "/ventas",           label: "Ventas",          icon: "shopping-cart" },
   { href: "/facturacion",      label: "Facturación",     icon: "bill"          },
@@ -88,7 +87,7 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
   const navVisible = NAV.filter((item) => {
     if (item.href === "/ventas") return isColaboradorTipo(usuario.tipo_usuario);
     if (
-      ["/inventario", "/catalogo", "/historial-ventas", "/proveedores", "/deudas", "/usuarios"].includes(
+      ["/inventario", "/historial-ventas", "/proveedores", "/deudas", "/usuarios"].includes(
         item.href
       )
     ) {
@@ -107,8 +106,8 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
   }
 
   return (
-    <div className="flex min-h-screen font-body bg-cream">
-      <aside className="w-[230px] shrink-0 bg-sidebar flex flex-col justify-between sticky top-0 h-screen shadow-warm-lg">
+    <div className="flex h-screen overflow-hidden font-body bg-cream">
+      <aside className="w-[230px] shrink-0 bg-sidebar flex flex-col justify-between h-screen shadow-warm-lg">
         <div className="px-4 pt-6 pb-4">
           {/* Logo */}
           <Link href="/dashboard" className="no-underline">
@@ -176,7 +175,7 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
       </aside>
 
       {/* Contenido principal */}
-      <main className="flex-1 p-8 overflow-y-auto bg-cream">
+      <main className="flex-1 min-h-0 p-8 overflow-y-auto bg-cream">
         <div className="mb-8">
           <h1 className={`font-head text-[1.7rem] font-extrabold mb-1 ${t.pageAccentClass}`}>{title}</h1>
           {subtitle && <p className="text-ink-muted text-[0.88rem]">{subtitle}</p>}
