@@ -1,11 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { StaffShell } from "@/components/StaffShell";
 import { useDuenoSession } from "@/hooks/useDuenoSession";
 import { Icon, type IconName } from "@/components/Icon";
-import { matchesQuery } from "@/lib/ui-table";
+import { matchesQuery, paginar, PaginationBar, type PageSize } from "@/lib/ui-table";
 
 const MIS_ITEMS = [
   {label: "editar", icon: "pencil"},
@@ -85,6 +85,15 @@ export default function CatalogoPage() {
   const [busqueda, setBusqueda] = useState("");
   const [soloActivos, setSoloActivos] = useState(true);
 
+  // Filtros (panel lateral desplegable) y paginación
+  const [panelFiltros, setPanelFiltros] = useState(false);
+  const [filtroCategoria, setFiltroCategoria] = useState("");
+  const [filtroMarca, setFiltroMarca] = useState("");
+  const [filtroExentoIva, setFiltroExentoIva] = useState(false);
+  const [filtroCaducidad, setFiltroCaducidad] = useState(false);
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState<PageSize>(10);
+
   // Modal producto
   const [modalOpen, setModalOpen] = useState(false);
   const [editando, setEditando] = useState<Producto | null>(null);
@@ -148,6 +157,11 @@ export default function CatalogoPage() {
       .then((d) => setProveedores(d.proveedores || []))
       .catch(() => setProveedores([]));
   }, [usuario, cargarProductos]);
+
+  // Al cambiar búsqueda o filtros, se vuelve a la primera página.
+  useEffect(() => {
+    setPage(1);
+  }, [busqueda, soloActivos, filtroCategoria, filtroMarca, filtroExentoIva, filtroCaducidad, perPage]);
 
   const proveedoresFiltrados = proveedores.filter(
     (p) =>
@@ -366,18 +380,41 @@ export default function CatalogoPage() {
   };
 
   // ── Filtros ────────────────────────────────────────────────────────────────
-  if (!usuario) return <div style={{ padding: "2rem", color: "var(--muted)" }}>Cargando…</div>;
+  const filtrosActivos =
+    (filtroCategoria ? 1 : 0) +
+    (filtroMarca ? 1 : 0) +
+    (filtroExentoIva ? 1 : 0) +
+    (filtroCaducidad ? 1 : 0) +
+    (soloActivos ? 0 : 1);
 
-  const productosFiltrados = productos.filter((p) => {
-    if (soloActivos && !p.estado_producto) return false;
-    const q = busqueda.toLowerCase();
-    return (
-      p.nombre_producto.toLowerCase().includes(q) ||
-      p.codigo_producto.toLowerCase().includes(q) ||
-      p.nombre_categoria.toLowerCase().includes(q) ||
-      p.nombre_marca.toLowerCase().includes(q)
-    );
-  });
+  const limpiarFiltros = () => {
+    setBusqueda("");
+    setSoloActivos(true);
+    setFiltroCategoria("");
+    setFiltroMarca("");
+    setFiltroExentoIva(false);
+    setFiltroCaducidad(false);
+  };
+
+  const productosFiltrados = useMemo(
+    () =>
+      productos.filter((p) => {
+        if (soloActivos && !p.estado_producto) return false;
+        if (filtroCategoria && String(p.id_categoria) !== filtroCategoria) return false;
+        if (filtroMarca && String(p.id_marca) !== filtroMarca) return false;
+        if (filtroExentoIva && !p.exento_iva) return false;
+        if (filtroCaducidad && !p.caducidad) return false;
+        return matchesQuery(busqueda, p.nombre_producto, p.codigo_producto, p.nombre_categoria, p.nombre_marca);
+      }),
+    [productos, busqueda, soloActivos, filtroCategoria, filtroMarca, filtroExentoIva, filtroCaducidad]
+  );
+
+  const productosPage = useMemo(
+    () => paginar(productosFiltrados, page, perPage),
+    [productosFiltrados, page, perPage]
+  );
+
+  if (!usuario) return <div style={{ padding: "2rem", color: "var(--muted)" }}>Cargando…</div>;
 
   return (
     <StaffShell
@@ -403,10 +440,22 @@ export default function CatalogoPage() {
           onChange={(e) => setBusqueda(e.target.value)}
           style={s.searchInput}
         />
-        <label style={s.checkLabel}>
-          <input type="checkbox" checked={!soloActivos} onChange={(e) => setSoloActivos(!e.target.checked)} style={{ accentColor: "var(--accent)" }} />
-          Ver inactivos
-        </label>
+        <button
+          type="button"
+          onClick={() => setPanelFiltros((v) => !v)}
+          aria-expanded={panelFiltros}
+          style={{
+            ...s.btnSecondary,
+            borderColor: panelFiltros ? "rgba(45,106,79,.55)" : "var(--border)",
+            color: panelFiltros ? "var(--text)" : "var(--muted)",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "0.4rem",
+          }}
+        >
+          Filtros
+          {filtrosActivos > 0 && <span style={s.filtroBadge}>{filtrosActivos}</span>}
+        </button>
         {tab === "productos" && (
           <button type="button" onClick={abrirCrear} style={s.btnPrimary}>+ Nuevo producto</button>
         )}
@@ -432,10 +481,10 @@ export default function CatalogoPage() {
               </tr>
             </thead>
             <tbody>
-              {productosFiltrados.length === 0 ? (
+              {productosPage.slice.length === 0 ? (
                 <tr><td colSpan={9} style={{ ...s.td, textAlign: "center", color: "var(--muted)", padding: "3rem" }}>No se encontraron productos.</td></tr>
               ) : (
-                productosFiltrados.map((p) => (
+                productosPage.slice.map((p) => (
                   <tr key={p.id_producto} style={{ ...s.tr, opacity: p.estado_producto ? 1 : 0.5 }}>
                     <td style={s.td}><code style={s.code}>{p.codigo_producto}</code></td>
                     <td style={s.td}>
@@ -466,6 +515,14 @@ export default function CatalogoPage() {
               )}
             </tbody>
           </table>
+          <PaginationBar
+            total={productosPage.total}
+            page={productosPage.paginaSegura}
+            perPage={perPage}
+            onPage={setPage}
+            onPerPage={setPerPage}
+            noun="productos"
+          />
         </div>
       )}
 
@@ -487,10 +544,10 @@ export default function CatalogoPage() {
               </tr>
             </thead>
             <tbody>
-              {productosFiltrados.length === 0 ? (
+              {productosPage.slice.length === 0 ? (
                 <tr><td colSpan={7} style={{ ...s.td, textAlign: "center", color: "var(--muted)", padding: "3rem" }}>No se encontraron productos.</td></tr>
               ) : (
-                productosFiltrados.map((p) => {
+                productosPage.slice.map((p) => {
                   const editingThis = precioEditando === p.id_producto;
                   return (
                     <tr key={p.id_producto} style={s.tr}>
@@ -528,7 +585,66 @@ export default function CatalogoPage() {
               )}
             </tbody>
           </table>
+          <PaginationBar
+            total={productosPage.total}
+            page={productosPage.paginaSegura}
+            perPage={perPage}
+            onPage={setPage}
+            onPerPage={setPerPage}
+            noun="productos"
+          />
         </div>
+      )}
+
+      {/* ── Panel lateral de filtros (desplegable) ── */}
+      {panelFiltros && (
+        <>
+          <button
+            type="button"
+            aria-label="Cerrar filtros"
+            onClick={() => setPanelFiltros(false)}
+            style={s.drawerBackdrop}
+          />
+          <aside style={s.drawer}>
+            <div style={s.drawerHeader}>
+              <h2 style={s.drawerTitle}>Filtros</h2>
+              <button type="button" onClick={() => setPanelFiltros(false)} style={s.closeBtn}>✕</button>
+            </div>
+            <div style={s.drawerBody}>
+              <label style={s.drawerLabel}>Categoría</label>
+              <select value={filtroCategoria} onChange={(e) => setFiltroCategoria(e.target.value)} style={s.input} aria-label="Filtrar por categoría">
+                <option value="">Todas las categorías</option>
+                {categorias.map((c) => <option key={c.id_categoria} value={c.id_categoria}>{c.nombre_categoria}</option>)}
+              </select>
+
+              <label style={s.drawerLabel}>Marca</label>
+              <select value={filtroMarca} onChange={(e) => setFiltroMarca(e.target.value)} style={s.input} aria-label="Filtrar por marca">
+                <option value="">Todas las marcas</option>
+                {marcas.map((m) => <option key={m.id_marca} value={m.id_marca}>{m.nombre_marca}</option>)}
+              </select>
+
+              <label style={s.drawerLabel}>Estado</label>
+              <label style={s.checkLabel}>
+                <input type="checkbox" checked={!soloActivos} onChange={(e) => setSoloActivos(!e.target.checked)} style={{ accentColor: "var(--accent)" }} />
+                Ver inactivos
+              </label>
+
+              <label style={s.drawerLabel}>Atributos</label>
+              <label style={s.checkLabel}>
+                <input type="checkbox" checked={filtroExentoIva} onChange={(e) => setFiltroExentoIva(e.target.checked)} style={{ accentColor: "var(--accent)" }} />
+                Solo exentos de IVA
+              </label>
+              <label style={s.checkLabel}>
+                <input type="checkbox" checked={filtroCaducidad} onChange={(e) => setFiltroCaducidad(e.target.checked)} style={{ accentColor: "var(--accent)" }} />
+                Solo con caducidad
+              </label>
+
+              <div style={{ borderTop: "1px solid var(--border)", paddingTop: "1rem", marginTop: "0.5rem" }}>
+                <button type="button" onClick={limpiarFiltros} style={{ ...s.btnSecondary, width: "100%" }}>Limpiar filtros</button>
+              </div>
+            </div>
+          </aside>
+        </>
       )}
 
       {/* ── Modal Crear / Editar producto ── */}
@@ -823,5 +939,12 @@ const s: Record<string, CSSProperties> = {
   fila: { display: "flex", gap: "1rem", flexWrap: "wrap" },
   input: { background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "0.6rem 0.85rem", color: "var(--text)", fontSize: "0.9rem", outline: "none", width: "100%" },
   formError: { color: "var(--red)", fontSize: "0.85rem", margin: "0.25rem 0 0" },
+  filtroBadge: { background: "var(--accent)", color: "#0d1117", borderRadius: 999, fontSize: "0.7rem", fontWeight: 700, minWidth: 18, height: 18, display: "inline-flex", alignItems: "center", justifyContent: "center", padding: "0 0.35rem" } as CSSProperties,
+  drawerBackdrop: { position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 150, border: "none", cursor: "pointer" } as CSSProperties,
+  drawer: { position: "fixed", top: 0, right: 0, height: "100vh", width: "min(360px, 100vw)", background: "var(--surface)", borderLeft: "1px solid var(--border)", boxShadow: "-8px 0 32px rgba(0,0,0,.35)", zIndex: 160, display: "flex", flexDirection: "column", fontFamily: "var(--font-body)" } as CSSProperties,
+  drawerHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "1rem 1.25rem", borderBottom: "1px solid var(--border)", flexShrink: 0 },
+  drawerTitle: { margin: 0, fontFamily: "var(--font-head)", fontSize: "1.05rem", fontWeight: 700, color: "var(--text)" },
+  drawerBody: { padding: "1.25rem", overflowY: "auto", display: "flex", flexDirection: "column", gap: "0.65rem" } as CSSProperties,
+  drawerLabel: { fontSize: "0.72rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--muted)", marginTop: "0.5rem" },
   toast: { position: "fixed", bottom: "2rem", right: "2rem", padding: "0.85rem 1.25rem", borderRadius: "var(--radius)", border: "1px solid", fontSize: "0.88rem", fontWeight: 500, zIndex: 300, backdropFilter: "blur(8px)", boxShadow: "var(--shadow)" } as CSSProperties,
 };

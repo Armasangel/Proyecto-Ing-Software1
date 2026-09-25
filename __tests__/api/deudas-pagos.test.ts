@@ -142,7 +142,7 @@ describe("POST /api/deudas/:id/pagos", () => {
     client.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // ROLLBACK
 
     const req = makeReq("1", { monto: 10 });
-    const res = await POST(req, { params: Promise.resolve(<{ id: "1" } }));
+    const res = await POST(req, { params: Promise.resolve({ id: "1" }) });
     expect(res.status).toBe(400);
     expect((await res.json()).error).toMatch(/ya está marcada como pagada/);
   });
