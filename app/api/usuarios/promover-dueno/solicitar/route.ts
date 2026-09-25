@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (idObjetivo === solicitante.id_usuario) {
-      return validationError("Ya sos dueño de esta cuenta");
+      return validationError("Ya eres dueño de esta cuenta");
     }
 
     // Traemos también al dueño solicitante desde la BD (no del JWT) para

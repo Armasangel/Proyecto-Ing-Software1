@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
   const idSolicitud = verifyPromocionToken(token);
   if (!idSolicitud) {
     return NextResponse.json(
-      { error: "La solicitud de promoción expiró o no es válida. Iniciá el proceso de nuevo." },
+      { error: "La solicitud de promoción expiró o no es válida. Inicia el proceso de nuevo." },
       { status: 401 }
     );
   }
@@ -94,13 +94,13 @@ export async function POST(req: NextRequest) {
 
     if (new Date(fila.expira_en).getTime() < Date.now()) {
       await client.query("ROLLBACK");
-      return validationError("El código expiró. Iniciá el proceso de promoción de nuevo.");
+      return validationError("El código expiró. Inicia el proceso de promoción de nuevo.");
     }
 
     if (fila.intentos >= getMaxIntentos()) {
       await client.query("ROLLBACK");
       return NextResponse.json(
-        { error: "Demasiados intentos fallidos. Iniciá el proceso de promoción de nuevo." },
+        { error: "Demasiados intentos fallidos. Inicia el proceso de promoción de nuevo." },
         { status: 429 }
       );
     }

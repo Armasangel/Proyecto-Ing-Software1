@@ -9,7 +9,8 @@
 --
 --  Se unificaron aquí los antiguos scripts 02_ordenes, 03_facturacion,
 --  04_detalle_venta, 05_codigo_verificacion, 03_indices, 03_datos_venta,
---  02_add_fecha_caducidad y 03_add_requiere_2fa.
+--  02_add_fecha_caducidad, 03_add_requiere_2fa y
+--  05_solicitud_promocion_dueno.
 
 -- CATEGORIA
 CREATE TABLE categoria (
@@ -134,6 +135,25 @@ CREATE TABLE codigo_verificacion (
 -- Búsqueda rápida de "el código vigente más reciente de este usuario".
 CREATE INDEX idx_codigo_verificacion_usuario
     ON codigo_verificacion (id_usuario, creado_en DESC);
+
+-- SOLICITUD_PROMOCION_DUENO (migración 05)
+-- Proceso de 2 pasos para ascender a un usuario a tipo DUENO: un dueño
+-- existente lo solicita, se le manda un código de verificación a su propio
+-- correo, y solo con ese código se aplica el cambio (ver
+-- app/api/usuarios/promover-dueno). Límite máximo de dueños: lib/roles.ts.
+CREATE TABLE solicitud_promocion_dueno (
+    id_solicitud          SERIAL          PRIMARY KEY,
+    id_usuario_objetivo   INT             NOT NULL REFERENCES usuario(id_usuario) ON DELETE CASCADE,
+    id_dueno_solicitante  INT             NOT NULL REFERENCES usuario(id_usuario) ON DELETE CASCADE,
+    codigo_hash           VARCHAR(255)    NOT NULL,
+    creado_en             TIMESTAMP       NOT NULL DEFAULT NOW(),
+    expira_en             TIMESTAMP       NOT NULL,
+    usado                 BOOLEAN         NOT NULL DEFAULT FALSE,
+    intentos              INT             NOT NULL DEFAULT 0
+);
+
+CREATE INDEX idx_solicitud_promocion_dueno_objetivo
+    ON solicitud_promocion_dueno (id_usuario_objetivo, creado_en DESC);
 
 -- BODEGA
 CREATE TABLE bodega (
@@ -416,7 +436,7 @@ INSERT INTO bodega (nombre_bodega, ubicacion) VALUES ('Bodega Principal', 'Zona 
 
 -- Contraseña de prueba (los usuarios): password123
 INSERT INTO usuario (nombre, correo, telefono, contrasena_hash, tipo_usuario) VALUES
-  ('Admin Dueño',    'dueno@tienda.com',        '50201234567', '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm', 'DUENO'),
+  ('Admin Dueño',    'cumatzemilio6@gmail.com',        '50201234567', '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm', 'DUENO'),
   ('Carlos Empleado','armasangel193@gmail.com', '50207654321', '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm', 'EMPLEADO');
 
 INSERT INTO usuario (nombre, correo, telefono, contrasena_hash, tipo_usuario, id_bodega) VALUES

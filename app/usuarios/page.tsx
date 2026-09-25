@@ -1109,7 +1109,7 @@ export default function UsuariosPage() {
                 <>
                   <p style={{ color: "var(--muted)", lineHeight: 1.65, fontSize: "0.88rem" }}>
                     Te mandamos un código de 6 dígitos a{" "}
-                    <strong style={{ color: "var(--text)" }}>{promoCorreoEnmascarado}</strong>. Ingresalo para
+                    <strong style={{ color: "var(--text)" }}>{promoCorreoEnmascarado}</strong>. Ingrésalo para
                     confirmar el ascenso.
                   </p>
                   <div style={s.field}>

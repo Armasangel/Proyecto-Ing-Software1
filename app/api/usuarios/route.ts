@@ -222,7 +222,7 @@ export async function POST(req: NextRequest) {
     // promoción con verificación por correo (/api/usuarios/promover-dueno).
     if (tipo_usuario === TIPOS_USUARIO.DUENO) {
       return validationError(
-        "No se puede crear un usuario nuevo directamente como Dueño. Creálo con otro rol y después usá el proceso de promoción con verificación por correo."
+        "No se puede crear un usuario nuevo directamente como Dueño. Créalo con otro rol y después usa el proceso de promoción con verificación por correo."
       );
     }
 

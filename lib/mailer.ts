@@ -46,13 +46,13 @@ export async function enviarCodigoVerificacion(destinatario: string, codigo: str
     from: `"Tienda San Miguel" <${remitente}>`,
     to: destinatario,
     subject: "Tu código de verificación",
-    text: `Tu código de verificación es: ${codigo}\n\nExpira en 5 minutos. Si no intentaste iniciar sesión, ignorá este correo.`,
+    text: `Tu código de verificación es: ${codigo}\n\nExpira en 5 minutos. Si no intentaste iniciar sesión, ignora este correo.`,
     html: `
       <div style="font-family: sans-serif; max-width: 420px; margin: auto;">
         <h2 style="margin-bottom: 0.5rem;">Tienda San Miguel</h2>
         <p>Tu código de verificación es:</p>
         <p style="font-size: 2rem; font-weight: 700; letter-spacing: 0.3em; margin: 1rem 0;">${codigo}</p>
-        <p style="color: #666; font-size: 0.85rem;">Expira en 5 minutos. Si no intentaste iniciar sesión, ignorá este correo.</p>
+        <p style="color: #666; font-size: 0.85rem;">Expira en 5 minutos. Si no intentaste iniciar sesión, ignora este correo.</p>
       </div>
     `,
   });
@@ -72,15 +72,15 @@ export async function enviarCodigoPromocionDueno(
   await getTransporter().sendMail({
     from: `"Tienda San Miguel" <${remitente}>`,
     to: destinatario,
-    subject: "Confirmá el ascenso a Dueño",
-    text: `Solicitaste dar el rol de Dueño a "${nombreObjetivo}". Si es correcto, confirmalo con este código: ${codigo}\n\nExpira en 5 minutos. Si vos no pediste esto, ignorá este correo y revisá quién tiene acceso a tu cuenta.`,
+    subject: "Confirma el ascenso a Dueño",
+    text: `Solicitaste dar el rol de Dueño a "${nombreObjetivo}". Si es correcto, confírmalo con este código: ${codigo}\n\nExpira en 5 minutos. Si no pediste esto, ignora este correo y revisa quién tiene acceso a tu cuenta.`,
     html: `
       <div style="font-family: sans-serif; max-width: 420px; margin: auto;">
         <h2 style="margin-bottom: 0.5rem;">Tienda San Miguel</h2>
         <p>Solicitaste dar el rol de <strong>Dueño</strong> a <strong>${nombreObjetivo}</strong>.</p>
-        <p>Si es correcto, confirmalo con este código:</p>
+        <p>Si es correcto, confírmalo con este código:</p>
         <p style="font-size: 2rem; font-weight: 700; letter-spacing: 0.3em; margin: 1rem 0;">${codigo}</p>
-        <p style="color: #666; font-size: 0.85rem;">Expira en 5 minutos. Si vos no pediste esto, ignorá este correo y revisá quién tiene acceso a tu cuenta.</p>
+        <p style="color: #666; font-size: 0.85rem;">Expira en 5 minutos. Si no pediste esto, ignora este correo y revisa quién tiene acceso a tu cuenta.</p>
       </div>
     `,
   });
