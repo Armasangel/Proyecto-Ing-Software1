@@ -135,6 +135,25 @@ CREATE TABLE codigo_verificacion (
 CREATE INDEX idx_codigo_verificacion_usuario
     ON codigo_verificacion (id_usuario, creado_en DESC);
 
+-- CODIGO_RECUPERACION (recuperación de contraseña)
+-- Igual que codigo_verificacion pero para el flujo de "olvidé mi contraseña".
+-- Aplica a cualquier tipo de usuario (DUENO, EMPLEADO o BODEGUERO): se pide
+-- por correo el código, se valida con máx. 5 intentos, y con él se obtiene un
+-- token de corta duración para escribir la nueva contraseña.
+CREATE TABLE codigo_recuperacion (
+    id_recuperacion SERIAL          PRIMARY KEY,
+    id_usuario      INT             NOT NULL REFERENCES usuario(id_usuario) ON DELETE CASCADE,
+    codigo_hash     VARCHAR(255)    NOT NULL,
+    creado_en       TIMESTAMP       NOT NULL DEFAULT NOW(),
+    expira_en       TIMESTAMP       NOT NULL,
+    usado           BOOLEAN         NOT NULL DEFAULT FALSE,
+    intentos        INT             NOT NULL DEFAULT 0
+);
+
+-- Búsqueda rápida de "el código de recuperación vigente más reciente".
+CREATE INDEX idx_codigo_recuperacion_usuario
+    ON codigo_recuperacion (id_usuario, creado_en DESC);
+
 -- BODEGA
 CREATE TABLE bodega (
     id_bodega       SERIAL          PRIMARY KEY,

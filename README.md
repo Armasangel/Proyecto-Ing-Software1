@@ -130,6 +130,37 @@ El envío usa **Gmail SMTP** (gratis, con contraseña de aplicación). Para conf
 
 ---
 
+## 🔑 Recuperación de contraseña ("olvidé mi contraseña")
+
+Válida para **todos** los tipos de usuario (DUEÑO, EMPLEADO y BODEGUERO).
+Desde el login hay un enlace "¿Olvidaste tu contraseña?" que lleva a `/recuperar`,
+una página pública en 3 pasos:
+
+1. **Correo** → `POST /api/recuperar/solicitar`. Genera un código de 6 dígitos
+   (también hasheado en la BD, vigente 5 min, máx. 5 intentos) y lo manda por
+   Gmail. La respuesta es **siempre la misma** para no revelar qué correos están
+   registrados; el detalle de si la cuenta existe queda solo en los logs.
+2. **Código** → `POST /api/recuperar/verificar`. Si es correcto devuelve un
+   `reset_token` (JWT de propósito propio, expira en 10 min) y marca el código
+   como usado.
+3. **Contraseña nueva** → `POST /api/recuperar/cambiar`. Actualiza el hash de la
+   contraseña, invalida los códigos de recuperación y de 2FA pendientes del
+   usuario y limpia el bloqueo por intentos fallidos para que entre de inmediato.
+
+Protecciones: rate limiting por IP **y** por correo en la solicitud (evita spam de
+correos y enumerar cuentas) y reutiliza el mismo transporte de Gmail del 2FA
+(requiere `GMAIL_USER` / `GMAIL_APP_PASSWORD`).
+
+Si tu base ya estaba inicializada, corré la migración una vez:
+
+```bash
+psql -U dsm_user -d deposito_san_miguel -f migrations/05_recuperacion_contrasena.sql
+```
+
+En bases nuevas la tabla `codigo_recuperacion` ya viene en `init/01_schema.sql`.
+
+---
+
 ## 🛠️ Stack tecnológico
 
 | Capa | Tecnología |

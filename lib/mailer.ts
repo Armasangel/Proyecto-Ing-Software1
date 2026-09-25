@@ -57,3 +57,23 @@ export async function enviarCodigoVerificacion(destinatario: string, codigo: str
     `,
   });
 }
+
+export async function enviarCodigoRecuperacion(destinatario: string, codigo: string) {
+  const remitente = process.env.GMAIL_USER;
+
+  log.debug({ destinatario }, "Enviando código de recuperación de contraseña");
+  await getTransporter().sendMail({
+    from: `"Tienda San Miguel" <${remitente}>`,
+    to: destinatario,
+    subject: "Código para recuperar tu contraseña",
+    text: `Tu código para recuperar la contraseña es: ${codigo}\n\nExpira en 5 minutos. Si no lo pediste vos, ignorá este correo.`,
+    html: `
+      <div style="font-family: sans-serif; max-width: 420px; margin: auto;">
+        <h2 style="margin-bottom: 0.5rem;">Tienda San Miguel</h2>
+        <p>Tu código para recuperar la contraseña es:</p>
+        <p style="font-size: 2rem; font-weight: 700; letter-spacing: 0.3em; margin: 1rem 0;">${codigo}</p>
+        <p style="color: #666; font-size: 0.85rem;">Expira en 5 minutos. Si no lo pediste vos, ignorá este correo.</p>
+      </div>
+    `,
+  });
+}
