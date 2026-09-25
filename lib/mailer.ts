@@ -57,3 +57,31 @@ export async function enviarCodigoVerificacion(destinatario: string, codigo: str
     `,
   });
 }
+
+// Se manda al correo del DUEÑO que está solicitando el ascenso (no al
+// usuario que va a ser promovido), para que sea el propio dueño quien
+// confirme desde su bandeja que sí quiere dar ese permiso.
+export async function enviarCodigoPromocionDueno(
+  destinatario: string,
+  codigo: string,
+  nombreObjetivo: string
+) {
+  const remitente = process.env.GMAIL_USER;
+
+  log.debug({ destinatario }, "Enviando código de confirmación de promoción a dueño");
+  await getTransporter().sendMail({
+    from: `"Tienda San Miguel" <${remitente}>`,
+    to: destinatario,
+    subject: "Confirmá el ascenso a Dueño",
+    text: `Solicitaste dar el rol de Dueño a "${nombreObjetivo}". Si es correcto, confirmalo con este código: ${codigo}\n\nExpira en 5 minutos. Si vos no pediste esto, ignorá este correo y revisá quién tiene acceso a tu cuenta.`,
+    html: `
+      <div style="font-family: sans-serif; max-width: 420px; margin: auto;">
+        <h2 style="margin-bottom: 0.5rem;">Tienda San Miguel</h2>
+        <p>Solicitaste dar el rol de <strong>Dueño</strong> a <strong>${nombreObjetivo}</strong>.</p>
+        <p>Si es correcto, confirmalo con este código:</p>
+        <p style="font-size: 2rem; font-weight: 700; letter-spacing: 0.3em; margin: 1rem 0;">${codigo}</p>
+        <p style="color: #666; font-size: 0.85rem;">Expira en 5 minutos. Si vos no pediste esto, ignorá este correo y revisá quién tiene acceso a tu cuenta.</p>
+      </div>
+    `,
+  });
+}

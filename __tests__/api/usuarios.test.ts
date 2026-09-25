@@ -116,6 +116,35 @@ describe("PATCH /api/usuarios", () => {
     const data = await res.json();
     expect(data.usuario.estado_usuario).toBe(false);
   });
+
+  it("rejects promoting a non-dueño directly to DUENO through this endpoint", async () => {
+    // SELECT actual: el objetivo (id 2) es EMPLEADO hoy.
+    mockPool.query.mockResolvedValueOnce({ rows: [{ tipo_usuario: "EMPLEADO", id_bodega: null }] });
+    const req = createMockRequest("/api/usuarios", {
+      method: "PATCH",
+      user: testUserDueno,
+      body: { id_usuario: 2, tipo_usuario: "DUENO" },
+    });
+    const res = await PATCH(req);
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toMatch(/promover-dueno/);
+  });
+
+  it("allows a PATCH with tipo_usuario=DUENO as a no-op when the user is already dueño", async () => {
+    // id 3: otro dueño distinto del que hace la solicitud (id 1), para no
+    // pisar la validación de "no puedes editarte a vos mismo".
+    mockPool.query
+      .mockResolvedValueOnce({ rows: [{ tipo_usuario: "DUENO", id_bodega: null }] }) // SELECT actual
+      .mockResolvedValueOnce({ rows: [{ id_usuario: 3, nombre: "Otro Dueño", tipo_usuario: "DUENO", estado_usuario: false }] }); // UPDATE
+    const req = createMockRequest("/api/usuarios", {
+      method: "PATCH",
+      user: testUserDueno,
+      body: { id_usuario: 3, tipo_usuario: "DUENO", estado_usuario: false },
+    });
+    const res = await PATCH(req);
+    expect(res.status).toBe(200);
+  });
 });
 
 describe("POST /api/usuarios", () => {
@@ -135,6 +164,20 @@ describe("POST /api/usuarios", () => {
     expect(res.status).toBe(429);
     const data = await res.json();
     expect(data.error).toMatch(/25/);
+  });
+
+  it("rejects creating a new user directly as DUENO", async () => {
+    const req = createMockRequest("/api/usuarios", {
+      method: "POST",
+      user: testUserDueno,
+      body: { nombre: "Nuevo", correo: "nuevo@tienda.com", contrasena: "123456", tipo_usuario: "DUENO" },
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toMatch(/no se puede crear un usuario nuevo directamente como dueño/i);
+    // No debería haber llegado a tocar la base de datos.
+    expect(mockPool.query).not.toHaveBeenCalled();
   });
 
   it("creates a usuario", async () => {

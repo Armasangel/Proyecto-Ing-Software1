@@ -4,7 +4,7 @@ import type { CSSProperties } from "react";
 import { useCallback, useEffect, useState } from "react";
 import { StaffShell } from "@/components/StaffShell";
 import { useDuenoSession } from "@/hooks/useDuenoSession";
-import { TIPOS_USUARIO } from "@/lib/roles";
+import { MAX_DUENOS, TIPOS_USUARIO } from "@/lib/roles";
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -94,6 +94,15 @@ export default function UsuariosPage() {
   // Confirm toggle estado
   const [confirmToggle, setConfirmToggle] = useState<Usuario | null>(null);
   const [toggling, setToggling] = useState(false);
+
+  // Modal promover a dueño (proceso de 2 pasos con código por correo)
+  const [promoviendo, setPromoviendo] = useState<Usuario | null>(null);
+  const [promoPaso, setPromoPaso] = useState<"inicial" | "codigo">("inicial");
+  const [promoToken, setPromoToken] = useState("");
+  const [promoCodigo, setPromoCodigo] = useState("");
+  const [promoCorreoEnmascarado, setPromoCorreoEnmascarado] = useState("");
+  const [promoLoading, setPromoLoading] = useState(false);
+  const [promoError, setPromoError] = useState("");
 
   // Toast
   const [toast, setToast] = useState<{ msg: string; tipo: "ok" | "err" } | null>(null);
@@ -252,6 +261,73 @@ export default function UsuariosPage() {
     }
   };
 
+  // ── Promover a dueño (2 pasos con código por correo) ──────────────────────
+
+  const abrirPromover = (u: Usuario) => {
+    setPromoviendo(u);
+    setPromoPaso("inicial");
+    setPromoToken("");
+    setPromoCodigo("");
+    setPromoCorreoEnmascarado("");
+    setPromoError("");
+  };
+
+  const cerrarPromover = () => {
+    if (promoLoading) return;
+    setPromoviendo(null);
+  };
+
+  const solicitarPromocion = async () => {
+    if (!promoviendo) return;
+    setPromoLoading(true);
+    setPromoError("");
+    try {
+      const r = await fetch("/api/usuarios/promover-dueno/solicitar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id_usuario: promoviendo.id_usuario }),
+      });
+      const d = await r.json();
+      if (!r.ok) {
+        setPromoError(d.error || "No se pudo enviar el código de confirmación");
+      } else {
+        setPromoToken(d.token);
+        setPromoCorreoEnmascarado(d.correo_enmascarado || "");
+        setPromoPaso("codigo");
+      }
+    } catch {
+      setPromoError("Error de conexión");
+    } finally {
+      setPromoLoading(false);
+    }
+  };
+
+  const confirmarPromocion = async () => {
+    if (!promoviendo) return;
+    setPromoLoading(true);
+    setPromoError("");
+    try {
+      const r = await fetch("/api/usuarios/promover-dueno/confirmar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: promoToken, codigo: promoCodigo }),
+      });
+      const d = await r.json();
+      if (!r.ok) {
+        setPromoError(d.error || "Código incorrecto");
+      } else {
+        const nombrePromovido = promoviendo.nombre;
+        setPromoviendo(null);
+        showToast(`${nombrePromovido} ahora es dueño ✓`, "ok");
+        cargar();
+      }
+    } catch {
+      setPromoError("Error de conexión");
+    } finally {
+      setPromoLoading(false);
+    }
+  };
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   if (!usuario)
@@ -267,6 +343,9 @@ export default function UsuariosPage() {
     ...t,
     count: usuarios.filter((u) => u.tipo_usuario === t.value).length,
   }));
+
+  const totalDuenosActual = usuarios.filter((u) => u.tipo_usuario === TIPOS_USUARIO.DUENO).length;
+  const limiteDuenosAlcanzado = totalDuenosActual >= MAX_DUENOS;
 
   return (
     <StaffShell
@@ -455,6 +534,23 @@ export default function UsuariosPage() {
                         >
                           ✏️
                         </button>
+                        {u.tipo_usuario !== TIPOS_USUARIO.DUENO && (
+                          <button
+                            type="button"
+                            onClick={() => abrirPromover(u)}
+                            style={s.btnEdit}
+                            disabled={esMismoUsuario || !u.estado_usuario || limiteDuenosAlcanzado}
+                            title={
+                              !u.estado_usuario
+                                ? "No se puede promover a un usuario inactivo"
+                                : limiteDuenosAlcanzado
+                                ? `Ya hay ${MAX_DUENOS} dueños (el máximo)`
+                                : "Promover a Dueño (requiere verificación por correo)"
+                            }
+                          >
+                            👑
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => setConfirmToggle(u)}
@@ -518,6 +614,42 @@ export default function UsuariosPage() {
                 <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
                   {Object.entries(TIPO_META).map(([val, meta]) => {
                     const activo = editTipo === val;
+                    // Volverse dueño no pasa por este selector: requiere el
+                    // proceso de verificación por correo (botón 👑 en la
+                    // tabla). Si el usuario ya es dueño, sí se puede dejar
+                    // seleccionado (no es un ascenso) o quitarle el rol.
+                    const esAscensoADueno = val === TIPOS_USUARIO.DUENO && editando.tipo_usuario !== TIPOS_USUARIO.DUENO;
+
+                    if (esAscensoADueno) {
+                      return (
+                        <div
+                          key={val}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: "0.75rem",
+                            padding: "0.65rem 0.85rem",
+                            borderRadius: 10,
+                            border: "1px dashed var(--border)",
+                            background: "var(--surface2)",
+                            opacity: 0.75,
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontWeight: 600, fontSize: "0.88rem", color: "var(--text)" }}>
+                              {meta.label}
+                            </div>
+                            <div style={{ fontSize: "0.72rem", color: "var(--muted)" }}>
+                              {limiteDuenosAlcanzado
+                                ? `Ya hay ${MAX_DUENOS} dueños (el máximo). Hay que quitarle el rol a alguno antes.`
+                                : "Requiere el proceso aparte de verificación por correo (botón 👑)."}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+
                     return (
                       <label
                         key={val}
@@ -805,11 +937,16 @@ export default function UsuariosPage() {
                   onChange={(e) =>
                   setNuevoForm((f) => ({ ...f, tipo_usuario: e.target.value as typeof f.tipo_usuario }))                  }
                 >
-                  {Object.entries(TIPO_META).map(([val, meta]) => (
-                    <option key={val} value={val}>
-                      {meta.label}
-                    </option>
-                  ))}
+                  {Object.entries(TIPO_META)
+                    // El rol de Dueño nunca se asigna al crear: solo se
+                    // otorga después, a un usuario ya establecido, con el
+                    // proceso de verificación por correo (botón 👑).
+                    .filter(([val]) => val !== TIPOS_USUARIO.DUENO)
+                    .map(([val, meta]) => (
+                      <option key={val} value={val}>
+                        {meta.label}
+                      </option>
+                    ))}
                 </select>
               </div>
 
@@ -936,6 +1073,79 @@ export default function UsuariosPage() {
                   ? "Sí, desactivar"
                   : "Sí, activar"}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal promover a dueño (2 pasos con código por correo) ── */}
+      {promoviendo && (
+        <div
+          style={s.overlay}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) cerrarPromover();
+          }}
+        >
+          <div style={{ ...s.modal, maxWidth: 440 }}>
+            <div style={s.modalHeader}>
+              <h2 style={s.modalTitle}>Promover a Dueño</h2>
+              <button type="button" onClick={cerrarPromover} style={s.closeBtn} disabled={promoLoading}>
+                ✕
+              </button>
+            </div>
+            <div style={s.modalBody}>
+              <div style={s.userInfoBox}>
+                <div style={{ fontWeight: 700, color: "var(--text)" }}>{promoviendo.nombre}</div>
+                <div style={{ fontSize: "0.82rem", color: "var(--muted)" }}>{promoviendo.correo}</div>
+              </div>
+
+              {promoPaso === "inicial" ? (
+                <p style={{ color: "var(--muted)", lineHeight: 1.65, fontSize: "0.88rem" }}>
+                  Vas a dar el rol de <strong style={{ color: "var(--accent)" }}>Dueño</strong> a este usuario
+                  (acceso total al sistema). Por seguridad, primero te vamos a mandar un código de confirmación
+                  a <strong style={{ color: "var(--text)" }}>tu propio correo</strong>, no al de él.
+                </p>
+              ) : (
+                <>
+                  <p style={{ color: "var(--muted)", lineHeight: 1.65, fontSize: "0.88rem" }}>
+                    Te mandamos un código de 6 dígitos a{" "}
+                    <strong style={{ color: "var(--text)" }}>{promoCorreoEnmascarado}</strong>. Ingresalo para
+                    confirmar el ascenso.
+                  </p>
+                  <div style={s.field}>
+                    <label style={s.label}>Código de verificación</label>
+                    <input
+                      style={{ ...s.input, letterSpacing: "0.3em", textAlign: "center", fontSize: "1.2rem" }}
+                      value={promoCodigo}
+                      onChange={(e) => setPromoCodigo(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      placeholder="000000"
+                      inputMode="numeric"
+                      autoFocus
+                    />
+                  </div>
+                </>
+              )}
+
+              {promoError && <div style={s.errorBox}>{promoError}</div>}
+            </div>
+            <div style={s.modalFooter}>
+              <button type="button" onClick={cerrarPromover} style={s.btnSecondary} disabled={promoLoading}>
+                Cancelar
+              </button>
+              {promoPaso === "inicial" ? (
+                <button type="button" onClick={solicitarPromocion} style={s.btnPrimary} disabled={promoLoading}>
+                  {promoLoading ? "Enviando código…" : "Enviar código de confirmación"}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={confirmarPromocion}
+                  style={s.btnPrimary}
+                  disabled={promoLoading || promoCodigo.length !== 6}
+                >
+                  {promoLoading ? "Confirmando…" : "Confirmar ascenso"}
+                </button>
+              )}
             </div>
           </div>
         </div>

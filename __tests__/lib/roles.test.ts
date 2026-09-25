@@ -1,4 +1,5 @@
 import {
+  MAX_DUENOS,
   TIPOS_USUARIO,
   isStaffTipo,
   isDuenoTipo,
@@ -12,6 +13,12 @@ describe("TIPOS_USUARIO", () => {
   it("has the expected role constants", () => {
     expect(TIPOS_USUARIO.DUENO).toBe("DUENO");
     expect(TIPOS_USUARIO.EMPLEADO).toBe("EMPLEADO");
+  });
+});
+
+describe("MAX_DUENOS", () => {
+  it("is capped at 2", () => {
+    expect(MAX_DUENOS).toBe(2);
   });
 });
 

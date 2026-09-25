@@ -113,6 +113,18 @@ export async function PATCH(req: NextRequest) {
           `tipo_usuario inválido. Valores permitidos: ${TIPOS_VALIDOS.join(", ")}`
         );
       }
+
+      // Volverse DUENO nunca pasa por esta edición "normal" de rol, ni
+      // siquiera viniendo de otro dueño: tiene que pasar por el proceso de
+      // /api/usuarios/promover-dueno, con código de verificación por correo
+      // y respetando el límite de MAX_DUENOS. Si ya es DUENO no es un
+      // ascenso (es un no-op para este campo), así que lo dejamos pasar.
+      if (tipo_usuario === TIPOS_USUARIO.DUENO && actual.rows[0].tipo_usuario !== TIPOS_USUARIO.DUENO) {
+        return validationError(
+          "Para dar el rol de Dueño hay que usar el proceso de promoción con verificación por correo (/api/usuarios/promover-dueno)."
+        );
+      }
+
       updates.push(`tipo_usuario = $${idx++}`);
       params.push(tipo_usuario);
     }
@@ -203,6 +215,15 @@ export async function POST(req: NextRequest) {
 
     if (contrasena.length < 6) {
       return validationError("La contraseña debe tener al menos 6 caracteres");
+    }
+
+    // Un usuario nuevo nunca se crea directamente como DUENO: ese rol solo
+    // se otorga a un usuario ya establecido, a través del proceso de
+    // promoción con verificación por correo (/api/usuarios/promover-dueno).
+    if (tipo_usuario === TIPOS_USUARIO.DUENO) {
+      return validationError(
+        "No se puede crear un usuario nuevo directamente como Dueño. Creálo con otro rol y después usá el proceso de promoción con verificación por correo."
+      );
     }
 
     const tipoFinal =

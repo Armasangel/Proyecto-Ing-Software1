@@ -8,7 +8,9 @@ import {
   hashCodigo,
   minutosDeExpiracion,
   signPreToken,
+  signPromocionToken,
   verifyPreToken,
+  verifyPromocionToken,
 } from "@/lib/verificacion";
 import { getJwtSecret } from "@/lib/auth";
 
@@ -87,6 +89,37 @@ describe("lib/verificacion (refactor 2FA)", () => {
         subject: "7",
       });
       expect(verifyPreToken(token)).toBeNull();
+    });
+  });
+
+  describe("signPromocionToken / verifyPromocionToken", () => {
+    it("returns the id_solicitud for a valid token", () => {
+      const token = signPromocionToken(9);
+      expect(verifyPromocionToken(token)).toBe(9);
+    });
+
+    it("returns null for a malformed/garbage token", () => {
+      expect(verifyPromocionToken("no-es-un-jwt")).toBeNull();
+    });
+
+    it("returns null when the token has a different purpose", () => {
+      const token = jwt.sign({ purpose: "otra_cosa" }, getJwtSecret(), { subject: "9" });
+      expect(verifyPromocionToken(token)).toBeNull();
+    });
+
+    it("is not interchangeable with a login pre-token", () => {
+      const preToken = signPreToken(9);
+      const promoToken = signPromocionToken(9);
+      expect(verifyPromocionToken(preToken)).toBeNull();
+      expect(verifyPreToken(promoToken)).toBeNull();
+    });
+
+    it("returns null for an expired token", () => {
+      const expired = jwt.sign({ purpose: "promocion_dueno_pendiente" }, getJwtSecret(), {
+        subject: "9",
+        expiresIn: -10,
+      });
+      expect(verifyPromocionToken(expired)).toBeNull();
     });
   });
 
