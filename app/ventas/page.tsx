@@ -12,6 +12,7 @@ type Cliente = {
   nombre: string;
   correo: string;
   tipo_cliente: string;
+  total_ventas?: number;
 };
 
 type Producto = {
@@ -111,6 +112,10 @@ export default function VentasPage() {
   const [deshaciendo, setDeshaciendo] = useState(false);
 
   const [idCliente, setIdCliente] = useState("");
+  // Buscador de cliente: en vez de un <select> con todos los clientes, se
+  // sugieren de entrada los más frecuentes y se busca el resto por texto.
+  const [busquedaCliente, setBusquedaCliente] = useState("");
+  const [sugerenciasClienteAbiertas, setSugerenciasClienteAbiertas] = useState(false);
   const [estadoPago, setEstadoPago] = useState<string>("PAGADO");
   const [tipoVenta, setTipoVenta] = useState<string>("MINORISTA");
   // El tipo de venta ya no lo escoge el colaborador a mano: se detecta solo
@@ -203,6 +208,22 @@ export default function VentasPage() {
     [clientes, idCliente]
   );
 
+  // Los 5 clientes con más ventas registradas — sugerencia por defecto
+  // cuando el buscador todavía está vacío.
+  const clientesDestacados = useMemo(() => {
+    return [...clientes]
+      .sort((a, b) => (b.total_ventas ?? 0) - (a.total_ventas ?? 0) || a.nombre.localeCompare(b.nombre))
+      .slice(0, 5);
+  }, [clientes]);
+
+  const clientesSugeridos = useMemo(() => {
+    const q = busquedaCliente.trim().toLowerCase();
+    if (q === "") return clientesDestacados;
+    return clientes
+      .filter((c) => c.nombre.toLowerCase().includes(q) || c.correo.toLowerCase().includes(q))
+      .slice(0, 8);
+  }, [busquedaCliente, clientes, clientesDestacados]);
+
   const stockDisponible = useCallback((idProducto: string, idBodega: string): number => {
     const idP = Number(idProducto);
     const idB = Number(idBodega);
@@ -270,6 +291,18 @@ export default function VentasPage() {
     }
   }
 
+  function seleccionarCliente(c: Cliente) {
+    onClienteChange(String(c.id_cliente));
+    setBusquedaCliente(`${c.nombre} (${c.correo})`);
+    setSugerenciasClienteAbiertas(false);
+  }
+
+  function limpiarClienteSeleccionado() {
+    setBusquedaCliente("");
+    setSugerenciasClienteAbiertas(false);
+    onClienteChange("");
+  }
+
   function onForzarTipoVentaChange(activar: boolean) {
     setForzarTipoVenta(activar);
     if (!activar) {
@@ -296,7 +329,7 @@ export default function VentasPage() {
       setOkMsg(`Venta #${data.id_venta} registrada. Total: Q${Number(data.total).toFixed(2)}`);
       setVentaDeshacer({ id: data.id_venta, total: Number(data.total) });
       setSegundosRestantes(VENTANA_DESHACER_SEGUNDOS);
-      setIdCliente(""); setEstadoPago("PAGADO"); setTipoVenta("MINORISTA"); setForzarTipoVenta(false); setTipoEntrega("EN_TIENDA");
+      setIdCliente(""); setBusquedaCliente(""); setEstadoPago("PAGADO"); setTipoVenta("MINORISTA"); setForzarTipoVenta(false); setTipoEntrega("EN_TIENDA");
       setDireccionEntrega(""); setFechaLimitePago(""); setLineas([nuevaLinea()]);
       await cargarVentas();
     } catch { setError("No se pudo conectar con el servidor"); }
@@ -340,10 +373,57 @@ export default function VentasPage() {
           <div className="flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">
               <label className={labelCls}>Cliente *</label>
-              <select value={idCliente} onChange={(e) => onClienteChange(e.target.value)} className={inputCls}>
-                <option value="">— Selecciona un cliente —</option>
-                {clientes.map((c) => <option key={c.id_cliente} value={c.id_cliente}>{c.nombre} ({c.correo})</option>)}
-              </select>
+              <div className="relative">
+                <input
+                  className={inputCls}
+                  placeholder="Buscar cliente por nombre o correo…"
+                  value={busquedaCliente}
+                  onChange={(e) => {
+                    setBusquedaCliente(e.target.value);
+                    setSugerenciasClienteAbiertas(true);
+                    if (idCliente) onClienteChange("");
+                  }}
+                  onFocus={() => setSugerenciasClienteAbiertas(true)}
+                  onBlur={() => setTimeout(() => setSugerenciasClienteAbiertas(false), 150)}
+                />
+                {idCliente && (
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={limpiarClienteSeleccionado}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-muted hover:text-ink text-sm"
+                    title="Cambiar de cliente"
+                  >
+                    ✕
+                  </button>
+                )}
+                {sugerenciasClienteAbiertas && (
+                  <div className="absolute z-20 top-[calc(100%+4px)] left-0 right-0 bg-white border border-[var(--border)] rounded-control shadow-warm max-h-56 overflow-y-auto">
+                    {busquedaCliente.trim() === "" && (
+                      <div className="px-3 py-1.5 text-[0.72rem] text-ink-muted uppercase tracking-wide">
+                        Clientes frecuentes
+                      </div>
+                    )}
+                    {clientesSugeridos.length === 0 && (
+                      <div className="px-3 py-2 text-[0.85rem] text-ink-muted">Sin resultados</div>
+                    )}
+                    {clientesSugeridos.map((c) => (
+                      <div
+                        key={c.id_cliente}
+                        onMouseDown={() => seleccionarCliente(c)}
+                        className="px-3 py-2 text-[0.88rem] text-ink cursor-pointer hover:bg-cream/60 border-b border-[var(--border)] last:border-b-0 flex justify-between items-center gap-2"
+                      >
+                        <span>{c.nombre} ({c.correo})</span>
+                        {!!c.total_ventas && (
+                          <span className="text-[0.72rem] text-ink-muted whitespace-nowrap">
+                            {c.total_ventas} venta{c.total_ventas === 1 ? "" : "s"}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="flex gap-4 flex-wrap">

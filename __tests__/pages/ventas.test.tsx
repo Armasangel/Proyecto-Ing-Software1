@@ -21,8 +21,8 @@ const mockReplace = jest.fn();
 const mockUsuarioEmpleado = { id_usuario: 2, nombre: "María", correo: "maria@tienda.com", tipo_usuario: "EMPLEADO" };
 
 const clientes = [
-  { id_cliente: 1, nombre: "Carlos Ruiz", correo: "carlos@email.com", tipo_cliente: "MINORISTA" },
-  { id_cliente: 2, nombre: "Distribuidora El Sol", correo: "sol@email.com", tipo_cliente: "MAYORISTA" },
+  { id_cliente: 1, nombre: "Carlos Ruiz", correo: "carlos@email.com", tipo_cliente: "MINORISTA", total_ventas: 1 },
+  { id_cliente: 2, nombre: "Distribuidora El Sol", correo: "sol@email.com", tipo_cliente: "MAYORISTA", total_ventas: 3 },
 ];
 
 const productos = [
@@ -48,18 +48,22 @@ function setupServerVentas() {
 
 async function llenarFormulario(user: ReturnType<typeof userEvent.setup>) {
   // Espera a que lleguen las opciones (y el resto del form).
-  await screen.findByText("Carlos Ruiz (carlos@email.com)");
   await screen.findByText("[PROD-001] Leche Entera");
   await screen.findByText("Bodega Central");
 
+  // El cliente ya no es un <select>: es un buscador con sugerencias. Al
+  // enfocarlo (sin escribir nada) debe aparecer como sugerencia frecuente.
+  const buscadorCliente = await screen.findByPlaceholderText("Buscar cliente por nombre o correo…");
+  await user.click(buscadorCliente);
+  await user.click(await screen.findByText("Carlos Ruiz (carlos@email.com)"));
+
   const combos = screen.getAllByRole("combobox");
-  // Orden del DOM: cliente, estado de pago, tipo de entrega, producto, bodega.
-  // El tipo de venta ya no es un <select> propio salvo que se active
-  // "Forzar un tipo distinto al del cliente" — se detecta solo a partir del
-  // tipo_cliente del cliente elegido.
-  await user.selectOptions(combos[0], "1"); // cliente
-  await user.selectOptions(combos[3], "1"); // producto
-  await user.selectOptions(combos[4], "1"); // bodega
+  // Orden del DOM (ya sin el <select> de cliente): estado de pago, tipo de
+  // entrega, producto, bodega. El tipo de venta ya no es un <select> propio
+  // salvo que se active "Forzar un tipo distinto al del cliente" — se
+  // detecta solo a partir del tipo_cliente del cliente elegido.
+  await user.selectOptions(combos[2], "1"); // producto
+  await user.selectOptions(combos[3], "1"); // bodega
 
   const spinbuttons = screen.getAllByRole("spinbutton");
   await user.type(spinbuttons[0], "2"); // cantidad → total Q50.00
@@ -94,16 +98,19 @@ describe("VentasPage", () => {
     const user = userEvent.setup();
     render(<VentasPage />);
 
-    await screen.findByText("Carlos Ruiz (carlos@email.com)");
-    const combos = screen.getAllByRole("combobox");
+    const buscadorCliente = await screen.findByPlaceholderText("Buscar cliente por nombre o correo…");
+    await user.click(buscadorCliente);
 
     // Cliente minorista → se detecta Minorista.
-    await user.selectOptions(combos[0], "1");
+    await user.click(await screen.findByText("Carlos Ruiz (carlos@email.com)"));
     expect(await screen.findByText("Minorista")).toBeInTheDocument();
 
-    // Cambiar a un cliente mayorista → se re-detecta Mayorista solo, sin
-    // que el colaborador tenga que tocar nada más.
-    await user.selectOptions(combos[0], "2");
+    // Cambiar a un cliente mayorista (buscándolo) → se re-detecta Mayorista
+    // solo, sin que el colaborador tenga que tocar nada más.
+    await user.click(buscadorCliente);
+    await user.clear(buscadorCliente);
+    await user.type(buscadorCliente, "Sol");
+    await user.click(await screen.findByText("Distribuidora El Sol (sol@email.com)"));
     expect(await screen.findByText("Mayorista")).toBeInTheDocument();
     expect(screen.getByText("detectado del cliente")).toBeInTheDocument();
 
@@ -111,6 +118,30 @@ describe("VentasPage", () => {
     const forzarCheckbox = screen.getByRole("checkbox", { name: /Forzar un tipo distinto al del cliente/ });
     await user.click(forzarCheckbox);
     expect(screen.getByDisplayValue("Mayorista")).toBeInTheDocument();
+  });
+
+  it("suggests the top clients by ventas when the search box is empty, and filters by text", async () => {
+    setupServerVentas();
+    const user = userEvent.setup();
+    render(<VentasPage />);
+
+    const buscadorCliente = await screen.findByPlaceholderText("Buscar cliente por nombre o correo…");
+    await user.click(buscadorCliente);
+
+    // Sin escribir nada, aparecen los clientes frecuentes.
+    expect(await screen.findByText("Clientes frecuentes")).toBeInTheDocument();
+    expect(screen.getByText("Carlos Ruiz (carlos@email.com)")).toBeInTheDocument();
+    expect(screen.getByText("Distribuidora El Sol (sol@email.com)")).toBeInTheDocument();
+    // El de más ventas (3) aparece marcado.
+    expect(screen.getByText("3 ventas")).toBeInTheDocument();
+
+    // Al escribir, filtra y deja de mostrar el encabezado de "frecuentes".
+    await user.type(buscadorCliente, "sol");
+    await waitFor(() => {
+      expect(screen.queryByText("Clientes frecuentes")).not.toBeInTheDocument();
+    });
+    expect(screen.getByText("Distribuidora El Sol (sol@email.com)")).toBeInTheDocument();
+    expect(screen.queryByText("Carlos Ruiz (carlos@email.com)")).not.toBeInTheDocument();
   });
 
   it("keeps the submit disabled while the form is incomplete", async () => {
