@@ -130,6 +130,7 @@ export async function POST(request: NextRequest) {
       estado_pago,
       estado_venta: estadoVentaBody,
       tipo_venta,
+      forzar_tipo_venta: forzarTipoVentaBody,
       tipo_entrega,
       direccion_entrega,
       fecha_limite_pago,
@@ -145,9 +146,20 @@ export async function POST(request: NextRequest) {
     }
     const estado_venta = estadoRaw;
 
-    if (typeof tipo_venta !== "string" || !isTipoVenta(tipo_venta)) {
-      return NextResponse.json({ error: "tipo_venta debe ser MINORISTA o MAYORISTA" }, { status: 400 });
+    // tipo_venta ya NO lo elige el colaborador a mano: se detecta
+    // automáticamente a partir del tipo_cliente guardado en la base (ver
+    // más abajo, una vez confirmado que el cliente existe). Solo se respeta
+    // el tipo_venta que venga en el body si forzar_tipo_venta viene en
+    // true — para el caso excepcional de una venta que a propósito no
+    // coincide con el tipo habitual de ese cliente.
+    const forzarTipoVenta = forzarTipoVentaBody === true;
+    if (forzarTipoVenta && (typeof tipo_venta !== "string" || !isTipoVenta(tipo_venta))) {
+      return NextResponse.json(
+        { error: "Al forzar el tipo de venta, tipo_venta debe ser MINORISTA o MAYORISTA" },
+        { status: 400 }
+      );
     }
+
     if (typeof tipo_entrega !== "string" || !isTipoEntrega(tipo_entrega)) {
       return NextResponse.json({ error: "tipo_entrega debe ser EN_TIENDA o DOMICILIO" }, { status: 400 });
     }
@@ -194,13 +206,25 @@ export async function POST(request: NextRequest) {
     try {
       await client.query("BEGIN");
 
-      const existeCliente = await client.query(
-        `SELECT 1 FROM cliente WHERE id_cliente = $1 AND estado_cliente = TRUE`, [idCliente]
+      const existeCliente = await client.query<{ tipo_cliente: string }>(
+        `SELECT tipo_cliente FROM cliente WHERE id_cliente = $1 AND estado_cliente = TRUE`, [idCliente]
       );
       if (existeCliente.rowCount === 0) {
         await client.query("ROLLBACK");
         return NextResponse.json({ error: "Cliente no encontrado" }, { status: 400 });
       }
+
+      // Detección automática del tipo de venta: por defecto es el
+      // tipo_cliente que ya tiene guardado el cliente (MINORISTA/MAYORISTA),
+      // no lo que haya mandado el formulario. Solo se usa lo que mandó el
+      // formulario cuando viene forzar_tipo_venta = true.
+      const tipoClienteDetectado = existeCliente.rows[0].tipo_cliente;
+      const tipoVentaFinal: TipoVenta =
+        forzarTipoVenta && typeof tipo_venta === "string" && isTipoVenta(tipo_venta)
+          ? tipo_venta
+          : isTipoVenta(tipoClienteDetectado)
+          ? tipoClienteDetectado
+          : "MINORISTA";
 
       const bodegasUnicas = [...new Set(lineasNorm.map((ln) => ln.id_bodega))];
       const existeBodegas = await client.query(
@@ -239,7 +263,7 @@ export async function POST(request: NextRequest) {
         `INSERT INTO venta (id_cliente, id_empleado, estado_venta, tipo_venta, tipo_entrega,
           direccion_entrega, enlinea, total, fecha_limite_pago)
          VALUES ($1, $2, $3, $4, $5, $6, FALSE, $7, $8) RETURNING id_venta`,
-        [idCliente, usuario.id_usuario, estado_venta, tipo_venta, tipo_entrega,
+        [idCliente, usuario.id_usuario, estado_venta, tipoVentaFinal, tipo_entrega,
          tipo_entrega === "EN_TIENDA" ? null : direccion || null, total, fechaLimite]
       );
 
@@ -279,8 +303,16 @@ export async function POST(request: NextRequest) {
       }
 
       await client.query("COMMIT");
-      log.info({ id_venta: idVenta, id_cliente: idCliente, total, usuario: usuario.id_usuario }, "Venta registrada");
-      return NextResponse.json({ mensaje: "Venta registrada correctamente", id_venta: idVenta, total });
+      log.info(
+        { id_venta: idVenta, id_cliente: idCliente, tipo_venta: tipoVentaFinal, forzado: forzarTipoVenta, total, usuario: usuario.id_usuario },
+        "Venta registrada"
+      );
+      return NextResponse.json({
+        mensaje: "Venta registrada correctamente",
+        id_venta: idVenta,
+        total,
+        tipo_venta: tipoVentaFinal,
+      });
     } catch (error) {
       await client.query("ROLLBACK");
       log.error({ err: error }, "Error al registrar la venta [POST]");

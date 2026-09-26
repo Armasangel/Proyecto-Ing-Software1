@@ -22,6 +22,7 @@ const mockUsuarioEmpleado = { id_usuario: 2, nombre: "María", correo: "maria@ti
 
 const clientes = [
   { id_cliente: 1, nombre: "Carlos Ruiz", correo: "carlos@email.com", tipo_cliente: "MINORISTA" },
+  { id_cliente: 2, nombre: "Distribuidora El Sol", correo: "sol@email.com", tipo_cliente: "MAYORISTA" },
 ];
 
 const productos = [
@@ -52,10 +53,13 @@ async function llenarFormulario(user: ReturnType<typeof userEvent.setup>) {
   await screen.findByText("Bodega Central");
 
   const combos = screen.getAllByRole("combobox");
-  // Orden del DOM: cliente, estado de pago, tipo de venta, tipo de entrega, producto, bodega.
+  // Orden del DOM: cliente, estado de pago, tipo de entrega, producto, bodega.
+  // El tipo de venta ya no es un <select> propio salvo que se active
+  // "Forzar un tipo distinto al del cliente" — se detecta solo a partir del
+  // tipo_cliente del cliente elegido.
   await user.selectOptions(combos[0], "1"); // cliente
-  await user.selectOptions(combos[4], "1"); // producto
-  await user.selectOptions(combos[5], "1"); // bodega
+  await user.selectOptions(combos[3], "1"); // producto
+  await user.selectOptions(combos[4], "1"); // bodega
 
   const spinbuttons = screen.getAllByRole("spinbutton");
   await user.type(spinbuttons[0], "2"); // cantidad → total Q50.00
@@ -83,6 +87,30 @@ describe("VentasPage", () => {
     // Cancelar cierra el modal y no registra nada.
     await user.click(screen.getByRole("button", { name: "Cancelar" }));
     expect(screen.queryByText("¿Confirmar esta venta?")).not.toBeInTheDocument();
+  });
+
+  it("auto-detects tipo_venta from the selected cliente's tipo_cliente", async () => {
+    setupServerVentas();
+    const user = userEvent.setup();
+    render(<VentasPage />);
+
+    await screen.findByText("Carlos Ruiz (carlos@email.com)");
+    const combos = screen.getAllByRole("combobox");
+
+    // Cliente minorista → se detecta Minorista.
+    await user.selectOptions(combos[0], "1");
+    expect(await screen.findByText("Minorista")).toBeInTheDocument();
+
+    // Cambiar a un cliente mayorista → se re-detecta Mayorista solo, sin
+    // que el colaborador tenga que tocar nada más.
+    await user.selectOptions(combos[0], "2");
+    expect(await screen.findByText("Mayorista")).toBeInTheDocument();
+    expect(screen.getByText("detectado del cliente")).toBeInTheDocument();
+
+    // Con "forzar" activado sí vuelve a aparecer el <select> manual.
+    const forzarCheckbox = screen.getByRole("checkbox", { name: /Forzar un tipo distinto al del cliente/ });
+    await user.click(forzarCheckbox);
+    expect(screen.getByDisplayValue("Mayorista")).toBeInTheDocument();
   });
 
   it("keeps the submit disabled while the form is incomplete", async () => {
