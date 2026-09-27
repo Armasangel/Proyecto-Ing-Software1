@@ -10,7 +10,7 @@ jest.mock("@/lib/logger", () => {
 });
 
 function mockErrorCall(): jest.Mock {
-  return (getLogger("api-error") as { error: jest.Mock }).error;
+  return (getLogger("api-error") as unknown as { error: jest.Mock }).error;
 }
 
 describe("apiError", () => {
