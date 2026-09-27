@@ -85,3 +85,37 @@ export async function enviarCodigoPromocionDueno(
     `,
   });
 }
+
+// Recordatorio automático de deuda pendiente (ver lib/notificaciones-deuda.ts).
+export async function enviarRecordatorioDeuda(
+  destinatario: string,
+  nombreCliente: string,
+  montoPendiente: number,
+  cantidadDeudas: number,
+  proximaFechaLimite: string | null
+) {
+  const remitente = process.env.GMAIL_USER;
+  const monto = montoPendiente.toFixed(2);
+  const plural = cantidadDeudas === 1 ? "una cuenta pendiente" : `${cantidadDeudas} cuentas pendientes`;
+  const fechaLimiteTexto = proximaFechaLimite
+    ? `La fecha límite más próxima es el ${new Date(proximaFechaLimite).toLocaleDateString("es-GT")}.`
+    : "";
+
+  log.debug({ destinatario, montoPendiente }, "Enviando recordatorio de deuda");
+  await getTransporter().sendMail({
+    from: `"Tienda San Miguel" <${remitente}>`,
+    to: destinatario,
+    subject: `Recordatorio: tienes un saldo pendiente de Q${monto}`,
+    text: `Hola ${nombreCliente},\n\nTenés ${plural} con Tienda San Miguel por un total de Q${monto}. ${fechaLimiteTexto}\n\nSi ya realizaste el pago, ignora este mensaje.`,
+    html: `
+      <div style="font-family: sans-serif; max-width: 420px; margin: auto;">
+        <h2 style="margin-bottom: 0.5rem;">Tienda San Miguel</h2>
+        <p>Hola ${nombreCliente},</p>
+        <p>Tenés ${plural} por un total de:</p>
+        <p style="font-size: 1.6rem; font-weight: 700; margin: 1rem 0;">Q${monto}</p>
+        ${fechaLimiteTexto ? `<p style="color: #666; font-size: 0.85rem;">${fechaLimiteTexto}</p>` : ""}
+        <p style="color: #666; font-size: 0.85rem;">Si ya realizaste el pago, ignora este mensaje.</p>
+      </div>
+    `,
+  });
+}

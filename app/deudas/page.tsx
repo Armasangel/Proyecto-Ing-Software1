@@ -299,7 +299,7 @@ function FormPago({
 
 export default function DeudasPage() {
   const usuario = useStaffSession();
-  const [tab, setTab] = useState<"deudas" | "limites">("deudas");
+  const [tab, setTab] = useState<"deudas" | "limites" | "notificaciones">("deudas");
   const [vista, setVista] = useState<"acumulado" | "vencimiento">("acumulado");
   const [deudas, setDeudas] = useState<Deuda[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
@@ -323,6 +323,14 @@ export default function DeudasPage() {
   // Búsqueda/autocompletar cliente en "Nueva deuda"
   const [busquedaCliente, setBusquedaCliente] = useState("");
   const [sugerenciasAbiertas, setSugerenciasAbiertas] = useState(false);
+
+  // Notificaciones automáticas de deuda (pestaña "Notificaciones")
+  const [notifConfig, setNotifConfig] = useState<{ activo: boolean; intervalo_dias: number } | null>(null);
+  const [notifIntervaloInput, setNotifIntervaloInput] = useState("7");
+  const [notifGuardando, setNotifGuardando] = useState(false);
+  const [notifEjecutando, setNotifEjecutando] = useState(false);
+  const [notifMensaje, setNotifMensaje] = useState("");
+  const [notifError, setNotifError] = useState("");
 
   // Creación de cliente nuevo inline (desde el form de deuda o desde la pestaña de límites)
   const [creandoCliente, setCreandoCliente] = useState(false);
@@ -367,11 +375,73 @@ export default function DeudasPage() {
     });
   }
 
+  async function cargarNotifConfig() {
+    const res = await fetch("/api/configuracion/notificaciones-deuda");
+    const data = await res.json();
+    if (data.configuracion) {
+      setNotifConfig(data.configuracion);
+      setNotifIntervaloInput(String(data.configuracion.intervalo_dias));
+    }
+  }
+
   useEffect(() => {
     cargarDeudas();
     cargarProductos();
     cargarClientes();
+    cargarNotifConfig();
   }, []);
+
+  async function guardarNotifConfig(cambios: { activo?: boolean; intervalo_dias?: number }) {
+    setNotifGuardando(true);
+    setNotifError("");
+    setNotifMensaje("");
+    try {
+      const res = await fetch("/api/configuracion/notificaciones-deuda", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(cambios),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setNotifError(data.error || "No se pudo guardar la configuración");
+        // Si falló, deja el input como estaba antes del intento.
+        if (notifConfig) setNotifIntervaloInput(String(notifConfig.intervalo_dias));
+      } else {
+        setNotifConfig(data.configuracion);
+        setNotifIntervaloInput(String(data.configuracion.intervalo_dias));
+        setNotifMensaje("Configuración guardada.");
+      }
+    } catch {
+      setNotifError("Error de conexión");
+    } finally {
+      setNotifGuardando(false);
+    }
+  }
+
+  async function ejecutarNotifAhora() {
+    setNotifEjecutando(true);
+    setNotifError("");
+    setNotifMensaje("");
+    try {
+      const res = await fetch("/api/configuracion/notificaciones-deuda/ejecutar-ahora", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        setNotifError(data.error || "No se pudo ejecutar la corrida");
+      } else if (!data.activo) {
+        setNotifError("El envío automático está desactivado — actívalo primero para poder enviar.");
+      } else {
+        setNotifMensaje(
+          `Corrida terminada: ${data.enviados} enviado${data.enviados === 1 ? "" : "s"}` +
+            (data.fallidos > 0 ? `, ${data.fallidos} fallido${data.fallidos === 1 ? "" : "s"}` : "") +
+            (data.procesados === 0 ? " (nadie tenía un recordatorio pendiente en este momento)." : ".")
+        );
+      }
+    } catch {
+      setNotifError("Error de conexión");
+    } finally {
+      setNotifEjecutando(false);
+    }
+  }
 
   useEffect(() => {
     setPage(1);
@@ -901,6 +971,7 @@ export default function DeudasPage() {
           [
             { id: "deudas", label: "Deudas" },
             { id: "limites", label: "Límites de deuda" },
+            { id: "notificaciones", label: "Notificaciones" },
           ] as const
         ).map((t) => (
           <button
@@ -1308,8 +1379,8 @@ export default function DeudasPage() {
                               </thead>
                               <tbody>
                                 {g.deudas.map((d) => (
-                                  <>
-                                    <tr key={d.id_deuda} style={{ borderTop: "1px solid var(--border)" }}>
+                                  <Fragment key={d.id_deuda}>
+                                    <tr style={{ borderTop: "1px solid var(--border)" }}>
                                     <td style={{ padding: "0.4rem" }}>
                                       {new Date(d.fecha_inicio).toLocaleDateString("es-GT")}
                                     </td>
@@ -1397,7 +1468,7 @@ export default function DeudasPage() {
                                         </td>
                                       </tr>
                                     )}
-                                  </>
+                                  </Fragment>
                                 ))}
                               </tbody>
                             </table>
@@ -1696,6 +1767,120 @@ export default function DeudasPage() {
             />
           </div>
         </>
+      )}
+
+      {tab === "notificaciones" && (
+        <div style={{ maxWidth: 560 }}>
+          <h3 style={{ marginBottom: "0.4rem" }}>Recordatorios automáticos de deuda</h3>
+          <p style={{ color: "var(--muted)", fontSize: "0.88rem", lineHeight: 1.6, marginBottom: "1.25rem" }}>
+            Cuando está activo, el sistema revisa cada hora si algún cliente con deuda pendiente y
+            correo registrado no ha recibido un recordatorio en los últimos días que configures acá,
+            y le manda uno automáticamente por correo.
+          </p>
+
+          {notifConfig === null ? (
+            <p style={{ color: "var(--muted)" }}>Cargando…</p>
+          ) : (
+            <div
+              style={{
+                border: "1px solid var(--border)",
+                borderRadius: 14,
+                padding: "1.25rem",
+                display: "flex",
+                flexDirection: "column",
+                gap: "1.1rem",
+              }}
+            >
+              <label style={{ display: "flex", alignItems: "center", gap: "0.6rem", cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={notifConfig.activo}
+                  disabled={notifGuardando}
+                  onChange={(e) => guardarNotifConfig({ activo: e.target.checked })}
+                />
+                <span style={{ fontWeight: 600 }}>
+                  Envío automático {notifConfig.activo ? "activado" : "desactivado"}
+                </span>
+              </label>
+
+              <div>
+                <label style={{ display: "block", fontWeight: 600, marginBottom: "0.4rem", fontSize: "0.88rem" }}>
+                  Recordar cada (días)
+                </label>
+                <div style={{ display: "flex", gap: "0.6rem", alignItems: "center" }}>
+                  <input
+                    type="number"
+                    min={1}
+                    max={365}
+                    value={notifIntervaloInput}
+                    onChange={(e) => setNotifIntervaloInput(e.target.value)}
+                    style={{
+                      width: 100,
+                      padding: "0.5rem 0.7rem",
+                      borderRadius: 10,
+                      border: "1px solid var(--border)",
+                    }}
+                  />
+                  <button
+                    type="button"
+                    disabled={
+                      notifGuardando ||
+                      !notifIntervaloInput ||
+                      Number(notifIntervaloInput) === notifConfig.intervalo_dias
+                    }
+                    onClick={() => guardarNotifConfig({ intervalo_dias: Number(notifIntervaloInput) })}
+                    style={{
+                      padding: "0.5rem 1rem",
+                      borderRadius: 10,
+                      border: "1px solid var(--border)",
+                      background: "var(--surface2)",
+                      cursor: "pointer",
+                      fontWeight: 600,
+                    }}
+                  >
+                    {notifGuardando ? "Guardando…" : "Guardar"}
+                  </button>
+                </div>
+                <p style={{ color: "var(--muted)", fontSize: "0.78rem", marginTop: "0.4rem" }}>
+                  A cada cliente con deuda pendiente se le vuelve a recordar cuando pasan al menos
+                  este número de días desde su último recordatorio (o desde nunca, si es la primera vez).
+                </p>
+              </div>
+
+              <div style={{ borderTop: "1px solid var(--border)", paddingTop: "1rem" }}>
+                <button
+                  type="button"
+                  onClick={ejecutarNotifAhora}
+                  disabled={notifEjecutando || !notifConfig.activo}
+                  title={!notifConfig.activo ? "Activa el envío automático primero" : undefined}
+                  style={{
+                    padding: "0.55rem 1.2rem",
+                    borderRadius: 14,
+                    background: "#52b788",
+                    color: "#fff",
+                    border: "none",
+                    cursor: notifConfig.activo ? "pointer" : "not-allowed",
+                    fontWeight: 600,
+                    opacity: notifConfig.activo ? 1 : 0.6,
+                  }}
+                >
+                  {notifEjecutando ? "Enviando…" : "Enviar ahora"}
+                </button>
+                <p style={{ color: "var(--muted)", fontSize: "0.78rem", marginTop: "0.5rem" }}>
+                  Fuerza una corrida inmediata (sin esperar a la revisión automática). Solo les
+                  llegará a quienes ya les tocaba según el intervalo de arriba.
+                </p>
+              </div>
+
+              {notifMensaje && (
+                <p style={{ color: "#52b788", fontWeight: 600, margin: 0 }}>{notifMensaje}</p>
+              )}
+              {notifError && (
+                <p style={{ color: "#e63946", fontWeight: 600, margin: 0 }}>{notifError}</p>
+              )}
+            </div>
+          )}
+        </div>
       )}
 
     </StaffShell>

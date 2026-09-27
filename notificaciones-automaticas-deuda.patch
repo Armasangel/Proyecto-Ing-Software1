@@ -1,0 +1,1181 @@
+diff --git a/__tests__/api/configuracion-notificaciones-deuda-ejecutar.test.ts b/__tests__/api/configuracion-notificaciones-deuda-ejecutar.test.ts
+new file mode 100644
+index 0000000..305b1c9
+--- /dev/null
++++ b/__tests__/api/configuracion-notificaciones-deuda-ejecutar.test.ts
+@@ -0,0 +1,57 @@
++import { POST } from "@/app/api/configuracion/notificaciones-deuda/ejecutar-ahora/route";
++import { createMockRequest, testUserDueno, testUserEmpleado } from "@/__tests__/utils/api-test-utils";
++import { checkRateLimit } from "@/lib/api-rate-limit";
++import { ejecutarNotificacionesDeuda } from "@/lib/notificaciones-deuda";
++
++jest.mock("@/lib/api-rate-limit", () => ({
++  checkRateLimit: jest.fn(),
++  getClientIp: jest.fn(() => "1.2.3.4"),
++}));
++
++jest.mock("@/lib/notificaciones-deuda", () => ({
++  ejecutarNotificacionesDeuda: jest.fn(),
++}));
++
++const mockCheckRateLimit = checkRateLimit as jest.MockedFunction<typeof checkRateLimit>;
++const mockEjecutar = ejecutarNotificacionesDeuda as jest.MockedFunction<typeof ejecutarNotificacionesDeuda>;
++
++function makeReq(user = testUserDueno) {
++  return createMockRequest("/api/configuracion/notificaciones-deuda/ejecutar-ahora", {
++    method: "POST",
++    user,
++  });
++}
++
++describe("POST /api/configuracion/notificaciones-deuda/ejecutar-ahora", () => {
++  beforeEach(() => {
++    jest.clearAllMocks();
++    mockCheckRateLimit.mockResolvedValue({ limited: false, retryAfterSeconds: 0, restantes: 3 });
++  });
++
++  it("returns 429 when rate limited", async () => {
++    mockCheckRateLimit.mockResolvedValue({ limited: true, retryAfterSeconds: 30, restantes: 0 });
++    const res = await POST(makeReq());
++    expect(res.status).toBe(429);
++    expect(mockEjecutar).not.toHaveBeenCalled();
++  });
++
++  it("returns 403 for a non-dueño", async () => {
++    const res = await POST(makeReq(testUserEmpleado));
++    expect(res.status).toBe(403);
++    expect(mockEjecutar).not.toHaveBeenCalled();
++  });
++
++  it("returns 403 when unauthenticated", async () => {
++    const req = createMockRequest("/api/configuracion/notificaciones-deuda/ejecutar-ahora", { method: "POST" });
++    const res = await POST(req);
++    expect(res.status).toBe(403);
++  });
++
++  it("runs the job and returns its summary for the dueño", async () => {
++    mockEjecutar.mockResolvedValueOnce({ activo: true, procesados: 3, enviados: 2, fallidos: 1 });
++    const res = await POST(makeReq());
++    expect(res.status).toBe(200);
++    const data = await res.json();
++    expect(data).toEqual({ activo: true, procesados: 3, enviados: 2, fallidos: 1 });
++  });
++});
+diff --git a/__tests__/api/configuracion-notificaciones-deuda.test.ts b/__tests__/api/configuracion-notificaciones-deuda.test.ts
+new file mode 100644
+index 0000000..745c1e0
+--- /dev/null
++++ b/__tests__/api/configuracion-notificaciones-deuda.test.ts
+@@ -0,0 +1,96 @@
++import { GET, PATCH } from "@/app/api/configuracion/notificaciones-deuda/route";
++import { createMockRequest, testUserDueno, testUserEmpleado } from "@/__tests__/utils/api-test-utils";
++import { actualizarConfiguracion, obtenerConfiguracion } from "@/lib/notificaciones-deuda";
++
++jest.mock("@/lib/notificaciones-deuda", () => ({
++  obtenerConfiguracion: jest.fn(),
++  actualizarConfiguracion: jest.fn(),
++}));
++
++const mockObtener = obtenerConfiguracion as jest.MockedFunction<typeof obtenerConfiguracion>;
++const mockActualizar = actualizarConfiguracion as jest.MockedFunction<typeof actualizarConfiguracion>;
++
++const configFila = {
++  activo: true,
++  intervalo_dias: 7,
++  actualizado_en: "2026-09-01T00:00:00.000Z",
++  actualizado_por: 1,
++};
++
++describe("GET /api/configuracion/notificaciones-deuda", () => {
++  beforeEach(() => jest.clearAllMocks());
++
++  it("returns 403 when unauthenticated", async () => {
++    const req = createMockRequest("/api/configuracion/notificaciones-deuda");
++    const res = await GET(req);
++    expect(res.status).toBe(403);
++  });
++
++  it("allows any staff user to view it", async () => {
++    mockObtener.mockResolvedValueOnce(configFila);
++    const req = createMockRequest("/api/configuracion/notificaciones-deuda", { user: testUserEmpleado });
++    const res = await GET(req);
++    expect(res.status).toBe(200);
++    const data = await res.json();
++    expect(data.configuracion).toEqual(configFila);
++  });
++});
++
++describe("PATCH /api/configuracion/notificaciones-deuda", () => {
++  beforeEach(() => jest.clearAllMocks());
++
++  it("returns 403 for a non-dueño (staff, but not owner)", async () => {
++    const req = createMockRequest("/api/configuracion/notificaciones-deuda", {
++      method: "PATCH",
++      user: testUserEmpleado,
++      body: { intervalo_dias: 10 },
++    });
++    const res = await PATCH(req);
++    expect(res.status).toBe(403);
++    expect(mockActualizar).not.toHaveBeenCalled();
++  });
++
++  it("rejects a non-boolean activo", async () => {
++    const req = createMockRequest("/api/configuracion/notificaciones-deuda", {
++      method: "PATCH",
++      user: testUserDueno,
++      body: { activo: "si" },
++    });
++    const res = await PATCH(req);
++    expect(res.status).toBe(400);
++  });
++
++  it.each([0, -1, 1.5, 366, "abc"])("rejects an invalid intervalo_dias (%p)", async (valor) => {
++    const req = createMockRequest("/api/configuracion/notificaciones-deuda", {
++      method: "PATCH",
++      user: testUserDueno,
++      body: { intervalo_dias: valor },
++    });
++    const res = await PATCH(req);
++    expect(res.status).toBe(400);
++  });
++
++  it("rejects an empty body (no changes sent)", async () => {
++    const req = createMockRequest("/api/configuracion/notificaciones-deuda", {
++      method: "PATCH",
++      user: testUserDueno,
++      body: {},
++    });
++    const res = await PATCH(req);
++    expect(res.status).toBe(400);
++  });
++
++  it("lets the dueño update activo and intervalo_dias", async () => {
++    mockActualizar.mockResolvedValueOnce({ ...configFila, activo: false, intervalo_dias: 14 });
++    const req = createMockRequest("/api/configuracion/notificaciones-deuda", {
++      method: "PATCH",
++      user: testUserDueno,
++      body: { activo: false, intervalo_dias: 14 },
++    });
++    const res = await PATCH(req);
++    expect(res.status).toBe(200);
++    expect(mockActualizar).toHaveBeenCalledWith({ activo: false, intervalo_dias: 14 }, testUserDueno.id_usuario);
++    const data = await res.json();
++    expect(data.configuracion.intervalo_dias).toBe(14);
++  });
++});
+diff --git a/__tests__/lib/notificaciones-deuda.test.ts b/__tests__/lib/notificaciones-deuda.test.ts
+new file mode 100644
+index 0000000..d83eae0
+--- /dev/null
++++ b/__tests__/lib/notificaciones-deuda.test.ts
+@@ -0,0 +1,140 @@
++import {
++  actualizarConfiguracion,
++  clientesPendientesDeNotificacion,
++  ejecutarNotificacionesDeuda,
++  obtenerConfiguracion,
++} from "@/lib/notificaciones-deuda";
++import { enviarRecordatorioDeuda } from "@/lib/mailer";
++
++jest.mock("@/lib/db", () => ({
++  pool: { query: jest.fn() },
++}));
++
++jest.mock("@/lib/mailer", () => ({
++  enviarRecordatorioDeuda: jest.fn(),
++}));
++
++const mockPool = jest.requireMock("@/lib/db").pool as { query: jest.Mock };
++const mockMailer = enviarRecordatorioDeuda as jest.MockedFunction<typeof enviarRecordatorioDeuda>;
++
++const configFila = {
++  activo: true,
++  intervalo_dias: 7,
++  actualizado_en: "2026-09-01T00:00:00.000Z",
++  actualizado_por: 1,
++};
++
++const clienteA = {
++  id_cliente: 1,
++  nombre: "Carlos Ruiz",
++  correo: "carlos@email.com",
++  monto_pendiente: 150.5,
++  cantidad_deudas: 2,
++  proxima_fecha_limite: "2026-10-01",
++};
++
++const clienteB = {
++  id_cliente: 2,
++  nombre: "Distribuidora El Sol",
++  correo: "sol@email.com",
++  monto_pendiente: 900,
++  cantidad_deudas: 1,
++  proxima_fecha_limite: null,
++};
++
++describe("obtenerConfiguracion", () => {
++  beforeEach(() => jest.clearAllMocks());
++
++  it("returns the stored row", async () => {
++    mockPool.query.mockResolvedValueOnce({ rows: [configFila] });
++    const config = await obtenerConfiguracion();
++    expect(config).toEqual(configFila);
++  });
++
++  it("falls back to a safe default (off) when the row is missing", async () => {
++    mockPool.query.mockResolvedValueOnce({ rows: [] });
++    const config = await obtenerConfiguracion();
++    expect(config.activo).toBe(false);
++    expect(config.intervalo_dias).toBe(7);
++  });
++});
++
++describe("actualizarConfiguracion", () => {
++  beforeEach(() => jest.clearAllMocks());
++
++  it("merges partial changes with the current config", async () => {
++    mockPool.query
++      .mockResolvedValueOnce({ rows: [configFila] }) // obtenerConfiguracion (lectura previa)
++      .mockResolvedValueOnce({ rows: [{ ...configFila, intervalo_dias: 14 }] }); // UPDATE
++
++    const result = await actualizarConfiguracion({ intervalo_dias: 14 }, 5);
++    expect(result.intervalo_dias).toBe(14);
++
++    const updateCall = mockPool.query.mock.calls[1];
++    expect((updateCall[0] as string)).toContain("UPDATE configuracion_notificaciones_deuda");
++    // activo se mantiene el actual (true) porque no vino en los cambios.
++    expect(updateCall[1]).toEqual([true, 14, 5]);
++  });
++});
++
++describe("clientesPendientesDeNotificacion", () => {
++  beforeEach(() => jest.clearAllMocks());
++
++  it("passes intervaloDias as a query param and returns the rows", async () => {
++    mockPool.query.mockResolvedValueOnce({ rows: [clienteB, clienteA] });
++    const result = await clientesPendientesDeNotificacion(10);
++    expect(result).toEqual([clienteB, clienteA]);
++    expect(mockPool.query.mock.calls[0][1]).toEqual([10]);
++  });
++});
++
++describe("ejecutarNotificacionesDeuda", () => {
++  beforeEach(() => {
++    jest.clearAllMocks();
++    mockMailer.mockResolvedValue(undefined);
++  });
++
++  it("does nothing when the config is inactive", async () => {
++    mockPool.query.mockResolvedValueOnce({ rows: [{ ...configFila, activo: false }] });
++    const resumen = await ejecutarNotificacionesDeuda();
++    expect(resumen).toEqual({ activo: false, procesados: 0, enviados: 0, fallidos: 0 });
++    expect(mockMailer).not.toHaveBeenCalled();
++    // Ni siquiera debería haber consultado a qué clientes les toca.
++    expect(mockPool.query).toHaveBeenCalledTimes(1);
++  });
++
++  it("emails every due client and logs each successful send", async () => {
++    mockPool.query
++      .mockResolvedValueOnce({ rows: [configFila] }) // obtenerConfiguracion
++      .mockResolvedValueOnce({ rows: [clienteA, clienteB] }) // clientesPendientesDeNotificacion
++      .mockResolvedValueOnce({ rows: [] }) // INSERT notificacion_deuda (clienteA)
++      .mockResolvedValueOnce({ rows: [] }); // INSERT notificacion_deuda (clienteB)
++
++    const resumen = await ejecutarNotificacionesDeuda();
++
++    expect(resumen).toEqual({ activo: true, procesados: 2, enviados: 2, fallidos: 0 });
++    expect(mockMailer).toHaveBeenCalledWith("carlos@email.com", "Carlos Ruiz", 150.5, 2, "2026-10-01");
++    expect(mockMailer).toHaveBeenCalledWith("sol@email.com", "Distribuidora El Sol", 900, 1, null);
++
++    const inserts = mockPool.query.mock.calls.filter((c) => (c[0] as string).includes("INSERT INTO notificacion_deuda"));
++    expect(inserts).toHaveLength(2);
++    expect(inserts[0][1]).toEqual([1, 150.5, 2]);
++  });
++
++  it("keeps going and counts a failure when one client's email fails", async () => {
++    mockPool.query
++      .mockResolvedValueOnce({ rows: [configFila] })
++      .mockResolvedValueOnce({ rows: [clienteA, clienteB] })
++      .mockResolvedValueOnce({ rows: [] }); // solo un INSERT: el del que sí funciona
++
++    mockMailer.mockRejectedValueOnce(new Error("correo inválido")).mockResolvedValueOnce(undefined);
++
++    const resumen = await ejecutarNotificacionesDeuda();
++
++    expect(resumen).toEqual({ activo: true, procesados: 2, enviados: 1, fallidos: 1 });
++    const inserts = mockPool.query.mock.calls.filter((c) => (c[0] as string).includes("INSERT INTO notificacion_deuda"));
++    // Solo se registra la notificación del cliente al que sí se le pudo enviar.
++    expect(inserts).toHaveLength(1);
++    expect(inserts[0][1]).toEqual([2, 900, 1]);
++  });
++});
+diff --git a/__tests__/pages/deudas.test.tsx b/__tests__/pages/deudas.test.tsx
+index 39063a3..ebd9abe 100644
+--- a/__tests__/pages/deudas.test.tsx
++++ b/__tests__/pages/deudas.test.tsx
+@@ -51,12 +51,17 @@ function deudaBase(overrides: Record<string, unknown> = {}) {
+   } as Record<string, unknown>;
+ }
+ 
++const notifConfigPorDefecto = { activo: false, intervalo_dias: 7, actualizado_en: null, actualizado_por: null };
++
+ function setupServerDeudas(deudas: unknown[]) {
+   server.use(
+     rest.get("/api/sesion", (_req, res, ctx) => res(ctx.json({ usuario: mockUsuarioDueno }))),
+     rest.get("/api/deudas", (_req, res, ctx) => res(ctx.json({ deudas }))),
+     rest.get("/api/productos", (_req, res, ctx) => res(ctx.json({ productos }))),
+-    rest.get("/api/clientes", (_req, res, ctx) => res(ctx.json({ clientes })))
++    rest.get("/api/clientes", (_req, res, ctx) => res(ctx.json({ clientes }))),
++    rest.get("/api/configuracion/notificaciones-deuda", (_req, res, ctx) =>
++      res(ctx.json({ configuracion: notifConfigPorDefecto }))
++    )
+   );
+ }
+ 
+@@ -111,6 +116,9 @@ describe("DeudasPage", () => {
+       rest.get("/api/deudas", (_req, res, ctx) => res(ctx.json({ deudas: [deudaBase()] }))),
+       rest.get("/api/productos", (_req, res, ctx) => res(ctx.json({ productos }))),
+       rest.get("/api/clientes", (_req, res, ctx) => res(ctx.json({ clientes }))),
++      rest.get("/api/configuracion/notificaciones-deuda", (_req, res, ctx) =>
++        res(ctx.json({ configuracion: notifConfigPorDefecto }))
++      ),
+       rest.post("/api/deudas/1/pagos", async (req, res, ctx) => {
+         postedBody = await req.json();
+         return res(
+@@ -143,12 +151,56 @@ describe("DeudasPage", () => {
+     });
+   });
+ 
++  it("lets the dueño view and change the automatic debt-reminder settings", async () => {
++    setupServerDeudas([deudaBase()]);
++    let patchedBody: unknown = null;
++    let ejecutado = false;
++    let configActual = { ...notifConfigPorDefecto };
++    server.use(
++      rest.patch("/api/configuracion/notificaciones-deuda", async (req, res, ctx) => {
++        patchedBody = await req.json();
++        configActual = { ...configActual, ...(patchedBody as object) };
++        return res(ctx.json({ configuracion: configActual }));
++      }),
++      rest.post("/api/configuracion/notificaciones-deuda/ejecutar-ahora", (_req, res, ctx) => {
++        ejecutado = true;
++        return res(ctx.json({ activo: true, procesados: 2, enviados: 2, fallidos: 0 }));
++      })
++    );
++
++    const user = userEvent.setup();
++    render(<DeudasPage />);
++
++    await user.click(await screen.findByRole("button", { name: "Notificaciones" }));
++    expect(await screen.findByText(/Envío automático desactivado/)).toBeInTheDocument();
++
++    // Activar el envío automático.
++    await user.click(screen.getByRole("checkbox"));
++    await waitFor(() => expect(patchedBody).toEqual({ activo: true }));
++    expect(await screen.findByText(/Envío automático activado/)).toBeInTheDocument();
++
++    // Cambiar el intervalo.
++    const inputIntervalo = screen.getByRole("spinbutton");
++    await user.clear(inputIntervalo);
++    await user.type(inputIntervalo, "14");
++    await user.click(screen.getByRole("button", { name: "Guardar" }));
++    await waitFor(() => expect(patchedBody).toEqual({ intervalo_dias: 14 }));
++
++    // Enviar ahora.
++    await user.click(screen.getByRole("button", { name: "Enviar ahora" }));
++    await waitFor(() => expect(ejecutado).toBe(true));
++    expect(await screen.findByText(/2 enviados/)).toBeInTheDocument();
++  });
++
+   it("shows the error from the API when the payment fails", async () => {
+     server.use(
+       rest.get("/api/sesion", (_req, res, ctx) => res(ctx.json({ usuario: mockUsuarioDueno }))),
+       rest.get("/api/deudas", (_req, res, ctx) => res(ctx.json({ deudas: [deudaBase()] }))),
+       rest.get("/api/productos", (_req, res, ctx) => res(ctx.json({ productos }))),
+       rest.get("/api/clientes", (_req, res, ctx) => res(ctx.json({ clientes }))),
++      rest.get("/api/configuracion/notificaciones-deuda", (_req, res, ctx) =>
++        res(ctx.json({ configuracion: notifConfigPorDefecto }))
++      ),
+       rest.post("/api/deudas/1/pagos", (_req, res, ctx) =>
+         res(ctx.status(400), ctx.json({ error: "El pago es mayor al saldo pendiente." }))
+       )
+diff --git a/app/api/configuracion/notificaciones-deuda/ejecutar-ahora/route.ts b/app/api/configuracion/notificaciones-deuda/ejecutar-ahora/route.ts
+new file mode 100644
+index 0000000..fa9db82
+--- /dev/null
++++ b/app/api/configuracion/notificaciones-deuda/ejecutar-ahora/route.ts
+@@ -0,0 +1,31 @@
++// app/api/configuracion/notificaciones-deuda/ejecutar-ahora/route.ts
++//
++// El dueño puede forzar una corrida inmediata del job de notificaciones
++// (sin esperar al chequeo automático por hora) — útil para probarlo o para
++// un envío urgente. Sigue respetando la configuración: si activo=false, no
++// manda nada (mismo comportamiento que el scheduler automático).
++import { NextRequest, NextResponse } from "next/server";
++import { getUsuarioFromRequest } from "@/lib/server-auth";
++import { TIPOS_USUARIO } from "@/lib/roles";
++import { apiError, tooManyRequestsError, unauthorizedError } from "@/lib/api-error";
++import { checkRateLimit, getClientIp } from "@/lib/api-rate-limit";
++import { ejecutarNotificacionesDeuda } from "@/lib/notificaciones-deuda";
++
++export async function POST(req: NextRequest) {
++  // Cada corrida puede mandar correos reales a varios clientes — un límite
++  // bajo evita que alguien la dispare en bucle sin querer (doble clic, etc.).
++  const rl = await checkRateLimit(`notificaciones-deuda:ejecutar-ahora:${getClientIp(req)}`, 3, 60_000);
++  if (rl.limited) return tooManyRequestsError(rl.retryAfterSeconds);
++
++  const usuario = getUsuarioFromRequest(req);
++  if (!usuario || usuario.tipo_usuario !== TIPOS_USUARIO.DUENO) {
++    return unauthorizedError();
++  }
++
++  try {
++    const resumen = await ejecutarNotificacionesDeuda();
++    return NextResponse.json(resumen);
++  } catch (error) {
++    return apiError("CONFIGURACION NOTIFICACIONES-DEUDA EJECUTAR-AHORA POST", error);
++  }
++}
+diff --git a/app/api/configuracion/notificaciones-deuda/route.ts b/app/api/configuracion/notificaciones-deuda/route.ts
+new file mode 100644
+index 0000000..52ec929
+--- /dev/null
++++ b/app/api/configuracion/notificaciones-deuda/route.ts
+@@ -0,0 +1,69 @@
++// app/api/configuracion/notificaciones-deuda/route.ts
++//
++// GET: cualquier usuario staff puede ver la configuración actual (activo /
++// intervalo_dias). PATCH: solo el dueño puede cambiarla — es él quien decide
++// cada cuánto se le recuerda a los clientes su deuda pendiente.
++import { NextRequest, NextResponse } from "next/server";
++import { getUsuarioFromRequest } from "@/lib/server-auth";
++import { isStaffTipo, TIPOS_USUARIO } from "@/lib/roles";
++import { apiError, unauthorizedError, validationError } from "@/lib/api-error";
++import { actualizarConfiguracion, obtenerConfiguracion } from "@/lib/notificaciones-deuda";
++
++const INTERVALO_MIN_DIAS = 1;
++const INTERVALO_MAX_DIAS = 365;
++
++export async function GET(req: NextRequest) {
++  const usuario = getUsuarioFromRequest(req);
++  if (!usuario || !isStaffTipo(usuario.tipo_usuario)) {
++    return unauthorizedError();
++  }
++
++  try {
++    const config = await obtenerConfiguracion();
++    return NextResponse.json({ configuracion: config });
++  } catch (error) {
++    return apiError("CONFIGURACION NOTIFICACIONES-DEUDA GET", error);
++  }
++}
++
++export async function PATCH(req: NextRequest) {
++  const usuario = getUsuarioFromRequest(req);
++  if (!usuario || usuario.tipo_usuario !== TIPOS_USUARIO.DUENO) {
++    return unauthorizedError();
++  }
++
++  try {
++    const body = await req.json();
++    const cambios: { activo?: boolean; intervalo_dias?: number } = {};
++
++    if (body.activo !== undefined) {
++      if (typeof body.activo !== "boolean") {
++        return validationError("activo debe ser true o false");
++      }
++      cambios.activo = body.activo;
++    }
++
++    if (body.intervalo_dias !== undefined) {
++      const intervalo = Number(body.intervalo_dias);
++      if (
++        !Number.isInteger(intervalo) ||
++        intervalo < INTERVALO_MIN_DIAS ||
++        intervalo > INTERVALO_MAX_DIAS
++      ) {
++        return validationError(
++          `intervalo_dias debe ser un número entero entre ${INTERVALO_MIN_DIAS} y ${INTERVALO_MAX_DIAS}`
++        );
++      }
++      cambios.intervalo_dias = intervalo;
++    }
++
++    if (Object.keys(cambios).length === 0) {
++      return validationError("No se envió ningún cambio (activo y/o intervalo_dias)");
++    }
++
++    const config = await actualizarConfiguracion(cambios, usuario.id_usuario);
++    return NextResponse.json({ configuracion: config });
++  } catch (error) {
++    return apiError("CONFIGURACION NOTIFICACIONES-DEUDA PATCH", error);
++  }
++}
+diff --git a/app/deudas/page.tsx b/app/deudas/page.tsx
+index e170ef0..b3f9f88 100644
+--- a/app/deudas/page.tsx
++++ b/app/deudas/page.tsx
+@@ -299,7 +299,7 @@ function FormPago({
+ 
+ export default function DeudasPage() {
+   const usuario = useStaffSession();
+-  const [tab, setTab] = useState<"deudas" | "limites">("deudas");
++  const [tab, setTab] = useState<"deudas" | "limites" | "notificaciones">("deudas");
+   const [vista, setVista] = useState<"acumulado" | "vencimiento">("acumulado");
+   const [deudas, setDeudas] = useState<Deuda[]>([]);
+   const [productos, setProductos] = useState<Producto[]>([]);
+@@ -324,6 +324,14 @@ export default function DeudasPage() {
+   const [busquedaCliente, setBusquedaCliente] = useState("");
+   const [sugerenciasAbiertas, setSugerenciasAbiertas] = useState(false);
+ 
++  // Notificaciones automáticas de deuda (pestaña "Notificaciones")
++  const [notifConfig, setNotifConfig] = useState<{ activo: boolean; intervalo_dias: number } | null>(null);
++  const [notifIntervaloInput, setNotifIntervaloInput] = useState("7");
++  const [notifGuardando, setNotifGuardando] = useState(false);
++  const [notifEjecutando, setNotifEjecutando] = useState(false);
++  const [notifMensaje, setNotifMensaje] = useState("");
++  const [notifError, setNotifError] = useState("");
++
+   // Creación de cliente nuevo inline (desde el form de deuda o desde la pestaña de límites)
+   const [creandoCliente, setCreandoCliente] = useState(false);
+   const [formCliente, setFormCliente] = useState(clienteFormVacio);
+@@ -367,12 +375,74 @@ export default function DeudasPage() {
+     });
+   }
+ 
++  async function cargarNotifConfig() {
++    const res = await fetch("/api/configuracion/notificaciones-deuda");
++    const data = await res.json();
++    if (data.configuracion) {
++      setNotifConfig(data.configuracion);
++      setNotifIntervaloInput(String(data.configuracion.intervalo_dias));
++    }
++  }
++
+   useEffect(() => {
+     cargarDeudas();
+     cargarProductos();
+     cargarClientes();
++    cargarNotifConfig();
+   }, []);
+ 
++  async function guardarNotifConfig(cambios: { activo?: boolean; intervalo_dias?: number }) {
++    setNotifGuardando(true);
++    setNotifError("");
++    setNotifMensaje("");
++    try {
++      const res = await fetch("/api/configuracion/notificaciones-deuda", {
++        method: "PATCH",
++        headers: { "Content-Type": "application/json" },
++        body: JSON.stringify(cambios),
++      });
++      const data = await res.json();
++      if (!res.ok) {
++        setNotifError(data.error || "No se pudo guardar la configuración");
++        // Si falló, deja el input como estaba antes del intento.
++        if (notifConfig) setNotifIntervaloInput(String(notifConfig.intervalo_dias));
++      } else {
++        setNotifConfig(data.configuracion);
++        setNotifIntervaloInput(String(data.configuracion.intervalo_dias));
++        setNotifMensaje("Configuración guardada.");
++      }
++    } catch {
++      setNotifError("Error de conexión");
++    } finally {
++      setNotifGuardando(false);
++    }
++  }
++
++  async function ejecutarNotifAhora() {
++    setNotifEjecutando(true);
++    setNotifError("");
++    setNotifMensaje("");
++    try {
++      const res = await fetch("/api/configuracion/notificaciones-deuda/ejecutar-ahora", { method: "POST" });
++      const data = await res.json();
++      if (!res.ok) {
++        setNotifError(data.error || "No se pudo ejecutar la corrida");
++      } else if (!data.activo) {
++        setNotifError("El envío automático está desactivado — actívalo primero para poder enviar.");
++      } else {
++        setNotifMensaje(
++          `Corrida terminada: ${data.enviados} enviado${data.enviados === 1 ? "" : "s"}` +
++            (data.fallidos > 0 ? `, ${data.fallidos} fallido${data.fallidos === 1 ? "" : "s"}` : "") +
++            (data.procesados === 0 ? " (nadie tenía un recordatorio pendiente en este momento)." : ".")
++        );
++      }
++    } catch {
++      setNotifError("Error de conexión");
++    } finally {
++      setNotifEjecutando(false);
++    }
++  }
++
+   useEffect(() => {
+     setPage(1);
+   }, [tab, vista, qDeudas, qLimites, soloBloqueados, filtroVencimiento, perPage]);
+@@ -901,6 +971,7 @@ export default function DeudasPage() {
+           [
+             { id: "deudas", label: "Deudas" },
+             { id: "limites", label: "Límites de deuda" },
++            { id: "notificaciones", label: "Notificaciones" },
+           ] as const
+         ).map((t) => (
+           <button
+@@ -1698,6 +1769,120 @@ export default function DeudasPage() {
+         </>
+       )}
+ 
++      {tab === "notificaciones" && (
++        <div style={{ maxWidth: 560 }}>
++          <h3 style={{ marginBottom: "0.4rem" }}>Recordatorios automáticos de deuda</h3>
++          <p style={{ color: "var(--muted)", fontSize: "0.88rem", lineHeight: 1.6, marginBottom: "1.25rem" }}>
++            Cuando está activo, el sistema revisa cada hora si algún cliente con deuda pendiente y
++            correo registrado no ha recibido un recordatorio en los últimos días que configures acá,
++            y le manda uno automáticamente por correo.
++          </p>
++
++          {notifConfig === null ? (
++            <p style={{ color: "var(--muted)" }}>Cargando…</p>
++          ) : (
++            <div
++              style={{
++                border: "1px solid var(--border)",
++                borderRadius: 14,
++                padding: "1.25rem",
++                display: "flex",
++                flexDirection: "column",
++                gap: "1.1rem",
++              }}
++            >
++              <label style={{ display: "flex", alignItems: "center", gap: "0.6rem", cursor: "pointer" }}>
++                <input
++                  type="checkbox"
++                  checked={notifConfig.activo}
++                  disabled={notifGuardando}
++                  onChange={(e) => guardarNotifConfig({ activo: e.target.checked })}
++                />
++                <span style={{ fontWeight: 600 }}>
++                  Envío automático {notifConfig.activo ? "activado" : "desactivado"}
++                </span>
++              </label>
++
++              <div>
++                <label style={{ display: "block", fontWeight: 600, marginBottom: "0.4rem", fontSize: "0.88rem" }}>
++                  Recordar cada (días)
++                </label>
++                <div style={{ display: "flex", gap: "0.6rem", alignItems: "center" }}>
++                  <input
++                    type="number"
++                    min={1}
++                    max={365}
++                    value={notifIntervaloInput}
++                    onChange={(e) => setNotifIntervaloInput(e.target.value)}
++                    style={{
++                      width: 100,
++                      padding: "0.5rem 0.7rem",
++                      borderRadius: 10,
++                      border: "1px solid var(--border)",
++                    }}
++                  />
++                  <button
++                    type="button"
++                    disabled={
++                      notifGuardando ||
++                      !notifIntervaloInput ||
++                      Number(notifIntervaloInput) === notifConfig.intervalo_dias
++                    }
++                    onClick={() => guardarNotifConfig({ intervalo_dias: Number(notifIntervaloInput) })}
++                    style={{
++                      padding: "0.5rem 1rem",
++                      borderRadius: 10,
++                      border: "1px solid var(--border)",
++                      background: "var(--surface2)",
++                      cursor: "pointer",
++                      fontWeight: 600,
++                    }}
++                  >
++                    {notifGuardando ? "Guardando…" : "Guardar"}
++                  </button>
++                </div>
++                <p style={{ color: "var(--muted)", fontSize: "0.78rem", marginTop: "0.4rem" }}>
++                  A cada cliente con deuda pendiente se le vuelve a recordar cuando pasan al menos
++                  este número de días desde su último recordatorio (o desde nunca, si es la primera vez).
++                </p>
++              </div>
++
++              <div style={{ borderTop: "1px solid var(--border)", paddingTop: "1rem" }}>
++                <button
++                  type="button"
++                  onClick={ejecutarNotifAhora}
++                  disabled={notifEjecutando || !notifConfig.activo}
++                  title={!notifConfig.activo ? "Activa el envío automático primero" : undefined}
++                  style={{
++                    padding: "0.55rem 1.2rem",
++                    borderRadius: 14,
++                    background: "#52b788",
++                    color: "#fff",
++                    border: "none",
++                    cursor: notifConfig.activo ? "pointer" : "not-allowed",
++                    fontWeight: 600,
++                    opacity: notifConfig.activo ? 1 : 0.6,
++                  }}
++                >
++                  {notifEjecutando ? "Enviando…" : "Enviar ahora"}
++                </button>
++                <p style={{ color: "var(--muted)", fontSize: "0.78rem", marginTop: "0.5rem" }}>
++                  Fuerza una corrida inmediata (sin esperar a la revisión automática). Solo les
++                  llegará a quienes ya les tocaba según el intervalo de arriba.
++                </p>
++              </div>
++
++              {notifMensaje && (
++                <p style={{ color: "#52b788", fontWeight: 600, margin: 0 }}>{notifMensaje}</p>
++              )}
++              {notifError && (
++                <p style={{ color: "#e63946", fontWeight: 600, margin: 0 }}>{notifError}</p>
++              )}
++            </div>
++          )}
++        </div>
++      )}
++
+     </StaffShell>
+   );
+ }
+\ No newline at end of file
+diff --git a/init/01_schema.sql b/init/01_schema.sql
+index 9c72ddc..4a95c22 100644
+--- a/init/01_schema.sql
++++ b/init/01_schema.sql
+@@ -9,7 +9,15 @@
+ --
+ --  Se unificaron aquí los antiguos scripts 02_ordenes, 03_facturacion,
+ --  04_detalle_venta, 05_codigo_verificacion, 03_indices, 03_datos_venta,
+---  02_add_fecha_caducidad y 03_add_requiere_2fa.
++--  02_add_fecha_caducidad, 03_add_requiere_2fa,
++--  05_solicitud_promocion_dueno y 06_notificaciones_deuda.
++--
++--  IMPORTANTE: docker-entrypoint-initdb.d solo corre este archivo la
++--  PRIMERA vez que se crea el volumen de Postgres (base vacía). Si ya
++--  existe un contenedor/volumen levantado con datos, este archivo NO se
++--  vuelve a ejecutar solo — para llevar esa base al día hay que seguir
++--  aplicando manualmente los scripts nuevos en migrations/ (ver el
++--  comentario "Cómo correrla" de cada uno).
+ 
+ -- CATEGORIA
+ CREATE TABLE categoria (
+@@ -135,6 +143,25 @@ CREATE TABLE codigo_verificacion (
+ CREATE INDEX idx_codigo_verificacion_usuario
+     ON codigo_verificacion (id_usuario, creado_en DESC);
+ 
++-- SOLICITUD_PROMOCION_DUENO (migración 05)
++-- Proceso de 2 pasos para ascender a un usuario a tipo DUENO: un dueño
++-- existente lo solicita, se le manda un código de verificación a su propio
++-- correo, y solo con ese código se aplica el cambio (ver
++-- app/api/usuarios/promover-dueno). Límite máximo de dueños: lib/roles.ts.
++CREATE TABLE solicitud_promocion_dueno (
++    id_solicitud          SERIAL          PRIMARY KEY,
++    id_usuario_objetivo   INT             NOT NULL REFERENCES usuario(id_usuario) ON DELETE CASCADE,
++    id_dueno_solicitante  INT             NOT NULL REFERENCES usuario(id_usuario) ON DELETE CASCADE,
++    codigo_hash           VARCHAR(255)    NOT NULL,
++    creado_en             TIMESTAMP       NOT NULL DEFAULT NOW(),
++    expira_en             TIMESTAMP       NOT NULL,
++    usado                 BOOLEAN         NOT NULL DEFAULT FALSE,
++    intentos              INT             NOT NULL DEFAULT 0
++);
++
++CREATE INDEX idx_solicitud_promocion_dueno_objetivo
++    ON solicitud_promocion_dueno (id_usuario_objetivo, creado_en DESC);
++
+ -- BODEGA
+ CREATE TABLE bodega (
+     id_bodega       SERIAL          PRIMARY KEY,
+@@ -292,6 +319,34 @@ CREATE TABLE pago_deuda (
+ 
+ CREATE INDEX idx_pago_deuda_id_deuda ON pago_deuda(id_deuda);
+ 
++-- CONFIGURACION_NOTIFICACIONES_DEUDA (migración 06) — fila única (id = 1)
++-- con lo que configura el dueño: cada cuántos días se le recuerda a un
++-- cliente su deuda pendiente, y si el envío automático está activo. Ver
++-- lib/notificaciones-deuda.ts.
++CREATE TABLE configuracion_notificaciones_deuda (
++    id                SMALLINT        PRIMARY KEY DEFAULT 1,
++    activo            BOOLEAN         NOT NULL DEFAULT FALSE,
++    intervalo_dias    INT             NOT NULL DEFAULT 7 CHECK (intervalo_dias > 0),
++    actualizado_en    TIMESTAMP       NOT NULL DEFAULT NOW(),
++    actualizado_por   INT             REFERENCES usuario(id_usuario),
++    CONSTRAINT chk_configuracion_notificaciones_deuda_fila_unica CHECK (id = 1)
++);
++
++INSERT INTO configuracion_notificaciones_deuda (id, activo, intervalo_dias) VALUES (1, FALSE, 7);
++
++-- NOTIFICACION_DEUDA (migración 06) — bitácora de cada recordatorio de
++-- deuda enviado a un cliente; sirve para saber si ya le toca uno nuevo
++-- (última notificación + intervalo_dias) y como historial para el dueño.
++CREATE TABLE notificacion_deuda (
++    id_notificacion     SERIAL          PRIMARY KEY,
++    id_cliente          INT             NOT NULL REFERENCES cliente(id_cliente) ON DELETE CASCADE,
++    monto_notificado    NUMERIC(12,2)   NOT NULL,
++    cantidad_deudas     INT             NOT NULL,
++    enviado_en          TIMESTAMP       NOT NULL DEFAULT NOW()
++);
++
++CREATE INDEX idx_notificacion_deuda_cliente ON notificacion_deuda (id_cliente, enviado_en DESC);
++
+ -- ORDEN (órdenes de compra)
+ CREATE TABLE orden (
+     id_orden        SERIAL          PRIMARY KEY,
+diff --git a/instrumentation.ts b/instrumentation.ts
+new file mode 100644
+index 0000000..661d136
+--- /dev/null
++++ b/instrumentation.ts
+@@ -0,0 +1,16 @@
++// instrumentation.ts
++//
++// Hook de Next.js (https://nextjs.org/docs/app/building-your-application/optimizing/instrumentation)
++// que corre UNA vez cuando arranca una nueva instancia del servidor —
++// aquí es donde arrancamos procesos de fondo de larga duración, como el
++// scheduler de notificaciones automáticas de deuda.
++//
++// El guard de NEXT_RUNTIME evita correr esto en el runtime "edge" (donde
++// no existen setInterval de larga duración ni conexión directa a Postgres).
++
++export async function register() {
++  if (process.env.NEXT_RUNTIME === "nodejs") {
++    const { iniciarSchedulerNotificacionesDeuda } = await import("@/lib/notificaciones-deuda");
++    iniciarSchedulerNotificacionesDeuda();
++  }
++}
+diff --git a/lib/mailer.ts b/lib/mailer.ts
+index 9850ff9..24f0590 100644
+--- a/lib/mailer.ts
++++ b/lib/mailer.ts
+@@ -46,13 +46,75 @@ export async function enviarCodigoVerificacion(destinatario: string, codigo: str
+     from: `"Tienda San Miguel" <${remitente}>`,
+     to: destinatario,
+     subject: "Tu código de verificación",
+-    text: `Tu código de verificación es: ${codigo}\n\nExpira en 5 minutos. Si no intentaste iniciar sesión, ignorá este correo.`,
++    text: `Tu código de verificación es: ${codigo}\n\nExpira en 5 minutos. Si no intentaste iniciar sesión, ignora este correo.`,
+     html: `
+       <div style="font-family: sans-serif; max-width: 420px; margin: auto;">
+         <h2 style="margin-bottom: 0.5rem;">Tienda San Miguel</h2>
+         <p>Tu código de verificación es:</p>
+         <p style="font-size: 2rem; font-weight: 700; letter-spacing: 0.3em; margin: 1rem 0;">${codigo}</p>
+-        <p style="color: #666; font-size: 0.85rem;">Expira en 5 minutos. Si no intentaste iniciar sesión, ignorá este correo.</p>
++        <p style="color: #666; font-size: 0.85rem;">Expira en 5 minutos. Si no intentaste iniciar sesión, ignora este correo.</p>
++      </div>
++    `,
++  });
++}
++
++// Se manda al correo del DUEÑO que está solicitando el ascenso (no al
++// usuario que va a ser promovido), para que sea el propio dueño quien
++// confirme desde su bandeja que sí quiere dar ese permiso.
++export async function enviarCodigoPromocionDueno(
++  destinatario: string,
++  codigo: string,
++  nombreObjetivo: string
++) {
++  const remitente = process.env.GMAIL_USER;
++
++  log.debug({ destinatario }, "Enviando código de confirmación de promoción a dueño");
++  await getTransporter().sendMail({
++    from: `"Tienda San Miguel" <${remitente}>`,
++    to: destinatario,
++    subject: "Confirma el ascenso a Dueño",
++    text: `Solicitaste dar el rol de Dueño a "${nombreObjetivo}". Si es correcto, confírmalo con este código: ${codigo}\n\nExpira en 5 minutos. Si no pediste esto, ignora este correo y revisa quién tiene acceso a tu cuenta.`,
++    html: `
++      <div style="font-family: sans-serif; max-width: 420px; margin: auto;">
++        <h2 style="margin-bottom: 0.5rem;">Tienda San Miguel</h2>
++        <p>Solicitaste dar el rol de <strong>Dueño</strong> a <strong>${nombreObjetivo}</strong>.</p>
++        <p>Si es correcto, confírmalo con este código:</p>
++        <p style="font-size: 2rem; font-weight: 700; letter-spacing: 0.3em; margin: 1rem 0;">${codigo}</p>
++        <p style="color: #666; font-size: 0.85rem;">Expira en 5 minutos. Si no pediste esto, ignora este correo y revisa quién tiene acceso a tu cuenta.</p>
++      </div>
++    `,
++  });
++}
++
++// Recordatorio automático de deuda pendiente (ver lib/notificaciones-deuda.ts).
++export async function enviarRecordatorioDeuda(
++  destinatario: string,
++  nombreCliente: string,
++  montoPendiente: number,
++  cantidadDeudas: number,
++  proximaFechaLimite: string | null
++) {
++  const remitente = process.env.GMAIL_USER;
++  const monto = montoPendiente.toFixed(2);
++  const plural = cantidadDeudas === 1 ? "una cuenta pendiente" : `${cantidadDeudas} cuentas pendientes`;
++  const fechaLimiteTexto = proximaFechaLimite
++    ? `La fecha límite más próxima es el ${new Date(proximaFechaLimite).toLocaleDateString("es-GT")}.`
++    : "";
++
++  log.debug({ destinatario, montoPendiente }, "Enviando recordatorio de deuda");
++  await getTransporter().sendMail({
++    from: `"Tienda San Miguel" <${remitente}>`,
++    to: destinatario,
++    subject: `Recordatorio: tienes un saldo pendiente de Q${monto}`,
++    text: `Hola ${nombreCliente},\n\nTenés ${plural} con Tienda San Miguel por un total de Q${monto}. ${fechaLimiteTexto}\n\nSi ya realizaste el pago, ignora este mensaje.`,
++    html: `
++      <div style="font-family: sans-serif; max-width: 420px; margin: auto;">
++        <h2 style="margin-bottom: 0.5rem;">Tienda San Miguel</h2>
++        <p>Hola ${nombreCliente},</p>
++        <p>Tenés ${plural} por un total de:</p>
++        <p style="font-size: 1.6rem; font-weight: 700; margin: 1rem 0;">Q${monto}</p>
++        ${fechaLimiteTexto ? `<p style="color: #666; font-size: 0.85rem;">${fechaLimiteTexto}</p>` : ""}
++        <p style="color: #666; font-size: 0.85rem;">Si ya realizaste el pago, ignora este mensaje.</p>
+       </div>
+     `,
+   });
+diff --git a/lib/notificaciones-deuda.ts b/lib/notificaciones-deuda.ts
+new file mode 100644
+index 0000000..3dbd2c0
+--- /dev/null
++++ b/lib/notificaciones-deuda.ts
+@@ -0,0 +1,195 @@
++// lib/notificaciones-deuda.ts
++//
++// Sistema de notificación automática de deudas pendientes a clientes.
++//
++// Cómo funciona:
++//   1. El dueño configura un intervalo en días y activa el envío
++//      (configuracion_notificaciones_deuda, ver app/api/configuracion/notificaciones-deuda).
++//   2. Un scheduler interno (iniciarSchedulerNotificacionesDeuda, arrancado
++//      desde instrumentation.ts al iniciar el servidor) revisa cada hora si
++//      hay clientes a quienes les toca un recordatorio.
++//   3. "Le toca" un recordatorio a un cliente si tiene deuda pendiente > 0
++//      Y (nunca se le ha notificado O su última notificación fue hace más
++//      de intervalo_dias días). Se revisa por hora en vez de una vez al día
++//      a una hora fija para que sea resistente a reinicios del servidor: no
++//      importa cuándo se reinicie, en la próxima revisión (máximo 1 hora
++//      después) se pone al día solo, sin dejar de mandar recordatorios.
++//   4. Cada envío exitoso se registra en notificacion_deuda — esa bitácora
++//      es la que determina cuándo le toca el siguiente a cada cliente.
++//
++// Diseño: se revisa por HORA (no por día) para que el intervalo en días que
++// configura el dueño se cumpla con precisión de horas, no de un solo chequeo
++// diario que podría no correr si el servidor estaba caído justo esa vez.
++
++import { pool } from "@/lib/db";
++import { enviarRecordatorioDeuda } from "@/lib/mailer";
++import { getLogger } from "@/lib/logger";
++
++const log = getLogger("lib/notificaciones-deuda");
++
++export type ConfiguracionNotificacionesDeuda = {
++  activo: boolean;
++  intervalo_dias: number;
++  actualizado_en: string;
++  actualizado_por: number | null;
++};
++
++export type ClientePendienteDeNotificacion = {
++  id_cliente: number;
++  nombre: string;
++  correo: string;
++  monto_pendiente: number;
++  cantidad_deudas: number;
++  proxima_fecha_limite: string | null;
++};
++
++export type ResumenEjecucion = {
++  activo: boolean;
++  procesados: number;
++  enviados: number;
++  fallidos: number;
++};
++
++export async function obtenerConfiguracion(): Promise<ConfiguracionNotificacionesDeuda> {
++  const result = await pool.query<ConfiguracionNotificacionesDeuda>(
++    `SELECT activo, intervalo_dias, actualizado_en, actualizado_por
++     FROM configuracion_notificaciones_deuda
++     WHERE id = 1`
++  );
++  // La fila con id=1 se siembra en el init/migración — si por alguna razón
++  // no existe (base editada a mano), se cae a un default seguro (apagado)
++  // en vez de tronar.
++  return (
++    result.rows[0] ?? {
++      activo: false,
++      intervalo_dias: 7,
++      actualizado_en: new Date().toISOString(),
++      actualizado_por: null,
++    }
++  );
++}
++
++export async function actualizarConfiguracion(
++  cambios: { activo?: boolean; intervalo_dias?: number },
++  idUsuario: number
++): Promise<ConfiguracionNotificacionesDeuda> {
++  const actual = await obtenerConfiguracion();
++  const activo = cambios.activo ?? actual.activo;
++  const intervalo_dias = cambios.intervalo_dias ?? actual.intervalo_dias;
++
++  const result = await pool.query<ConfiguracionNotificacionesDeuda>(
++    `UPDATE configuracion_notificaciones_deuda
++     SET activo = $1, intervalo_dias = $2, actualizado_en = NOW(), actualizado_por = $3
++     WHERE id = 1
++     RETURNING activo, intervalo_dias, actualizado_en, actualizado_por`,
++    [activo, intervalo_dias, idUsuario]
++  );
++  return result.rows[0];
++}
++
++// Clientes a los que ya les toca un recordatorio: tienen deuda pendiente
++// mayor a 0, tienen correo registrado, y nunca se les ha notificado o su
++// última notificación fue hace más de `intervaloDias` días.
++export async function clientesPendientesDeNotificacion(
++  intervaloDias: number
++): Promise<ClientePendienteDeNotificacion[]> {
++  const result = await pool.query<ClientePendienteDeNotificacion>(
++    `WITH deuda_pendiente AS (
++       SELECT
++         d.id_cliente,
++         SUM(GREATEST(d.monto_total - COALESCE(pg.total_pagado, 0), 0)) AS monto_pendiente,
++         COUNT(*)::int AS cantidad_deudas,
++         MIN(d.fecha_limite_pago) AS proxima_fecha_limite
++       FROM deuda d
++       LEFT JOIN (
++         SELECT id_deuda, SUM(monto) AS total_pagado FROM pago_deuda GROUP BY id_deuda
++       ) pg ON pg.id_deuda = d.id_deuda
++       WHERE d.estado_deuda = 'PENDIENTE' AND d.id_cliente IS NOT NULL
++       GROUP BY d.id_cliente
++       HAVING SUM(GREATEST(d.monto_total - COALESCE(pg.total_pagado, 0), 0)) > 0
++     ),
++     ultima_notificacion AS (
++       SELECT DISTINCT ON (id_cliente) id_cliente, enviado_en
++       FROM notificacion_deuda
++       ORDER BY id_cliente, enviado_en DESC
++     )
++     SELECT
++       c.id_cliente, c.nombre, c.correo,
++       dp.monto_pendiente, dp.cantidad_deudas, dp.proxima_fecha_limite
++     FROM deuda_pendiente dp
++     JOIN cliente c ON c.id_cliente = dp.id_cliente
++     LEFT JOIN ultima_notificacion un ON un.id_cliente = dp.id_cliente
++     WHERE c.correo IS NOT NULL
++       AND (un.enviado_en IS NULL OR un.enviado_en <= NOW() - make_interval(days => $1::int))
++     ORDER BY dp.monto_pendiente DESC`,
++    [intervaloDias]
++  );
++  return result.rows;
++}
++
++// El job en sí: lo llama tanto el scheduler automático como el botón
++// "enviar ahora" del dueño. Sigue de largo si un correo individual falla,
++// para que un cliente con el correo mal no trabe a los demás.
++export async function ejecutarNotificacionesDeuda(): Promise<ResumenEjecucion> {
++  const config = await obtenerConfiguracion();
++  if (!config.activo) {
++    return { activo: false, procesados: 0, enviados: 0, fallidos: 0 };
++  }
++
++  const clientes = await clientesPendientesDeNotificacion(config.intervalo_dias);
++  let enviados = 0;
++  let fallidos = 0;
++
++  for (const c of clientes) {
++    try {
++      await enviarRecordatorioDeuda(c.correo, c.nombre, c.monto_pendiente, c.cantidad_deudas, c.proxima_fecha_limite);
++      await pool.query(
++        `INSERT INTO notificacion_deuda (id_cliente, monto_notificado, cantidad_deudas)
++         VALUES ($1, $2, $3)`,
++        [c.id_cliente, c.monto_pendiente, c.cantidad_deudas]
++      );
++      enviados++;
++    } catch (err) {
++      fallidos++;
++      log.error({ err, id_cliente: c.id_cliente }, "No se pudo enviar el recordatorio de deuda a este cliente");
++    }
++  }
++
++  log.info(
++    { procesados: clientes.length, enviados, fallidos, intervalo_dias: config.intervalo_dias },
++    "Corrida de notificaciones de deuda terminada"
++  );
++
++  return { activo: true, procesados: clientes.length, enviados, fallidos };
++}
++
++const INTERVALO_CHEQUEO_MS = 60 * 60 * 1000; // revisa cada hora si a alguien ya le toca
++const RETRASO_INICIAL_MS = 30_000; // deja que el server termine de arrancar antes del primer chequeo
++
++declare global {
++  // eslint-disable-next-line no-var
++  var _schedulerNotificacionesDeudaIniciado: boolean | undefined;
++}
++
++// Arranca el scheduler interno. Se llama una sola vez, desde
++// instrumentation.ts, al iniciar el servidor. La bandera en globalThis evita
++// que quede duplicado si Next.js llama register() más de una vez (pasa en
++// desarrollo con el recompilado en caliente).
++export function iniciarSchedulerNotificacionesDeuda(): void {
++  if (globalThis._schedulerNotificacionesDeudaIniciado) return;
++  globalThis._schedulerNotificacionesDeudaIniciado = true;
++
++  const ejecutar = () => {
++    ejecutarNotificacionesDeuda().catch((err) => {
++      log.error({ err }, "Error corriendo el job de notificaciones de deuda");
++    });
++  };
++
++  setTimeout(ejecutar, RETRASO_INICIAL_MS);
++  setInterval(ejecutar, INTERVALO_CHEQUEO_MS);
++
++  log.info(
++    { revisa_cada_ms: INTERVALO_CHEQUEO_MS },
++    "Scheduler de notificaciones de deuda iniciado"
++  );
++}
+diff --git a/migrations/06_notificaciones_deuda.sql b/migrations/06_notificaciones_deuda.sql
+new file mode 100644
+index 0000000..3d37c59
+--- /dev/null
++++ b/migrations/06_notificaciones_deuda.sql
+@@ -0,0 +1,42 @@
++-- 06_notificaciones_deuda.sql
++--
++-- Sistema de notificación automática de deudas pendientes a clientes.
++--
++-- configuracion_notificaciones_deuda: fila única (id = 1) con lo que
++-- configura el dueño — cada cuántos días se le vuelve a recordar a un
++-- cliente su deuda pendiente, y si el envío automático está activo.
++--
++-- notificacion_deuda: bitácora de cada recordatorio enviado (a quién,
++-- cuánto se le notificó y cuándo). Sirve para saber si ya le toca a un
++-- cliente un nuevo recordatorio (última notificación + intervalo_dias) y
++-- como historial visible para el dueño.
++--
++-- Cómo correrla:
++--   psql -U <usuario> -d <basedatos> -f migrations/06_notificaciones_deuda.sql
++
++CREATE TABLE IF NOT EXISTS configuracion_notificaciones_deuda (
++    id                SMALLINT        PRIMARY KEY DEFAULT 1,
++    activo            BOOLEAN         NOT NULL DEFAULT FALSE,
++    intervalo_dias    INT             NOT NULL DEFAULT 7 CHECK (intervalo_dias > 0),
++    actualizado_en    TIMESTAMP       NOT NULL DEFAULT NOW(),
++    actualizado_por   INT             REFERENCES usuario(id_usuario),
++    CONSTRAINT chk_configuracion_notificaciones_deuda_fila_unica CHECK (id = 1)
++);
++
++-- Fila única sembrada de una vez (apagado por defecto: el dueño lo activa
++-- explícitamente desde la UI cuando quiera empezar a mandar recordatorios).
++INSERT INTO configuracion_notificaciones_deuda (id, activo, intervalo_dias)
++VALUES (1, FALSE, 7)
++ON CONFLICT (id) DO NOTHING;
++
++CREATE TABLE IF NOT EXISTS notificacion_deuda (
++    id_notificacion     SERIAL          PRIMARY KEY,
++    id_cliente          INT             NOT NULL REFERENCES cliente(id_cliente) ON DELETE CASCADE,
++    monto_notificado    NUMERIC(12,2)   NOT NULL,
++    cantidad_deudas     INT             NOT NULL,
++    enviado_en          TIMESTAMP       NOT NULL DEFAULT NOW()
++);
++
++-- Búsqueda rápida de "cuándo fue la última notificación de este cliente".
++CREATE INDEX IF NOT EXISTS idx_notificacion_deuda_cliente
++    ON notificacion_deuda (id_cliente, enviado_en DESC);
