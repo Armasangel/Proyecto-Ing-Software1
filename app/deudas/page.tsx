@@ -1074,7 +1074,16 @@ export default function DeudasPage() {
                         {clientesFiltrados.slice(0, 8).map((c) => (
                           <div
                             key={c.id_cliente}
-                            onMouseDown={() => seleccionarCliente(c)}
+                            onMouseDown={(e) => {
+                              // Sin esto, el navegador le quita el foco al
+                              // input ANTES de que corra este click
+                              // (mousedown ocurre antes del blur), lo que
+                              // dispara un blur real de más que compite con
+                              // el cierre del dropdown que ya hace
+                              // seleccionarCliente.
+                              e.preventDefault();
+                              seleccionarCliente(c);
+                            }}
                             style={{
                               padding: "0.45rem 0.7rem",
                               cursor: "pointer",

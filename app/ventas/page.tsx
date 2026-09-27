@@ -410,7 +410,15 @@ export default function VentasPage() {
                     {clientesSugeridos.map((c) => (
                       <div
                         key={c.id_cliente}
-                        onMouseDown={() => seleccionarCliente(c)}
+                        onMouseDown={(e) => {
+                          // Sin esto, el navegador le quita el foco al input
+                          // ANTES de que corra este click (mousedown ocurre
+                          // antes del blur), lo que dispara un blur real de
+                          // más que compite con el cierre del dropdown que
+                          // ya hace seleccionarCliente.
+                          e.preventDefault();
+                          seleccionarCliente(c);
+                        }}
                         className="px-3 py-2 text-[0.88rem] text-ink cursor-pointer hover:bg-cream/60 border-b border-[var(--border)] last:border-b-0 flex justify-between items-center gap-2"
                       >
                         <span>{c.nombre} ({c.correo})</span>
