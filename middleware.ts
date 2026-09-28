@@ -72,8 +72,9 @@ export async function middleware(request: NextRequest) {
     path: pathname,
     ip,
     query: Object.keys(safeQuery).length > 0 ? safeQuery : undefined,
-  }; 
-  
+  };
+  log.info(logData, `request ${method} ${pathname}`);
+
   const needsAuth = PROTECTED_PREFIXES.some(
     (p) => pathname === p || pathname.startsWith(`${p}/`)
   );
