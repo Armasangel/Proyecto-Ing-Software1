@@ -81,20 +81,29 @@ export function signResetToken(id_usuario: number): string {
   });
 }
 
-export function verifyResetToken(token: string): number | null {
-  try {
-    const decoded = jwt.verify(token, getJwtSecret()) as jwt.JwtPayload & { purpose?: string };
-    if (decoded.purpose !== "recuperacion_contrasena") return null;
 // Token de la solicitud de promoción a DUENO: prueba de que el dueño que la
 // confirma es el mismo que la inició, y de a qué fila de
 // `solicitud_promocion_dueno` corresponde. Mismo mecanismo que el pre-token
 // del login (vida corta, "purpose" propio) pero el "subject" acá es el
 // id_solicitud, no un id_usuario.
+export function verifyResetToken(token: string): number | null {
+  try {
+    const decoded = jwt.verify(token, getJwtSecret()) as jwt.JwtPayload & { purpose?: string };
+    if (decoded.purpose !== "recuperacion_contrasena") return null;
+    const id = decoded.sub;
+    if (typeof id !== "string" || !id) return null;
+    return Number(id);
+  } catch {
+    return null;
+  }
+}
+
 export function signPromocionToken(id_solicitud: number): string {
   return jwt.sign({ purpose: "promocion_dueno_pendiente" }, getJwtSecret(), {
     subject: String(id_solicitud),
     expiresIn: PRE_TOKEN_EXPIRA,
   });
+}
 }
 
 export function verifyPromocionToken(token: string): number | null {
