@@ -181,7 +181,14 @@ jest.mock("next/navigation", () => ({
 - **Siempre** preceder el mensaje con un objeto de contexto: `log.info({ id_venta }, "Venta registrada")` (pino tipa el primer argumento).
 - Pasar errores como `{ err }` para que pino serialice `stack`/`type`.
 - Campos sensibles (`password`, `token`, cookies) se redactan automáticamente — no los loguees de todos modos.
-- Tests del logger: `__tests__/lib/logger.test.ts` (usa `createLogger({ destination })` para capturar las líneas NDJSON).
+- Persistencia opcional: con `LOG_FILE_DIR` (y no en `test`) el logger además
+  escribe a un archivo rotado por tamaño (`lib/logger.ts` → `createRotatedFileStream`,
+  dep `rotating-file-stream`). No cambies la política de rotación sin avisar;
+  defaults: 50 MB, conservar 5, gzip.
+- Ayudante de mantenimiento: `scripts/logs.sh` (live / file / errors / grep / list).
+- Tests del logger: `__tests__/lib/logger.test.ts` (usa `createLogger({ destination })`
+  para capturar NDJSON y destinos `rotating-file-stream` con directorios temporales
+  para verificar la rotación; se limpian solos en `afterEach`).
 
 - Los `<label>` sin `htmlFor` no se pueden consultar con `getByLabelText`; usar `getByPlaceholderText` o `getByText`
 - `<img alt="">` tiene rol `presentation`; usar `document.querySelector("img")` en lugar de `getByRole("img")`
