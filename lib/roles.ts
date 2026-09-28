@@ -5,6 +5,16 @@ export const TIPOS_USUARIO = {
   BODEGUERO: "BODEGUERO"
 } as const;
 
+/**
+ * Cantidad máxima de usuarios tipo DUENO permitidos en el sistema al mismo
+ * tiempo. Un usuario solo puede volverse DUENO a través del proceso de
+ * promoción con verificación por correo (ver app/api/usuarios/promover-dueno),
+ * nunca creándose directamente como tal ni por una edición de rol normal —
+ * esto evita que alguien escale privilegios sin que quede un rastro y un
+ * paso extra de confirmación.
+ */
+export const MAX_DUENOS = 2;
+
 export type TipoUsuarioDb = (typeof TIPOS_USUARIO)[keyof typeof TIPOS_USUARIO];
 
 /** Dueño o colaborador de tienda (no incluye bodeguero, que tiene su propio panel). */
