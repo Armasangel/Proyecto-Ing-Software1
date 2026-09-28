@@ -127,7 +127,21 @@ El responsable del repo debe activar estas reglas en **Settings → Branches**:
   ```
 
 ---
+## API privada
 
+La API (`/api/*`) es de uso interno — solo la consume el frontend de este
+proyecto, no hay documentación pública ni API keys para terceros. Ver la
+sección "🔒 API privada" en el `README.md` para el detalle completo.
+
+Si tu tarea agrega un endpoint nuevo:
+- No hace falta agregar los headers de seguridad manualmente, ya aplican
+  por patrón a todo `/api/*` desde `next.config.mjs`.
+- No documentes el endpoint en un formato tipo Swagger/OpenAPI mientras
+  la API siga siendo privada.
+- Si la tarea específicamente pide exponer algo a un tercero, avisa al
+  equipo antes de abrir el PR — ese cambio de alcance no se decide solo.
+
+---
 ## Testing
 
 ### Comandos
