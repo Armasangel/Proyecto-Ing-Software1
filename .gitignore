@@ -52,3 +52,7 @@ postgres_data/
 
 # ── Respaldos de la base de datos (automáticos y manuales) ────────────────
 backups/
+
+# ── Reportes de escaneo de ZAP (pruebas de seguridad) ─────────────────────
+security/zap-reports/*
+!security/zap-reports/.gitkeep

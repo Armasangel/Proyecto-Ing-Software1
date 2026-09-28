@@ -1,0 +1,27 @@
+# docker-compose.security.yml
+#
+# Herramientas de pruebas de seguridad, para el chore de OWASP ZAP + Burp
+# Suite. Se usa JUNTO al docker-compose.yml principal (no reemplaza nada),
+# así que ZAP queda en la misma red que "app" y "db" y puede atacar la app
+# por su nombre de servicio (http://app:3000), sin depender de localhost
+# ni de puertos publicados al host.
+#
+# Cómo usarlo:
+#   1. Levantar la app como siempre:      docker compose up -d
+#   2. Levantar ZAP (queda esperando):    docker compose -f docker-compose.yml -f docker-compose.security.yml up -d zap
+#   3. Correr las pruebas (ver security/README.md para los 2 comandos)
+#   4. Cuando termines:                   docker compose -f docker-compose.yml -f docker-compose.security.yml down
+
+services:
+  zap:
+    image: zaproxy/zap-stable
+    container_name: dsm_zap
+    # Sin esto el contenedor de ZAP arranca, corre su comando por defecto y
+    # se apaga solo. Lo dejamos "vivo" para poder correr los scans cuando
+    # uno quiera con `docker compose exec zap <comando>`, en vez de que todo
+    # dependa de un único comando fijo al momento del `up`.
+    command: sleep infinity
+    volumes:
+      - ./security/zap-reports:/zap/wrk/reports
+    depends_on:
+      - app
