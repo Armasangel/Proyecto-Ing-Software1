@@ -8,7 +8,6 @@ declare global {
   var _pgPool: Pool | undefined;
   var _pgPoolErrorListenerAttached: boolean | undefined;
 }
-}
 
 export const pool: Pool =
   globalThis._pgPool ??
