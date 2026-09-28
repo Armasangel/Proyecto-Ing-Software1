@@ -397,6 +397,47 @@ usó para generarlo — sin eso no hay forma de descifrarlo.
    - Password: `dsm_password`
 
 ---
+## 🔒 API privada
+
+Toda la API bajo `/api/*` es de uso **interno**: la consume únicamente el
+frontend de este mismo proyecto, corriendo en el mismo dominio. No está
+pensada para que otros sistemas o terceros la consuman directamente.
+
+### ¿Qué significa "privada" en la práctica?
+
+- No hay documentación pública tipo OpenAPI/Swagger, ni un portal de desarrolladores.
+- No se emiten API keys ni tokens de acceso para consumidores externos.
+- Las respuestas dependen de la sesión del navegador (cookie httpOnly con
+  JWT), no de un esquema de autenticación pensado para servidor-a-servidor.
+- Desde DEV-127, todas las rutas de `/api/*` llevan headers de seguridad
+  estándar (ver `next.config.mjs`): `X-Content-Type-Options`,
+  `X-Frame-Options`, `Referrer-Policy` y `Strict-Transport-Security`, además
+  de `poweredByHeader: false` para no anunciar la tecnología del backend.
+
+### Consecuencias de mantenerla privada
+
+- ✅ Superficie de ataque más chica: nadie fuera del propio frontend necesita
+  credenciales ni conoce los endpoints.
+- ✅ Se puede cambiar la forma de las respuestas (renombrar campos, cambiar
+  códigos de error) sin avisarle a "consumidores externos", porque no existen.
+- ⚠️ Si en algún momento se necesita exponerla a terceros (una app móvil
+  separada, un socio, un webhook saliente), **no basta con quitar un flag**:
+  hay que diseñar autenticación por token (API key u OAuth), definir un
+  contrato estable (versión de API, esquema documentado) y endurecer el
+  rate limiting pensando en tráfico no confiable, no solo en usuarios logueados.
+
+### Cómo se maneja
+
+- No agregues documentación pública (Swagger/OpenAPI) para estas rutas
+  mientras sigan siendo privadas — generarla manda la señal equivocada de
+  que son consumibles externamente.
+- Cualquier endpoint nuevo bajo `/api/` hereda los headers de seguridad
+  automáticamente (aplican por patrón `/api/:path*` en `next.config.mjs`),
+  no hace falta repetirlos ruta por ruta.
+- Si tu tarea implica exponer una ruta a un tercero real, coordínalo
+  primero con el equipo — ver la sección correspondiente en `CONTRIBUTING.md`.
+
+---
 
 ## ⚠️ Notas de desarrollo
 
