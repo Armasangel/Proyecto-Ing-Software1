@@ -13,6 +13,9 @@ import { getJwtSecret } from "@/lib/auth";
 
 const CODIGO_EXPIRA_MIN = 5;
 const PRE_TOKEN_EXPIRA = "5m";
+// Vida del token que autoriza escribir la nueva contraseña después de validar
+// el código de recuperación (paso 3 del flujo "olvidé mi contraseña").
+const RESET_TOKEN_EXPIRA = "10m";
 const MAX_INTENTOS = 5;
 
 export function generarCodigo(): string {
@@ -59,6 +62,29 @@ export function verifyPreToken(token: string): number | null {
   try {
     const decoded = jwt.verify(token, getJwtSecret()) as jwt.JwtPayload & { purpose?: string };
     if (decoded.purpose !== "2fa_pendiente") return null;
+    const id = decoded.sub;
+    if (typeof id !== "string" || !id) return null;
+    return Number(id);
+  } catch {
+    return null;
+  }
+}
+
+// Token de recuperación (paso 2 → 3): se emite solo después de validar el
+// código de recuperación por correo y autoriza a ese usuario a escribir la
+// nueva contraseña. Vida corta (10 min) y purpose propio para que no se pueda
+// usar como si fuera el AUTH_COOKIE real ni el pre-token de 2FA.
+export function signResetToken(id_usuario: number): string {
+  return jwt.sign({ purpose: "recuperacion_contrasena" }, getJwtSecret(), {
+    subject: String(id_usuario),
+    expiresIn: RESET_TOKEN_EXPIRA,
+  });
+}
+
+export function verifyResetToken(token: string): number | null {
+  try {
+    const decoded = jwt.verify(token, getJwtSecret()) as jwt.JwtPayload & { purpose?: string };
+    if (decoded.purpose !== "recuperacion_contrasena") return null;
     const id = decoded.sub;
     if (typeof id !== "string" || !id) return null;
     return Number(id);

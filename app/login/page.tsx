@@ -5,6 +5,7 @@
    Panel derecho: formulario, siempre visible — en móvil ocupa toda la pantalla. */
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { postLoginPath } from "@/lib/roles";
 
@@ -226,6 +227,13 @@ export default function LoginPage() {
               >
                 {loading ? "Ingresando…" : "Ingresar al sistema"}
               </button>
+
+              <Link
+                href="/recuperar"
+                className="self-center bg-transparent border-none text-market-600 text-[0.82rem] font-medium p-0 hover:underline"
+              >
+                ¿Olvidaste tu contraseña?
+              </Link>
             </form>
           ) : (
             <form onSubmit={handleVerificarCodigo} className="flex flex-col gap-5 mb-5">

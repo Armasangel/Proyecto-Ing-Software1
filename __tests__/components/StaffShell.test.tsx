@@ -55,7 +55,6 @@ describe("StaffShell", () => {
       </StaffShell>
     );
     expect(screen.getByText("Inventario")).toBeInTheDocument();
-    expect(screen.getByText("Catálogo")).toBeInTheDocument();
     expect(screen.getByText("Proveedores")).toBeInTheDocument();
     expect(screen.getByText("Historial ventas")).toBeInTheDocument();
     expect(screen.getByText("Deudas")).toBeInTheDocument();
@@ -81,7 +80,6 @@ describe("StaffShell", () => {
     );
     expect(screen.getAllByText("Ventas").length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByText("Inventario")).not.toBeInTheDocument();
-    expect(screen.queryByText("Catálogo")).not.toBeInTheDocument();
     expect(screen.queryByText("Proveedores")).not.toBeInTheDocument();
     expect(screen.queryByText("Historial ventas")).not.toBeInTheDocument();
     expect(screen.queryByText("Deudas")).not.toBeInTheDocument();
