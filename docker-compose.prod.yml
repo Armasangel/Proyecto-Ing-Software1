@@ -20,11 +20,19 @@ services:
       - GMAIL_USER=${GMAIL_USER}
       - GMAIL_APP_PASSWORD=${GMAIL_APP_PASSWORD}
       - LOG_LEVEL=${LOG_LEVEL:-info}
-    # `!reset` anula los volúmenes heredados del compose base: sin
-    # bind-mount del source ni de node_modules/.next — el código y el bundle
-    # ya vienen dentro de la imagen compilada.
-    volumes: !reset []
+      - LOG_FILE_DIR=/app/logs
+      - LOG_FILE_MAX_SIZE=${LOG_FILE_MAX_SIZE:-50M}
+      - LOG_FILE_KEEP=${LOG_FILE_KEEP:-5}
+    # `!override` reemplaza los volúmenes del compose base: sin bind-mount del
+    # source ni de node_modules/.next — el código y el bundle ya vienen
+    # dentro de la imagen compilada (target `production`). Se conserva
+    # `logs_data` para la persistencia de logs.
+    volumes: !override
+      - logs_data:/app/logs
     restart: unless-stopped
-    # Sobrescribe el `command: npm run dev` del compose base: en producción
-    # se sirve el bundle compilado con next start.
-    command: !reset ["npm", "start"]
+    # `!override` reemplaza el `command: npm run dev` del compose base: en
+    # producción se sirve el bundle compilado con next start.
+    command: !override ["npm", "start"]
+
+volumes:
+  logs_data:
