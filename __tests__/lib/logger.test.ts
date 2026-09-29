@@ -33,7 +33,7 @@ async function settle(): Promise<void> {
 async function waitForFileCount(dir: string, min: number, timeoutMs = 3000): Promise<void> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
-    const count = fs.readdirSync(dir).filter((f) => f.endsWith(".log")).length;
+    const count = fs.readdirSync(dir).filter((f) => f.startsWith("server.log")).length;
     if (count >= min) return;
     await new Promise((r) => setTimeout(r, 20));
   }
