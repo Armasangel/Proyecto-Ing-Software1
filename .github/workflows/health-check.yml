@@ -1,0 +1,147 @@
+# Monitoreo de Disponibilidad
+#
+# Corre cada 5 minutos contra el sitio en producción y falla si algo no está
+# como debería. Cuando la ejecución falla, GitHub manda un email de alerta,
+# así que no hace falta que nadie esté mirando.
+#
+# ── Configuración necesaria (una sola vez) ──────────────────────────────────
+# Settings → Secrets and variables → Actions → Variables → New variable
+#   Name:  APP_URL
+#   Value: https://tienda-san-miguel.xyz
+#
+# ── Por qué vive en `main` y no en `develop` ────────────────────────────────
+# Los workflows programados (`schedule`) NO se ejecutan desde ramas de feature
+# ni de develop: GitHub solo los corre desde la rama por defecto, que en este
+# repo es `main`. Si el archivo quedara solo en `develop`, el monitoreo recién
+# arranca cuando se mergea a `main`.
+#
+# ── Limitaciones que hay que conocer ───────────────────────────────────────
+# - La latencia real no es de 5 minutos: GitHub encola los cron y en hora pico
+#   puede demorar 5-30 minutos. No sirve como pager, sirve como red de
+#   seguridad contra caídas largas.
+# - Se desactiva solo si el repo pasa 60 días sin actividad.
+# - Es un check desde internet, o sea que detecta caída total del servidor
+#   (a diferencia de un cron local, que no se entera si el host se apaga).
+
+name: Monitoreo de Disponibilidad
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Evita que dos chequeos se pisen si uno se demora más que el intervalo.
+concurrency:
+  group: health-check
+  cancel-in-progress: false
+
+jobs:
+  health-check:
+    name: Verificar app, base de datos y headers
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    env:
+      APP_URL: ${{ vars.APP_URL }}
+
+    steps:
+      - name: Validar configuración
+        run: |
+          if [ -z "$APP_URL" ]; then
+            echo "::error::Falta la variable APP_URL. Configurala en Settings → Secrets and variables → Actions → Variables."
+            exit 1
+          fi
+          echo "Verificando $APP_URL"
+
+      - name: API y base de datos
+        run: |
+          # /api/health devuelve 500 si PostgreSQL no responde, así que un 200
+          # ya implica que la base está viva. El grep al body confirma que la
+          # respuesta es la esperada y no una página de error del proxy.
+          #
+          # Se captura el fallo de curl a mano en vez de dejar que `set -e`
+          # aborte el step: la app caída es el caso más probable y merece un
+          # mensaje que diga qué revisar, no un "curl: (7) Failed to connect".
+          if ! curl --fail --silent --show-error --max-time 20 \
+            "$APP_URL/api/health" --output /tmp/health.json; then
+            echo "::error::$APP_URL/api/health no respondió correctamente."
+            echo "Revisá en el servidor: pm2 list y pm2 logs tienda-san-miguel --lines 30 --nostream"
+            exit 1
+          fi
+
+          cat /tmp/health.json
+          echo
+          if ! grep -q '"status":"ok"' /tmp/health.json; then
+            echo "::error::La respuesta de /api/health no indica estado ok."
+            exit 1
+          fi
+          echo "API y base de datos OK"
+
+      - name: Página de login
+        run: |
+          # Cubre lo que el health check no ve: build roto, assets 404,
+          # errores de render de React en el server.
+          if ! curl --fail --silent --show-error --max-time 20 \
+            --output /dev/null "$APP_URL/login"; then
+            echo "::error::$APP_URL/login no respondió correctamente."
+            echo "Si la API responde pero el login no, lo más probable es un build roto."
+            echo "Revisá en el servidor: npm run build y pm2 restart tienda-san-miguel"
+            exit 1
+          fi
+          echo "Login respondió correctamente"
+
+      - name: Headers de seguridad
+        run: |
+          # Verifica que los headers de next.config.mjs lleguen de verdad a la
+          # respuesta real. El test unitario (__tests__/lib/next-config.test.ts)
+          # prueba que están configurados; esto prueba que se sirven, que es la
+          # mitad que un test no puede ver.
+          FALLAS=0
+
+          verificar() {
+            local ruta="$1"; shift
+            local respuesta
+            respuesta=$(curl --silent --show-error --max-time 20 -D - -o /dev/null "$APP_URL$ruta") || {
+              echo "::error::No se pudo consultar $ruta"
+              FALLAS=$((FALLAS + 1))
+              return 0
+            }
+            for header in "$@"; do
+              if ! printf '%s' "$respuesta" | grep -qi "^$header:"; then
+                echo "::error::Falta '$header' en la respuesta de $ruta"
+                FALLAS=$((FALLAS + 1))
+              fi
+            done
+          }
+
+          REQUERIDOS=(
+            "X-Content-Type-Options"
+            "X-Frame-Options"
+            "Referrer-Policy"
+            "Permissions-Policy"
+            "Strict-Transport-Security"
+          )
+
+          # Se chequean las dos rutas porque `/:path*` tiene que cubrir tanto
+          # las páginas (donde el clickjacking se ejerce) como la API.
+          verificar "/login" "${REQUERIDOS[@]}"
+          verificar "/api/health" "${REQUERIDOS[@]}"
+
+          if [ "$FALLAS" -gt 0 ]; then
+            echo
+            echo "::error::Faltan $FALLAS header(s) de seguridad en producción."
+            echo
+            echo "Causa más probable: el servidor sirve un build viejo. DEV-127 ya está"
+            echo "en el repo, pero si nunca se reconstruyó, los headers no existen en"
+            echo "el sitio. Reconstruí y reiniciá en el servidor:"
+            echo "  cd ~/var/www/Proyecto-Ing-Software1"
+            echo "  git pull && npm run build && pm2 restart tienda-san-miguel"
+            echo
+            echo "Verificá el resultado con:"
+            echo "  curl -sI https://tienda-san-miguel.xyz/login | grep -i x-frame-options"
+            exit 1
+          fi
+          echo "Todos los headers de seguridad presentes"
