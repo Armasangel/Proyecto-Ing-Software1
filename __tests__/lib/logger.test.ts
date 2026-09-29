@@ -1,5 +1,15 @@
 import { Writable } from "stream";
-import { createLogger, getLogger, resolveLogLevel } from "@/lib/logger";
+import fs from "fs";
+import os from "os";
+import path from "path";
+import pino from "pino";
+import {
+  createLogger,
+  createRotatedFileStream,
+  fileLogOptionsFromEnv,
+  getLogger,
+  resolveLogLevel,
+} from "@/lib/logger";
 
 type Sink = { stream: Writable; lines: string[] };
 
@@ -17,6 +27,17 @@ function makeSink(): Sink {
 /** Pino escribe de forma asíncrona a destinations custom: damos tiempo a que drene. */
 async function settle(): Promise<void> {
   await new Promise((r) => setTimeout(r, 5));
+}
+
+/** Espera (poliando) a que haya al menos `min` archivos en `dir`. */
+async function waitForFileCount(dir: string, min: number, timeoutMs = 3000): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const count = fs.readdirSync(dir).filter((f) => f.startsWith("server.log")).length;
+    if (count >= min) return;
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  throw new Error(`No se alcanzaron ${min} archivos de log en ${timeoutMs}ms`);
 }
 
 describe("createLogger", () => {
@@ -127,5 +148,56 @@ describe("getLogger", () => {
     for (const method of ["trace", "debug", "info", "warn", "error", "fatal", "child"]) {
       expect(typeof (log as unknown as Record<string, unknown>)[method]).toBe("function");
     }
+  });
+});
+
+describe("persistencia en archivo rotado", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "dsm-log-test-"));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("escribe NDJSON a un archivo y rota al superar el tamaño", async () => {
+    const stream = createRotatedFileStream({ dir: tmpDir, maxSize: "20B", maxFiles: 2, compress: false });
+    const log = pino({ level: "info" }, stream);
+
+    for (let i = 0; i < 60; i++) {
+      log.info({ i }, "línea de prueba número " + i);
+    }
+    await log.flush(); // drena el buffer de pino hacia el stream
+
+    // Cierra el stream para que termine las rotaciones pendientes antes de
+    // borrar el directorio temporal (evita renames colgados/ENOENT).
+    await new Promise<void>((resolve) => {
+      stream.once("error", () => resolve());
+      stream.end(() => resolve());
+    });
+    await new Promise((r) => setTimeout(r, 25));
+    await waitForFileCount(tmpDir, 2);
+
+    const files = fs.readdirSync(tmpDir).filter((f) => f.endsWith(".log"));
+    expect(files.length).toBeGreaterThan(1);
+
+    const contenido = files.map((f) => fs.readFileSync(path.join(tmpDir, f), "utf8")).join("\n");
+    expect(contenido).toContain('"level":30'); // NDJSON válido de pino
+    expect(files.length).toBeLessThanOrEqual(3); // activo + maxFiles
+  });
+
+  it("fileLogOptionsFromEnv respeta el entorno y los defaults", () => {
+    expect(fileLogOptionsFromEnv({ NODE_ENV: "test", LOG_FILE_DIR: "/x" })).toBeUndefined();
+    expect(fileLogOptionsFromEnv({ NODE_ENV: "production" })).toBeUndefined();
+    expect(fileLogOptionsFromEnv({ NODE_ENV: "production", LOG_FILE_DIR: "/app/logs" })).toEqual({
+      dir: "/app/logs",
+      maxSize: "50M",
+      maxFiles: 5,
+    });
+    expect(
+      fileLogOptionsFromEnv({ NODE_ENV: "development", LOG_FILE_DIR: "/logs", LOG_FILE_MAX_SIZE: "10M", LOG_FILE_KEEP: "3" })
+    ).toEqual({ dir: "/logs", maxSize: "10M", maxFiles: 3 });
   });
 });

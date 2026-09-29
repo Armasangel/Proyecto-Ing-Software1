@@ -199,6 +199,71 @@ docker compose logs -f app
 docker compose logs -f --no-log-prefix app | npm run logs      # con colores y formato legible
 ```
 
+### Persistencia: archivo rotado en un volumen Docker
+
+Además del stdout, la app puede escribir **NDJSON a un archivo rotado por
+tamaño** para tener histórico (grep, respaldos, forense). En Docker se monta
+un volumen (`logs_data`) sobre `/app/logs`:
+
+| Variable | Default | Descripción |
+|---|---|---|
+| `LOG_FILE_DIR` | *(vacío = off)* | Directorio del archivo rotado. `app` en compose lo fija a `/app/logs` (volumen `logs_data`) |
+| `LOG_FILE_MAX_SIZE` | `50M` | Tamaño máximo por archivo antes de rotar |
+| `LOG_FILE_KEEP` | `5` | Archivos rotados a conservar (sin contar el activo); los viejos se comprimen con gzip |
+
+El logger escribe a stdout **y** al archivo (multistream): `docker compose
+logs` y `pm2 logs` siguen funcionando igual. El volumen sobrevive a
+`docker compose up --build` (solo se pierde con `docker compose down -v`).
+
+Los archivos dentro del contenedor:
+
+```bash
+docker compose exec app sh -c 'ls -lh /app/logs/'                    # ver archivos
+docker compose exec app sh -c 'tail -n 100 /app/logs/server.log | ./node_modules/.bin/pino-pretty'
+```
+
+### Ayudante de mantenimiento (`scripts/logs.sh`)
+
+Envuelve los comandos más usados sin depender de node en la máquina host:
+
+```bash
+scripts/logs.sh                # seguir logs en vivo (formateados)
+scripts/logs.sh file           # últimas 200 líneas del archivo vigente
+scripts/logs.sh file -f        # seguir el archivo vigente en vivo
+scripts/logs.sh all            # archivo vigente + rotados (descomprime .gz)
+scripts/logs.sh errors         # solo errores (level 50)
+scripts/logs.sh warnings       # warns y errores (level 40/50)
+scripts/logs.sh grep "api/ventas"   # filtrar por módulo / palabra
+scripts/logs.sh list           # listar archivos rotados
+```
+
+Con `docker compose -f docker-compose.yml -f docker-compose.prod.yml` los mismos comandos funcionan contra la imagen de producción (pino-pretty es dependencia de runtime).
+
+### Flujo para descubrir la causa de un error
+
+1. **Dónde mirar primero** (en vivo):
+   ```bash
+   scripts/logs.sh live
+   ```
+2. **Si pasó hace un rato** (histórico): buscá por ruta/módulo y nivel:
+   ```bash
+   scripts/logs.sh errors
+   scripts/logs.sh grep '"msg":"Error al consultar ventas'
+   ```
+3. **Correlacionar la petición con su error**: por `time` y `module`. El editor
+   de logs es NDJSON, así que cualquier patrón se puede grepear, p. ej. el ID de
+   una orden fallida: `scripts/logs.sh grep '"id_orden": 12'`.
+4. **Los errores de servidor siempre vienen con stack real** (nunca se manda al
+   cliente): el `{ err }` serializa `type`, `message` y `stack` en la misma línea
+   (`log.error({ err }, "…")` del `apiError`).
+5. Si no alcanza el histórico del contenedor: resto de nivel y buscás —
+   `LOG_LEVEL=debug` suma detalle (p. ej. el request autenticado con `id_usuario`).
+6. **En el servidor (PM2, sin Docker)**: `pm2 logs tienda-san-miguel --lines 50 --nostream`
+   y `pm2 install pm2-logrotate` para retención/rotación equivalentes.
+
+> Los secretos (`password`, `token`, cookies, JWT, Gmail) se **redactan** antes
+> de escribirse; no van a aparecer ni en el archivo ni en stdout.
+
 ### Nivel mínimo (`LOG_LEVEL`)
 
 - Vacío (recomendado): automático por entorno (`development`→`debug`, `production`→`info`, `test`→silent).
