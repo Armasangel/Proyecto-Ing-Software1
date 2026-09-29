@@ -206,8 +206,7 @@ scripts/logs.sh grep "api/ventas"   # filtrar por módulo / palabra
 scripts/logs.sh list           # listar archivos rotados
 ```
 
-Con `docker compose -f docker-compose.prod.yml` los mismos comandos funcionan
-contra la imagen de producción (pino-pretty es dependencia de runtime).
+Con `docker compose -f docker-compose.yml -f docker-compose.prod.yml` los mismos comandos funcionan contra la imagen de producción (pino-pretty es dependencia de runtime).
 
 ### Flujo para descubrir la causa de un error
 
