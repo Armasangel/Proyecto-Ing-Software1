@@ -40,7 +40,7 @@ pretty_stdin() {
 
 case "${1:-live}" in
   live)
-    "${COMPOSE[@]}" logs -f --tail=100 "$APP" | pretty_stdin
+    "${COMPOSE[@]}" logs -f --no-log-prefix --tail=100 "$APP" | pretty_stdin
     ;;
 
   file)
