@@ -1,6 +1,15 @@
 {
   "extends": "next/core-web-vitals",
   "rules": {
-    "@next/next/no-img-element": "off"
-  }
+    "@next/next/no-img-element": "off",
+    "no-console": "error"
+  },
+  "overrides": [
+    {
+      "files": ["lib/client-logger.ts"],
+      "rules": {
+        "no-console": "off"
+      }
+    }
+  ]
 }
