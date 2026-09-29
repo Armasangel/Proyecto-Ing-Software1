@@ -188,7 +188,7 @@ Los archivos dentro del contenedor:
 
 ```bash
 docker compose exec app sh -c 'ls -lh /app/logs/'                    # ver archivos
-docker compose exec app sh -c 'tail -n 100 /app/logs/server.log | pino-pretty'
+docker compose exec app sh -c 'tail -n 100 /app/logs/server.log | ./node_modules/.bin/pino-pretty'
 ```
 
 ### Ayudante de mantenimiento (`scripts/logs.sh`)
