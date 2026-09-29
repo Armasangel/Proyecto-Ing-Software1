@@ -46,7 +46,9 @@ case "${1:-live}" in
   file)
     case "${2:-}" in
       -f) exec_in_app "tail -f $LOG_DIR/server.log | $PPY" ;;
-      *)  n="${2:-200}" ; exec_in_app "tail -n $n $LOG_DIR/server.log | $PPY" ;;
+      *)  n="${2:-200}"
+          [[ "$n" =~ ^[0-9]+$ ]] || { echo "n debe ser un entero no negativo" >&2; exit 1; }
+          exec_in_app "tail -n $n $LOG_DIR/server.log | $PPY" ;;
     esac
     ;;
 
