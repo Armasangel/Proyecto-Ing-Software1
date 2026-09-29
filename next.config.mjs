@@ -1,5 +1,3 @@
-/** @type {import('next').NextConfig} */
-
 // Headers de seguridad estándar (DEV-127).
 //
 // Se aplican a TODAS las rutas (`/:path*`) y no solo a `/api/*`: el clickjacking
@@ -27,6 +25,7 @@ const securityHeaders = [
 // revertir. Quitarlo es una línea de este archivo.
 const HSTS = "max-age=63072000; includeSubDomains";
 
+/** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
   // Evita exponer el header "X-Powered-By: Next.js"
