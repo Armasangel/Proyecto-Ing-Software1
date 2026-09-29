@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   app:
     build:
@@ -14,10 +12,14 @@ services:
       - GMAIL_USER=${GMAIL_USER}
       - GMAIL_APP_PASSWORD=${GMAIL_APP_PASSWORD}
       - LOG_LEVEL=${LOG_LEVEL:-debug}
+      - LOG_FILE_DIR=/app/logs
+      - LOG_FILE_MAX_SIZE=${LOG_FILE_MAX_SIZE:-50M}
+      - LOG_FILE_KEEP=${LOG_FILE_KEEP:-5}
     volumes:
       - .:/app
       - /app/node_modules
       - /app/.next
+      - logs_data:/app/logs
     depends_on:
       db:
         condition: service_healthy
@@ -97,3 +99,4 @@ services:
 volumes:
   postgres_data:
   pgadmin_data:
+  logs_data:

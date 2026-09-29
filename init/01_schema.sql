@@ -9,7 +9,15 @@
 --
 --  Se unificaron aquí los antiguos scripts 02_ordenes, 03_facturacion,
 --  04_detalle_venta, 05_codigo_verificacion, 03_indices, 03_datos_venta,
---  02_add_fecha_caducidad y 03_add_requiere_2fa.
+--  02_add_fecha_caducidad, 03_add_requiere_2fa,
+--  05_solicitud_promocion_dueno y 06_notificaciones_deuda.
+--
+--  IMPORTANTE: docker-entrypoint-initdb.d solo corre este archivo la
+--  PRIMERA vez que se crea el volumen de Postgres (base vacía). Si ya
+--  existe un contenedor/volumen levantado con datos, este archivo NO se
+--  vuelve a ejecutar solo — para llevar esa base al día hay que seguir
+--  aplicando manualmente los scripts nuevos en migrations/ (ver el
+--  comentario "Cómo correrla" de cada uno).
 
 -- CATEGORIA
 CREATE TABLE categoria (
@@ -134,6 +142,43 @@ CREATE TABLE codigo_verificacion (
 -- Búsqueda rápida de "el código vigente más reciente de este usuario".
 CREATE INDEX idx_codigo_verificacion_usuario
     ON codigo_verificacion (id_usuario, creado_en DESC);
+
+-- CODIGO_RECUPERACION (recuperación de contraseña)
+-- Igual que codigo_verificacion pero para el flujo de "olvidé mi contraseña".
+-- Aplica a cualquier tipo de usuario (DUENO, EMPLEADO o BODEGUERO): se pide
+-- por correo el código, se valida con máx. 5 intentos, y con él se obtiene un
+-- token de corta duración para escribir la nueva contraseña.
+CREATE TABLE codigo_recuperacion (
+    id_recuperacion SERIAL          PRIMARY KEY,
+    id_usuario      INT             NOT NULL REFERENCES usuario(id_usuario) ON DELETE CASCADE,
+    codigo_hash     VARCHAR(255)    NOT NULL,
+    creado_en       TIMESTAMP       NOT NULL DEFAULT NOW(),
+    expira_en       TIMESTAMP       NOT NULL,
+    usado           BOOLEAN         NOT NULL DEFAULT FALSE,
+    intentos        INT             NOT NULL DEFAULT 0
+);
+
+-- Búsqueda rápida de "el código de recuperación vigente más reciente".
+CREATE INDEX idx_codigo_recuperacion_usuario
+    ON codigo_recuperacion (id_usuario, creado_en DESC);
+-- SOLICITUD_PROMOCION_DUENO (migración 05)
+-- Proceso de 2 pasos para ascender a un usuario a tipo DUENO: un dueño
+-- existente lo solicita, se le manda un código de verificación a su propio
+-- correo, y solo con ese código se aplica el cambio (ver
+-- app/api/usuarios/promover-dueno). Límite máximo de dueños: lib/roles.ts.
+CREATE TABLE solicitud_promocion_dueno (
+    id_solicitud          SERIAL          PRIMARY KEY,
+    id_usuario_objetivo   INT             NOT NULL REFERENCES usuario(id_usuario) ON DELETE CASCADE,
+    id_dueno_solicitante  INT             NOT NULL REFERENCES usuario(id_usuario) ON DELETE CASCADE,
+    codigo_hash           VARCHAR(255)    NOT NULL,
+    creado_en             TIMESTAMP       NOT NULL DEFAULT NOW(),
+    expira_en             TIMESTAMP       NOT NULL,
+    usado                 BOOLEAN         NOT NULL DEFAULT FALSE,
+    intentos              INT             NOT NULL DEFAULT 0
+);
+
+CREATE INDEX idx_solicitud_promocion_dueno_objetivo
+    ON solicitud_promocion_dueno (id_usuario_objetivo, creado_en DESC);
 
 -- BODEGA
 CREATE TABLE bodega (
@@ -292,6 +337,34 @@ CREATE TABLE pago_deuda (
 
 CREATE INDEX idx_pago_deuda_id_deuda ON pago_deuda(id_deuda);
 
+-- CONFIGURACION_NOTIFICACIONES_DEUDA (migración 06) — fila única (id = 1)
+-- con lo que configura el dueño: cada cuántos días se le recuerda a un
+-- cliente su deuda pendiente, y si el envío automático está activo. Ver
+-- lib/notificaciones-deuda.ts.
+CREATE TABLE configuracion_notificaciones_deuda (
+    id                SMALLINT        PRIMARY KEY DEFAULT 1,
+    activo            BOOLEAN         NOT NULL DEFAULT FALSE,
+    intervalo_dias    INT             NOT NULL DEFAULT 7 CHECK (intervalo_dias > 0),
+    actualizado_en    TIMESTAMP       NOT NULL DEFAULT NOW(),
+    actualizado_por   INT             REFERENCES usuario(id_usuario),
+    CONSTRAINT chk_configuracion_notificaciones_deuda_fila_unica CHECK (id = 1)
+);
+
+INSERT INTO configuracion_notificaciones_deuda (id, activo, intervalo_dias) VALUES (1, FALSE, 7);
+
+-- NOTIFICACION_DEUDA (migración 06) — bitácora de cada recordatorio de
+-- deuda enviado a un cliente; sirve para saber si ya le toca uno nuevo
+-- (última notificación + intervalo_dias) y como historial para el dueño.
+CREATE TABLE notificacion_deuda (
+    id_notificacion     SERIAL          PRIMARY KEY,
+    id_cliente          INT             NOT NULL REFERENCES cliente(id_cliente) ON DELETE CASCADE,
+    monto_notificado    NUMERIC(12,2)   NOT NULL,
+    cantidad_deudas     INT             NOT NULL,
+    enviado_en          TIMESTAMP       NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_notificacion_deuda_cliente ON notificacion_deuda (id_cliente, enviado_en DESC);
+
 -- ORDEN (órdenes de compra)
 CREATE TABLE orden (
     id_orden        SERIAL          PRIMARY KEY,
@@ -416,7 +489,7 @@ INSERT INTO bodega (nombre_bodega, ubicacion) VALUES ('Bodega Principal', 'Zona 
 
 -- Contraseña de prueba (los usuarios): password123
 INSERT INTO usuario (nombre, correo, telefono, contrasena_hash, tipo_usuario) VALUES
-  ('Admin Dueño',    'dueno@tienda.com',        '50201234567', '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm', 'DUENO'),
+  ('Admin Dueño',    'cumatzemilio6@gmail.com',        '50201234567', '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm', 'DUENO'),
   ('Carlos Empleado','armasangel193@gmail.com', '50207654321', '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm', 'EMPLEADO');
 
 INSERT INTO usuario (nombre, correo, telefono, contrasena_hash, tipo_usuario, id_bodega) VALUES
@@ -602,4 +675,106 @@ BEGIN
   END LOOP;
 
   RAISE NOTICE 'Generadas % ventas de prueba con su detalle, kardex, pagos y facturas.', n_ventas;
+END $$;
+
+-- ── Deudas de prueba (para ver el módulo de Deudas y probar el sistema de
+--    notificaciones automáticas con datos reales, no una base vacía) ──────
+-- Cubre a propósito los casos que le importan al sistema de notificaciones:
+-- una por vencer, una vencida con abono parcial, una muy vencida (con un
+-- recordatorio ya enviado hace tiempo, para ver que se le puede volver a
+-- notificar), una cuenta abierta sin fecha límite, una ya pagada por
+-- completo (no debe aparecer como pendiente ni notificarse), y una deuda
+-- de alguien que no es cliente registrado (no tiene correo al cual
+-- mandarle nada, así que el sistema la deja fuera).
+DO $$
+DECLARE
+  v_id_deuda INT;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM deuda) THEN
+
+    -- Maria Comprador: por vencer en 5 días.
+    INSERT INTO deuda (nombre_deudor, id_usuario, id_cliente, monto_total, estado_deuda, fecha_inicio, fecha_limite_pago)
+    SELECT 'Maria Comprador', 1, c.id_cliente, 31.50, 'PENDIENTE', CURRENT_DATE - 20, CURRENT_DATE + 5
+    FROM cliente c WHERE c.correo = 'maria@gmail.com'
+    RETURNING id_deuda INTO v_id_deuda;
+
+    INSERT INTO deuda_producto (id_deuda, id_producto, cantidad, precio_unitario, subtotal)
+    SELECT v_id_deuda, p.id_producto, v.cantidad, v.precio, v.subtotal
+    FROM producto p
+    JOIN (VALUES ('ACE-001', 1, 18.00, 18.00), ('ARR-001', 3, 4.50, 13.50))
+      AS v(codigo, cantidad, precio, subtotal) ON p.codigo_producto = v.codigo;
+
+    -- Maria Comprador: vencida hace 10 días, con un abono parcial (queda
+    -- debiendo Q30 de los Q50 originales).
+    INSERT INTO deuda (nombre_deudor, id_usuario, id_cliente, monto_total, estado_deuda, fecha_inicio, fecha_limite_pago)
+    SELECT 'Maria Comprador', 1, c.id_cliente, 50.00, 'PENDIENTE', CURRENT_DATE - 40, CURRENT_DATE - 10
+    FROM cliente c WHERE c.correo = 'maria@gmail.com'
+    RETURNING id_deuda INTO v_id_deuda;
+
+    INSERT INTO deuda_producto (id_deuda, id_producto, cantidad, precio_unitario, subtotal)
+    SELECT v_id_deuda, p.id_producto, 4, 12.50, 50.00 FROM producto p WHERE p.codigo_producto = 'LEC-001';
+
+    INSERT INTO pago_deuda (id_deuda, monto, fecha_pago, id_usuario, metodo_pago, nota)
+    VALUES (v_id_deuda, 20.00, NOW() - INTERVAL '3 days', 1, 'EFECTIVO', 'Abono parcial');
+
+    -- Lucia Rodriguez: pendiente, todavía dentro del plazo.
+    INSERT INTO deuda (nombre_deudor, id_usuario, id_cliente, monto_total, estado_deuda, fecha_inicio, fecha_limite_pago)
+    SELECT 'Lucia Rodriguez', 1, c.id_cliente, 24.00, 'PENDIENTE', CURRENT_DATE - 15, CURRENT_DATE + 15
+    FROM cliente c WHERE c.correo = 'lucia.rodriguez@gmail.com'
+    RETURNING id_deuda INTO v_id_deuda;
+
+    INSERT INTO deuda_producto (id_deuda, id_producto, cantidad, precio_unitario, subtotal)
+    SELECT v_id_deuda, p.id_producto, 4, 6.00, 24.00 FROM producto p WHERE p.codigo_producto = 'FRI-001';
+
+    -- Jorge Estrada: muy vencida (30 días) y ya se le había notificado una
+    -- vez hace 20 días — como pasaron más días que el intervalo por
+    -- defecto (7), le vuelve a tocar un recordatorio.
+    INSERT INTO deuda (nombre_deudor, id_usuario, id_cliente, monto_total, estado_deuda, fecha_inicio, fecha_limite_pago)
+    SELECT 'Jorge Estrada', 1, c.id_cliente, 96.00, 'PENDIENTE', CURRENT_DATE - 60, CURRENT_DATE - 30
+    FROM cliente c WHERE c.correo = 'jorge.estrada@gmail.com'
+    RETURNING id_deuda INTO v_id_deuda;
+
+    INSERT INTO deuda_producto (id_deuda, id_producto, cantidad, precio_unitario, subtotal)
+    SELECT v_id_deuda, p.id_producto, 8, 12.00, 96.00 FROM producto p WHERE p.codigo_producto = 'BEB-001';
+
+    INSERT INTO notificacion_deuda (id_cliente, monto_notificado, cantidad_deudas, enviado_en)
+    SELECT c.id_cliente, 96.00, 1, NOW() - INTERVAL '20 days'
+    FROM cliente c WHERE c.correo = 'jorge.estrada@gmail.com';
+
+    -- Distribuidora Sol (mayorista): cuenta abierta, sin fecha límite.
+    INSERT INTO deuda (nombre_deudor, id_usuario, id_cliente, monto_total, estado_deuda, fecha_inicio, fecha_limite_pago)
+    SELECT 'Distribuidora Sol', 1, c.id_cliente, 750.00, 'PENDIENTE', CURRENT_DATE - 5, NULL
+    FROM cliente c WHERE c.correo = 'ventas@disol.com'
+    RETURNING id_deuda INTO v_id_deuda;
+
+    INSERT INTO deuda_producto (id_deuda, id_producto, cantidad, precio_unitario, subtotal)
+    SELECT v_id_deuda, p.id_producto, v.cantidad, v.precio, v.subtotal
+    FROM producto p
+    JOIN (VALUES ('BEB-001', 50, 10.00, 500.00), ('FRI-001', 50, 5.00, 250.00))
+      AS v(codigo, cantidad, precio, subtotal) ON p.codigo_producto = v.codigo;
+
+    -- Ana Morales: ya pagada por completo — no debe salir como pendiente
+    -- ni recibir ningún recordatorio.
+    INSERT INTO deuda (nombre_deudor, id_usuario, id_cliente, monto_total, estado_deuda, fecha_inicio, fecha_limite_pago)
+    SELECT 'Ana Morales', 1, c.id_cliente, 40.00, 'PAGADA', CURRENT_DATE - 25, CURRENT_DATE - 18
+    FROM cliente c WHERE c.correo = 'ana.morales@gmail.com'
+    RETURNING id_deuda INTO v_id_deuda;
+
+    INSERT INTO deuda_producto (id_deuda, id_producto, cantidad, precio_unitario, subtotal)
+    SELECT v_id_deuda, p.id_producto, 10, 4.00, 40.00 FROM producto p WHERE p.codigo_producto = 'BEB-002';
+
+    INSERT INTO pago_deuda (id_deuda, monto, fecha_pago, id_usuario, metodo_pago, nota)
+    VALUES (v_id_deuda, 40.00, (CURRENT_DATE - 18)::timestamp, 1, 'TRANSFERENCIA', 'Pago total');
+
+    -- Deudor que no es cliente registrado (sin correo al que mandarle
+    -- nada) — el sistema de notificaciones automáticas lo deja fuera.
+    INSERT INTO deuda (nombre_deudor, telefono_deudor, id_usuario, id_cliente, monto_total, estado_deuda, fecha_inicio, fecha_limite_pago)
+    VALUES ('Roberto (cliente no registrado)', '50201230000', 1, NULL, 12.50, 'PENDIENTE', CURRENT_DATE - 3, CURRENT_DATE + 7)
+    RETURNING id_deuda INTO v_id_deuda;
+
+    INSERT INTO deuda_producto (id_deuda, id_producto, cantidad, precio_unitario, subtotal)
+    SELECT v_id_deuda, p.id_producto, 1, 12.50, 12.50 FROM producto p WHERE p.codigo_producto = 'LEC-001';
+
+    RAISE NOTICE 'Generadas 7 deudas de prueba (con detalle, abonos y una ya pagada).';
+  END IF;
 END $$;

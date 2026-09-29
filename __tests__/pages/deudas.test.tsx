@@ -51,12 +51,17 @@ function deudaBase(overrides: Record<string, unknown> = {}) {
   } as Record<string, unknown>;
 }
 
+const notifConfigPorDefecto = { activo: false, intervalo_dias: 7, actualizado_en: null, actualizado_por: null };
+
 function setupServerDeudas(deudas: unknown[]) {
   server.use(
     rest.get("/api/sesion", (_req, res, ctx) => res(ctx.json({ usuario: mockUsuarioDueno }))),
     rest.get("/api/deudas", (_req, res, ctx) => res(ctx.json({ deudas }))),
     rest.get("/api/productos", (_req, res, ctx) => res(ctx.json({ productos }))),
-    rest.get("/api/clientes", (_req, res, ctx) => res(ctx.json({ clientes })))
+    rest.get("/api/clientes", (_req, res, ctx) => res(ctx.json({ clientes }))),
+    rest.get("/api/configuracion/notificaciones-deuda", (_req, res, ctx) =>
+      res(ctx.json({ configuracion: notifConfigPorDefecto }))
+    )
   );
 }
 
@@ -111,6 +116,9 @@ describe("DeudasPage", () => {
       rest.get("/api/deudas", (_req, res, ctx) => res(ctx.json({ deudas: [deudaBase()] }))),
       rest.get("/api/productos", (_req, res, ctx) => res(ctx.json({ productos }))),
       rest.get("/api/clientes", (_req, res, ctx) => res(ctx.json({ clientes }))),
+      rest.get("/api/configuracion/notificaciones-deuda", (_req, res, ctx) =>
+        res(ctx.json({ configuracion: notifConfigPorDefecto }))
+      ),
       rest.post("/api/deudas/1/pagos", async (req, res, ctx) => {
         postedBody = await req.json();
         return res(
@@ -143,12 +151,56 @@ describe("DeudasPage", () => {
     });
   });
 
+  it("lets the dueño view and change the automatic debt-reminder settings", async () => {
+    setupServerDeudas([deudaBase()]);
+    let patchedBody: unknown = null;
+    let ejecutado = false;
+    let configActual = { ...notifConfigPorDefecto };
+    server.use(
+      rest.patch("/api/configuracion/notificaciones-deuda", async (req, res, ctx) => {
+        patchedBody = await req.json();
+        configActual = { ...configActual, ...(patchedBody as object) };
+        return res(ctx.json({ configuracion: configActual }));
+      }),
+      rest.post("/api/configuracion/notificaciones-deuda/ejecutar-ahora", (_req, res, ctx) => {
+        ejecutado = true;
+        return res(ctx.json({ activo: true, procesados: 2, enviados: 2, fallidos: 0 }));
+      })
+    );
+
+    const user = userEvent.setup();
+    render(<DeudasPage />);
+
+    await user.click(await screen.findByRole("button", { name: "Notificaciones" }));
+    expect(await screen.findByText(/Envío automático desactivado/)).toBeInTheDocument();
+
+    // Activar el envío automático.
+    await user.click(screen.getByRole("checkbox"));
+    await waitFor(() => expect(patchedBody).toEqual({ activo: true }));
+    expect(await screen.findByText(/Envío automático activado/)).toBeInTheDocument();
+
+    // Cambiar el intervalo.
+    const inputIntervalo = screen.getByRole("spinbutton");
+    await user.clear(inputIntervalo);
+    await user.type(inputIntervalo, "14");
+    await user.click(screen.getByRole("button", { name: "Guardar" }));
+    await waitFor(() => expect(patchedBody).toEqual({ intervalo_dias: 14 }));
+
+    // Enviar ahora.
+    await user.click(screen.getByRole("button", { name: "Enviar ahora" }));
+    await waitFor(() => expect(ejecutado).toBe(true));
+    expect(await screen.findByText(/2 enviados/)).toBeInTheDocument();
+  });
+
   it("shows the error from the API when the payment fails", async () => {
     server.use(
       rest.get("/api/sesion", (_req, res, ctx) => res(ctx.json({ usuario: mockUsuarioDueno }))),
       rest.get("/api/deudas", (_req, res, ctx) => res(ctx.json({ deudas: [deudaBase()] }))),
       rest.get("/api/productos", (_req, res, ctx) => res(ctx.json({ productos }))),
       rest.get("/api/clientes", (_req, res, ctx) => res(ctx.json({ clientes }))),
+      rest.get("/api/configuracion/notificaciones-deuda", (_req, res, ctx) =>
+        res(ctx.json({ configuracion: notifConfigPorDefecto }))
+      ),
       rest.post("/api/deudas/1/pagos", (_req, res, ctx) =>
         res(ctx.status(400), ctx.json({ error: "El pago es mayor al saldo pendiente." }))
       )
