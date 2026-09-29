@@ -6,6 +6,15 @@ type HeaderRule = { source: string; headers: Header[] };
 
 const NODE_ENV_ORIGINAL = process.env.NODE_ENV;
 
+/**
+ * `process.env.NODE_ENV` es de solo lectura en los tipos de Next, pero
+ * `next.config.mjs` lo lee en runtime para decidir si manda HSTS. El cast es
+ * la vía estándar para simular el entorno en un test.
+ */
+function setNodeEnv(value: string) {
+  (process.env as Record<string, string | undefined>).NODE_ENV = value;
+}
+
 /** Ejecuta `headers()` y devuelve las reglas como mapa clave → valor. */
 async function obtenerHeaders() {
   const rules: HeaderRule[] = await nextConfig.headers!();
@@ -18,7 +27,7 @@ async function obtenerHeaders() {
 
 describe("next.config.mjs (DEV-127: headers de seguridad)", () => {
   afterEach(() => {
-    process.env.NODE_ENV = NODE_ENV_ORIGINAL;
+    setNodeEnv(NODE_ENV_ORIGINAL!);
   });
 
   it("desactiva el header X-Powered-By para no revelar que el backend es Next.js", () => {
@@ -44,7 +53,7 @@ describe("next.config.mjs (DEV-127: headers de seguridad)", () => {
   });
 
   it("omite HSTS fuera de producción para no cachear el max-age en dev", async () => {
-    process.env.NODE_ENV = "development";
+    setNodeEnv("development");
     const { headers } = await obtenerHeaders();
     expect(headers).not.toHaveProperty("Strict-Transport-Security");
   });
@@ -55,7 +64,7 @@ describe("next.config.mjs (DEV-127: headers de seguridad)", () => {
   });
 
   it("envía HSTS en producción, que es donde Nginx + Certbot sirven por TLS", async () => {
-    process.env.NODE_ENV = "production";
+    setNodeEnv("production");
     const { headers } = await obtenerHeaders();
     expect(headers["Strict-Transport-Security"]).toBe(
       "max-age=63072000; includeSubDomains"
@@ -63,7 +72,7 @@ describe("next.config.mjs (DEV-127: headers de seguridad)", () => {
   });
 
   it("mantiene los headers base junto al HSTS en producción", async () => {
-    process.env.NODE_ENV = "production";
+    setNodeEnv("production");
     const { headers } = await obtenerHeaders();
     // HSTS no debe reemplazarlos: es un header más, no un caso aparte.
     expect(headers).toMatchObject({

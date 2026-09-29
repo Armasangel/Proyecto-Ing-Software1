@@ -9,10 +9,14 @@ jest.mock("@/lib/client-logger", () => ({
 
 const mockLogClientError = logClientError as jest.Mock;
 
-// Next.js reemplaza el root layout cuando renderiza global-error, así que este
-// componente emite sus propios <html>/<head>/<body> adentro del <div> que usa
-// RTL. React avisa por consola de eso; el aviso no es sobre nuestra app, así que
-// se filtra en vez de dejarlo ensuciar la salida de la suite.
+// React 19 no mete <html>, <head> ni <body> dentro del container de RTL: los
+// aplica al documento real, que es exactamente el comportamiento que este
+// archivo necesita (reemplaza el root layout). Por eso las aserciones van
+// contra document.* y no contra `container`.
+//
+// El único costo es que React avisa por consola que no se puede anidar <html>
+// adentro de un <div>. Se filtra para no dejar ruido: una suite que ensucia la
+// salida entrena a ignorar los warnings que sí importan.
 let consoleSpy: jest.SpyInstance;
 
 beforeEach(() => {
@@ -27,8 +31,8 @@ afterEach(() => consoleSpy.mockRestore());
 function renderConError(digest?: string) {
   const error = Object.assign(new Error("falló el layout"), { digest });
   const reset = jest.fn();
-  const { container } = render(<GlobalError error={error} reset={reset} />);
-  return { reset, container };
+  render(<GlobalError error={error} reset={reset} />);
+  return { reset, error };
 }
 
 describe("app/global-error.tsx (frontera de error del layout raíz)", () => {
@@ -43,20 +47,26 @@ describe("app/global-error.tsx (frontera de error del layout raíz)", () => {
     );
   });
 
-  it("declara su propio <html lang='es'> porque reemplaza el root layout", () => {
-    const { container } = renderConError();
+  it("aplica su propio lang al documento porque reemplaza el root layout", () => {
+    renderConError();
 
-    const html = container.querySelector("html")!;
-    expect(html).toHaveAttribute("lang", "es");
-    expect(container.querySelector("body")).not.toBeNull();
+    expect(document.documentElement).toHaveAttribute("lang", "es");
+  });
+
+  it("muestra la pantalla de error en el body", () => {
+    renderConError();
+
+    expect(document.body.textContent).toContain("El sistema no pudo arrancar");
   });
 
   it("re-declara las fuentes del sistema, que el layout reemplazado ya no aporta", () => {
-    const { container } = renderConError();
+    renderConError();
 
     // Sin estos links la pantalla de error pierde Syne / DM Sans y renderiza
     // con la tipografía por defecto del navegador.
-    const fuentes = container.querySelectorAll('link[href*="fonts.googleapis.com"]');
+    const fuentes = document.head.querySelectorAll(
+      'link[href*="fonts.googleapis.com"]'
+    );
     expect(fuentes.length).toBeGreaterThan(0);
   });
 
