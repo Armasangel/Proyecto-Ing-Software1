@@ -65,11 +65,27 @@ case "${1:-live}" in
     ;;
 
   errors)
-    exec_in_app "grep -h '\"level\":50' $LOG_DIR/server.log* 2>/dev/null | $PPY"
+    exec_in_app "
+      for f in $LOG_DIR/server.log*; do
+        [ -e \"\$f\" ] || continue
+        case \"\$f\" in
+          *.gz) zcat \"\$f\" ;;
+          *)    cat \"\$f\" ;;
+        esac
+      done 2>/dev/null | grep -h '\"level\":50' | $PPY
+    "
     ;;
 
   warnings)
-    exec_in_app "grep -hE '\"level\":(50|40)' $LOG_DIR/server.log* 2>/dev/null | $PPY"
+    exec_in_app "
+      for f in $LOG_DIR/server.log*; do
+        [ -e \"\$f\" ] || continue
+        case \"\$f\" in
+          *.gz) zcat \"\$f\" ;;
+          *)    cat \"\$f\" ;;
+        esac
+      done 2>/dev/null | grep -hE '\"level\":(50|40)' | $PPY
+    "
     ;;
 
   grep)
