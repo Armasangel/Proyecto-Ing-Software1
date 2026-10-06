@@ -48,31 +48,6 @@ export function BarChart({ data, height = 160 }: { data: { fecha: string; total_
   );
 }
 
-export function DonutChart({ segments, size = 160 }: { segments: { label: string; value: number; color: string }[]; size?: number }) {
-  const total = segments.reduce((s, sg) => s + sg.value, 0);
-  if (total === 0) return <EmptyChart label="Sin datos" />;
-  const cx = size / 2; const cy = size / 2; const R = size * 0.38; const r = size * 0.22;
-  let cumAngle = -Math.PI / 2;
-  const arcs = segments.map((sg) => {
-    const angle = (sg.value / total) * 2 * Math.PI;
-    const x1 = cx + R * Math.cos(cumAngle); const y1 = cy + R * Math.sin(cumAngle);
-    cumAngle += angle;
-    const x2 = cx + R * Math.cos(cumAngle); const y2 = cy + R * Math.sin(cumAngle);
-    const ix1 = cx + r * Math.cos(cumAngle); const iy1 = cy + r * Math.sin(cumAngle);
-    const ix2 = cx + r * Math.cos(cumAngle - angle); const iy2 = cy + r * Math.sin(cumAngle - angle);
-    const large = angle > Math.PI ? 1 : 0;
-    const path = [`M ${x1} ${y1}`, `A ${R} ${R} 0 ${large} 1 ${x2} ${y2}`, `L ${ix1} ${iy1}`, `A ${r} ${r} 0 ${large} 0 ${ix2} ${iy2}`, "Z"].join(" ");
-    return { ...sg, path, pct: Math.round((sg.value / total) * 100) };
-  });
-  return (
-    <svg viewBox={`0 0 ${size} ${size}`} style={{ width: "100%", height: "auto" }}>
-      {arcs.map((arc) => (<path key={arc.label} d={arc.path} fill={arc.color}><title>{`${arc.label}: ${arc.pct}%`}</title></path>))}
-      <text x={cx} y={cy - 4} textAnchor="middle" fontSize={size * 0.1} fontWeight="700" fill="var(--text)">{total}</text>
-      <text x={cx} y={cy + size * 0.1} textAnchor="middle" fontSize={size * 0.07} fill="var(--muted)">total</text>
-    </svg>
-  );
-}
-
 export function HBarChart({ data, valueKey, labelKey, color = "rgba(45,106,79,.75)", formatValue }: { data: Record<string, number | string>[]; valueKey: string; labelKey: string; color?: string; formatValue?: (v: number) => string }) {
   if (data.length === 0) return <EmptyChart label="Sin datos" />;
   const max = Math.max(...data.map((d) => Number(d[valueKey])), 1);

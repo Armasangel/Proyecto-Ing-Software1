@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import { Icon, type IconName } from "@/components/Icon";
+import { EmptyChart } from "./charts";
 import { s } from "./styles";
 
 export function DeltaBadge({ delta }: { delta: number | null }) {
@@ -39,24 +40,68 @@ export function Card({ title, children, style }: { title?: string; children: Rea
   );
 }
 
-export function LegendPill({ label, value, color }: { label: string; value: string | number; color?: string }) {
+/** Tarjeta con un porcentaje grande y una barra de progreso. */
+export function ProgressCard({ label, value, pct, sub, icon }: { label: string; value: string; pct: number; sub?: string; icon: IconName }) {
+  const w = Math.min(100, Math.max(0, pct));
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.35rem 0", borderBottom: "1px solid var(--border)" }}>
-      {color && <span style={{ width: 10, height: 10, borderRadius: 3, background: color, flexShrink: 0 }} />}
-      <span style={{ fontSize: "0.82rem", color: "var(--muted)", flex: 1 }}>{label}</span>
-      <span style={{ fontSize: "0.88rem", fontWeight: 600, color: "var(--text)", fontVariantNumeric: "tabular-nums" }}>{value}</span>
+    <div style={s.statCard}>
+      <div style={s.statCardTop}>
+        <div style={s.statIconWrap}>
+          <Icon name={icon} variant="dark" size={18} />
+        </div>
+        <span style={s.statLabel}>{label}</span>
+      </div>
+      <div style={s.statValue}>{value}</div>
+      <div role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={w} style={s.progressTrack}>
+        <div style={{ ...s.progressFill, width: `${w}%` }} />
+      </div>
+      {sub && <div style={{ ...s.statSub, marginTop: "0.45rem" }}>{sub}</div>}
     </div>
   );
 }
 
-export function StatDescRow({ label, value, hint }: { label: string; value: string; hint?: string }) {
+export type SplitSegment = { label: string; value: number; color: string; detail?: string };
+
+/** Una sola barra dividida en partes, con su porcentaje debajo. Reemplaza a las gráficas de pastel. */
+export function SplitBar({ segments }: { segments: SplitSegment[] }) {
+  const total = segments.reduce((sum, sg) => sum + sg.value, 0);
+  if (total === 0) return <EmptyChart label="Sin datos" />;
   return (
-    <div style={{ padding: "0.65rem 0", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "0.5rem" }}>
-      <div>
-        <div style={{ fontSize: "0.82rem", color: "var(--muted)" }}>{label}</div>
-        {hint && <div style={{ fontSize: "0.7rem", color: "var(--border)", marginTop: "0.1rem" }}>{hint}</div>}
+    <div>
+      <div style={{ display: "flex", height: 14, borderRadius: 99, overflow: "hidden", background: "var(--surface2)" }}>
+        {segments.filter((sg) => sg.value > 0).map((sg) => (
+          <div key={sg.label} title={`${sg.label}: ${Math.round((sg.value / total) * 100)}%`} style={{ width: `${(sg.value / total) * 100}%`, background: sg.color }} />
+        ))}
       </div>
-      <div style={{ fontFamily: "var(--font-head)", fontSize: "1.05rem", fontWeight: 700, color: "var(--accent)", fontVariantNumeric: "tabular-nums", textAlign: "right", flexShrink: 0 }}>{value}</div>
+      <div style={{ marginTop: "0.5rem" }}>
+        {segments.map((sg) => (
+          <div key={sg.label} style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.35rem 0", borderBottom: "1px solid var(--border)" }}>
+            <span style={{ width: 10, height: 10, borderRadius: 3, background: sg.color, flexShrink: 0 }} />
+            <span style={{ fontSize: "0.82rem", color: "var(--muted)", flex: 1 }}>{sg.label}{sg.detail ? ` · ${sg.detail}` : ""}</span>
+            <span style={{ fontSize: "0.88rem", fontWeight: 600, color: "var(--text)", fontVariantNumeric: "tabular-nums" }}>{Math.round((sg.value / total) * 100)}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Contadores sencillos: un número grande con su etiqueta y un punto de color. */
+export function CounterGrid({ items }: { items: { label: string; value: number; color: string }[] }) {
+  if (items.length === 0) return <EmptyChart label="Sin datos" />;
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: "0.75rem" }}>
+      {items.map((it) => (
+        <div key={it.label} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "0.65rem 0.8rem" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.74rem", color: "var(--muted)" }}>
+            <span style={{ width: 8, height: 8, borderRadius: 99, background: it.color, flexShrink: 0 }} />
+            {it.label}
+          </div>
+          <div style={{ fontFamily: "var(--font-head)", fontSize: "1.4rem", fontWeight: 700, color: "var(--text)", marginTop: "0.15rem", fontVariantNumeric: "tabular-nums" }}>
+            {it.value.toLocaleString("es-GT")}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

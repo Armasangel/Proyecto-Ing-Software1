@@ -14,3 +14,8 @@ export function fmtDate(iso: string) {
   const [, mm, dd] = iso.split("-");
   return `${dd}/${mm}`;
 }
+
+/** "MINORISTA" -> "Minorista" */
+export function cap(t: string) {
+  return t ? t.charAt(0).toUpperCase() + t.slice(1).toLowerCase() : t;
+}

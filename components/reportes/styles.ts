@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 
 export const s: Record<string, CSSProperties> = {
-  filterBar: { display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "flex-end", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "0.85rem 1.1rem", marginBottom: "1.25rem" },
+  filterBar: { display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "flex-end", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "0.85rem 1.1rem", marginBottom: "0.75rem" },
   chip: { border: "1px solid var(--border)", borderRadius: 99, padding: "0.4rem 0.85rem", fontSize: "0.82rem", fontWeight: 600, cursor: "pointer", transition: "all .15s", fontFamily: "var(--font-body)" },
   dateInput: { background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "0.45rem 0.65rem", color: "var(--text)", fontSize: "0.85rem", outline: "none" },
   miniLabel: { fontSize: "0.7rem", fontWeight: 600, color: "var(--muted)", textTransform: "uppercase" as const, letterSpacing: "0.05em" },
@@ -28,9 +28,14 @@ export const s: Record<string, CSSProperties> = {
   heroStat: { display: "flex", flexDirection: "column" as const, background: "rgba(0,0,0,.2)", borderRadius: 8, padding: "0.5rem 0.75rem", flex: "1 1 70px", marginTop: "0.75rem" },
   heroStatVal: { fontFamily: "var(--font-head)", fontSize: "1rem", fontWeight: 700, color: "var(--accent)", lineHeight: 1.1, fontVariantNumeric: "tabular-nums" as const },
   heroStatSub: { fontSize: "0.68rem", color: "rgba(255,255,255,.45)", marginTop: "0.15rem" },
-  nBox: { display: "flex", flexDirection: "column" as const, alignItems: "center", justifyContent: "center", background: "rgba(45,106,79,.08)", border: "1px solid rgba(45,106,79,.2)", borderRadius: 12, padding: "1.5rem 2rem", gap: "0.35rem" },
-  nVal: { fontFamily: "var(--font-head)", fontSize: "2.5rem", fontWeight: 800, color: "var(--accent)", lineHeight: 1 },
-  nLabel: { fontSize: "0.78rem", color: "var(--muted)", textAlign: "center" as const },
+  stickyHeader: { position: "sticky" as const, top: 0, zIndex: 20, background: "var(--bg)", paddingTop: "0.25rem" },
+  tabStack: { display: "flex", flexDirection: "column" as const, gap: "1.25rem" },
+  twoCol: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "1.25rem" },
+  note: { fontSize: "0.78rem", color: "var(--muted)" },
+  progressTrack: { background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 99, height: 8, overflow: "hidden", marginTop: "0.6rem" },
+  progressFill: { height: "100%", background: "var(--accent)", borderRadius: 99, transition: "width .5s ease" },
+  tabBar: { display: "flex", gap: "0.25rem", overflowX: "auto" as const, borderBottom: "1px solid var(--border)", marginBottom: "1.25rem" },
+  tab: { background: "transparent", border: "none", borderBottom: "3px solid transparent", padding: "0.7rem 1.1rem", fontFamily: "var(--font-head)", fontSize: "0.92rem", fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" as const, marginBottom: -1 },
   table: { width: "100%", borderCollapse: "collapse" as const },
   th: { fontSize: "0.68rem", fontWeight: 600, color: "var(--muted)", textTransform: "uppercase" as const, letterSpacing: "0.05em", padding: "0.4rem 0.5rem", textAlign: "left" as const, borderBottom: "1px solid var(--border)", background: "var(--surface2)", whiteSpace: "nowrap" as const },
   td: { padding: "0.5rem 0.5rem", fontSize: "0.82rem", color: "var(--text)", verticalAlign: "middle" as const },

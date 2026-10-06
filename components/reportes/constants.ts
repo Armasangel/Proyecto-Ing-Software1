@@ -16,13 +16,3 @@ export const ESTADO_COLOR: Record<string, string> = {
   ENTREGADO:  "var(--green)",
   CANCELADO:  "var(--red)",
 };
-
-export const CAT_COLORS = [
-  "rgba(45,106,79,.85)",
-  "rgba(88,166,255,.85)",
-  "rgba(232,160,69,.85)",
-  "rgba(248,81,73,.85)",
-  "rgba(63,185,80,.85)",
-  "rgba(180,83,189,.85)",
-  "rgba(255,168,68,.85)",
-];
