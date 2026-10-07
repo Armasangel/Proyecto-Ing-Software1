@@ -1,10 +1,10 @@
 import { Icon } from "@/components/Icon";
-import { BarChart, EmptyChart, HourChart } from "./charts";
+import { BarChart, EmptyChart } from "./charts";
 import { ESTADO_COLOR } from "./constants";
 import { s } from "./styles";
 import type { EstadisticasData } from "./types";
 import { Card, CounterGrid, ProgressCard, SplitBar, StatCard } from "./ui";
-import { cap, pct, q } from "./utils";
+import { agruparIngresos, cap, fmtDate, pct, q } from "./utils";
 
 const TIPO_COLORS = ["rgba(45,106,79,.8)", "rgba(88,166,255,.8)"];
 
@@ -13,6 +13,10 @@ export function VentasTab({ data }: { data: EstadisticasData }) {
   const deltaVentas = comp ? pct(data.resumen.total_ventas, comp.total_ventas_anterior) : null;
   const deltaIngresos = comp ? pct(data.resumen.ingresos_totales, comp.ingresos_anteriores) : null;
   const k = data.kpis;
+  const { puntos, granularidad } = agruparIngresos(data.ventas_por_dia);
+  const tituloIngresos = { dia: "Ingresos por día", semana: "Ingresos por semana", mes: "Ingresos por mes" }[granularidad];
+  const diaPico = data.ventas_por_dia.length > 0 ? data.ventas_por_dia.reduce((a, b) => (b.total_dia > a.total_dia ? b : a)) : null;
+  const horaPico = data.ventas_por_hora.length > 0 ? data.ventas_por_hora.reduce((a, b) => (b.cantidad > a.cantidad ? b : a)) : null;
 
   return (
     <div style={s.tabStack}>
@@ -30,12 +34,17 @@ export function VentasTab({ data }: { data: EstadisticasData }) {
       {/* Abajo: gráficas */}
       {/* Fila 2 — Gráfica de barras + Producto #1 */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: "1.25rem" }}>
-        <Card title="Ingresos diarios (Q)">
-          <BarChart data={data.ventas_por_dia} />
-          {data.ventas_por_dia.length > 0 && (() => {
-            const peak = data.ventas_por_dia.reduce((a, b) => b.total_dia > a.total_dia ? b : a);
-            return <p style={{ marginTop: "0.6rem", fontSize: "0.78rem", color: "var(--muted)" }}>Día pico: <strong style={{ color: "var(--accent)" }}>{peak.fecha}</strong>{" · "}{q(peak.total_dia)} en {peak.cantidad} venta{peak.cantidad !== 1 ? "s" : ""}</p>;
-          })()}
+        <Card title={`${tituloIngresos} (Q)`}>
+          {puntos.length === 1 ? (
+            <EmptyChart label="Solo hay ventas de un día; con más días aparece la gráfica" />
+          ) : (
+            <BarChart puntos={puntos} />
+          )}
+          {diaPico && (
+            <p style={{ marginTop: "0.6rem", fontSize: "0.82rem", color: "var(--muted)" }}>
+              Día con más ventas: <strong style={{ color: "var(--accent2)" }}>{fmtDate(diaPico.fecha.slice(0, 10))}</strong>{" · "}{q(diaPico.total_dia)} en {diaPico.cantidad} venta{diaPico.cantidad !== 1 ? "s" : ""}
+            </p>
+          )}
         </Card>
 
         {data.producto_mas_comprado ? (
@@ -67,21 +76,29 @@ export function VentasTab({ data }: { data: EstadisticasData }) {
         )}
       </div>
 
-      <div style={s.twoCol}>
-        <Card title="Cómo se vendió">
-          <div style={s.kpiGroupLabel}>Tipo de venta</div>
-          <SplitBar segments={data.ventas_por_tipo.map((t, i) => ({ label: cap(t.tipo_venta), value: t.cantidad, color: TIPO_COLORS[i % TIPO_COLORS.length], detail: `${t.cantidad} · ${q(t.ingresos)}` }))} />
-          <div style={{ ...s.kpiGroupLabel, marginTop: "1.1rem" }}>Estado de las ventas</div>
-          <CounterGrid items={data.ventas_por_estado.map((e) => ({ label: cap(e.estado_venta), value: e.cantidad, color: ESTADO_COLOR[e.estado_venta] ?? "var(--muted)" }))} />
-        </Card>
-        <Card title="Actividad por hora del día">
-          <HourChart data={data.ventas_por_hora} />
-          {data.ventas_por_hora.length > 0 && (() => {
-            const peak = data.ventas_por_hora.reduce((a, b) => b.cantidad > a.cantidad ? b : a);
-            return <p style={{ marginTop: "0.6rem", fontSize: "0.78rem", color: "var(--muted)" }}>Hora pico: <strong style={{ color: "var(--accent)" }}>{peak.hora}:00 h</strong>{" · "}{peak.cantidad} venta{peak.cantidad !== 1 ? "s" : ""}</p>;
-          })()}
-        </Card>
-      </div>
+      <Card title="Cómo se vendió">
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "1.5rem" }}>
+          <div>
+            <div style={s.kpiGroupLabel}>Tipo de venta</div>
+            <SplitBar segments={data.ventas_por_tipo.map((t, i) => ({ label: cap(t.tipo_venta), value: t.cantidad, color: TIPO_COLORS[i % TIPO_COLORS.length], detail: `${t.cantidad} · ${q(t.ingresos)}` }))} />
+          </div>
+          <div>
+            <div style={s.kpiGroupLabel}>Estado de las ventas</div>
+            <CounterGrid items={data.ventas_por_estado.map((e) => ({ label: cap(e.estado_venta), value: e.cantidad, color: ESTADO_COLOR[e.estado_venta] ?? "var(--muted)" }))} />
+          </div>
+          <div>
+            <div style={s.kpiGroupLabel}>Hora más movida</div>
+            {horaPico ? (
+              <>
+                <div style={{ fontFamily: "var(--font-head)", fontSize: "1.6rem", fontWeight: 700, color: "var(--text)" }}>{horaPico.hora}:00 h</div>
+                <div style={{ fontSize: "0.82rem", color: "var(--muted)", marginTop: "0.15rem" }}>{horaPico.cantidad} venta{horaPico.cantidad !== 1 ? "s" : ""} a esa hora</div>
+              </>
+            ) : (
+              <EmptyChart label="Sin ventas en el periodo" />
+            )}
+          </div>
+        </div>
+      </Card>
     </div>
   );
 }

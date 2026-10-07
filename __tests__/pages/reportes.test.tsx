@@ -120,6 +120,44 @@ describe("Reportes (EstadisticasPage)", () => {
     expect(screen.getByText("Cancelado")).toBeInTheDocument();
   });
 
+  it("la hora más movida es una frase, ya no una gráfica", async () => {
+    setup(estadisticas({ ventas_por_hora: [{ hora: 8, cantidad: 4 }, { hora: 17, cantidad: 12 }, { hora: 20, cantidad: 6 }] }));
+    render(<EstadisticasPage />);
+
+    expect(await screen.findByText("Hora más movida")).toBeInTheDocument();
+    expect(screen.getByText("17:00 h")).toBeInTheDocument();
+    expect(screen.getByText("12 ventas a esa hora")).toBeInTheDocument();
+    expect(screen.queryByText("Actividad por hora del día")).not.toBeInTheDocument();
+  });
+
+  it("con ventas de un solo día no dibuja una barra gigante, avisa con texto", async () => {
+    setup(); // el ejemplo base tiene un solo día
+    render(<EstadisticasPage />);
+
+    expect(await screen.findByText("Ingresos por día (Q)")).toBeInTheDocument();
+    expect(screen.getByText(/Solo hay ventas de un día/)).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: "Ingresos en el periodo" })).not.toBeInTheDocument();
+    expect(screen.getByText(/Día con más ventas/)).toBeInTheDocument();
+  });
+
+  it("los ingresos pasan a semanas o meses según el largo del periodo", async () => {
+    const dias = (desde: string, n: number) =>
+      Array.from({ length: n }, (_, i) => ({
+        fecha: new Date(new Date(`${desde}T00:00:00Z`).getTime() + i * 86_400_000).toISOString().slice(0, 10),
+        total_dia: 50, cantidad: 1,
+      }));
+
+    setup(estadisticas({ ventas_por_dia: dias("2026-07-01", 90) }));
+    const { unmount } = render(<EstadisticasPage />);
+    expect(await screen.findByText("Ingresos por semana (Q)")).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Ingresos en el periodo" })).toBeInTheDocument();
+    unmount();
+
+    setup(estadisticas({ ventas_por_dia: dias("2025-10-01", 365) }));
+    render(<EstadisticasPage />);
+    expect(await screen.findByText("Ingresos por mes (Q)")).toBeInTheDocument();
+  });
+
   it("Inventario: lo que hay que reponer y el dinero parado, con ingresos por categoría solo en barras", async () => {
     setup();
     const user = userEvent.setup();

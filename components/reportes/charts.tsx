@@ -1,4 +1,4 @@
-import { fmtDate, q } from "./utils";
+import { q, type PuntoIngresos } from "./utils";
 
 export function EmptyChart({ label }: { label: string }) {
   return (
@@ -8,39 +8,39 @@ export function EmptyChart({ label }: { label: string }) {
   );
 }
 
-export function BarChart({ data, height = 160 }: { data: { fecha: string; total_dia: number; cantidad: number }[]; height?: number }) {
-  if (data.length === 0) return <EmptyChart label="Sin datos en el periodo" />;
-  const max = Math.max(...data.map((d) => d.total_dia), 1);
+export function BarChart({ puntos, height = 190 }: { puntos: PuntoIngresos[]; height?: number }) {
+  if (puntos.length === 0) return <EmptyChart label="Sin datos en el periodo" />;
+  const max = Math.max(...puntos.map((p) => p.total), 1);
   const W = 600; const H = height;
-  const PAD = { top: 10, right: 10, bottom: 28, left: 52 };
+  const PAD = { top: 12, right: 10, bottom: 30, left: 58 };
   const chartW = W - PAD.left - PAD.right;
   const chartH = H - PAD.top - PAD.bottom;
-  const barW = Math.max(4, chartW / data.length - 4);
+  const slot = chartW / puntos.length;
+  const barW = Math.min(44, slot * 0.7);
   const TICKS = 4;
   const yTicks = Array.from({ length: TICKS + 1 }, (_, i) => Math.round((max / TICKS) * i));
-  const step = Math.ceil(data.length / 10);
+  const step = Math.ceil(puntos.length / 8);
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", overflow: "visible" }}>
+    <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Ingresos en el periodo" style={{ width: "100%", height: "auto", overflow: "visible" }}>
       {yTicks.map((tick) => {
         const y = PAD.top + chartH - (tick / max) * chartH;
         return (
           <g key={tick}>
-            <line x1={PAD.left} x2={W - PAD.right} y1={y} y2={y} stroke="rgba(48,54,61,.6)" strokeWidth={1} strokeDasharray="4 4" />
-            <text x={PAD.left - 6} y={y + 4} textAnchor="end" fontSize={9} fill="rgba(139,148,158,.8)">{tick >= 1000 ? `${(tick / 1000).toFixed(1)}k` : tick}</text>
+            <line x1={PAD.left} x2={W - PAD.right} y1={y} y2={y} strokeWidth={1} strokeDasharray="4 4" style={{ stroke: "var(--border)" }} />
+            <text x={PAD.left - 8} y={y + 4} textAnchor="end" fontSize={12} style={{ fill: "var(--muted)" }}>{tick >= 1000 ? `${(tick / 1000).toFixed(1)}k` : tick}</text>
           </g>
         );
       })}
-      {data.map((d, i) => {
-        const x = PAD.left + (i / data.length) * chartW + (chartW / data.length - barW) / 2;
-        const barH = Math.max(2, (d.total_dia / max) * chartH);
+      {puntos.map((p, i) => {
+        const x = PAD.left + i * slot + (slot - barW) / 2;
+        const barH = Math.max(2, (p.total / max) * chartH);
         const y = PAD.top + chartH - barH;
-        const showLabel = i % step === 0;
         return (
-          <g key={d.fecha}>
-            <rect x={x} y={y} width={barW} height={barH} rx={3} fill="rgba(45,106,79,.75)">
-              <title>{`${d.fecha}: ${q(d.total_dia)} · ${d.cantidad} venta${d.cantidad !== 1 ? "s" : ""}`}</title>
+          <g key={p.clave}>
+            <rect x={x} y={y} width={barW} height={barH} rx={4} style={{ fill: "var(--accent)" }} opacity={0.85}>
+              <title>{`${p.titulo}: ${q(p.total)} · ${p.cantidad} venta${p.cantidad !== 1 ? "s" : ""}`}</title>
             </rect>
-            {showLabel && <text x={x + barW / 2} y={H - 6} textAnchor="middle" fontSize={8} fill="rgba(139,148,158,.8)">{fmtDate(d.fecha)}</text>}
+            {i % step === 0 && <text x={x + barW / 2} y={H - 8} textAnchor="middle" fontSize={12} style={{ fill: "var(--muted)" }}>{p.etiqueta}</text>}
           </g>
         );
       })}
@@ -68,26 +68,5 @@ export function HBarChart({ data, valueKey, labelKey, color = "rgba(45,106,79,.7
         );
       })}
     </div>
-  );
-}
-
-export function HourChart({ data }: { data: { hora: number; cantidad: number }[] }) {
-  if (data.length === 0) return <EmptyChart label="Sin actividad registrada" />;
-  const filled = Array.from({ length: 24 }, (_, h) => ({ hora: h, cantidad: data.find((d) => d.hora === h)?.cantidad ?? 0 }));
-  const max = Math.max(...filled.map((d) => d.cantidad), 1);
-  const W = 600; const H = 100;
-  const PAD = { top: 8, right: 10, bottom: 24, left: 28 };
-  const chartW = W - PAD.left - PAD.right; const chartH = H - PAD.top - PAD.bottom;
-  const pts = filled.map((d, i) => { const x = PAD.left + (i / 23) * chartW; const y = PAD.top + chartH - (d.cantidad / max) * chartH; return `${x},${y}`; });
-  const areaPath = [`M ${PAD.left},${PAD.top + chartH}`, ...pts.map((p) => `L ${p}`), `L ${PAD.left + chartW},${PAD.top + chartH}`, "Z"].join(" ");
-  const linePath = [`M ${pts[0]}`].concat(pts.slice(1).map((p) => `L ${p}`)).join(" ");
-  const LABELS = [0, 6, 12, 18, 23];
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto" }}>
-      <defs><linearGradient id="hourGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="rgba(45,106,79,.45)" /><stop offset="100%" stopColor="rgba(45,106,79,.02)" /></linearGradient></defs>
-      <path d={areaPath} fill="url(#hourGrad)" />
-      <path d={linePath} fill="none" stroke="rgba(45,106,79,.9)" strokeWidth={1.5} strokeLinejoin="round" />
-      {filled.map((d, i) => { if (!LABELS.includes(d.hora)) return null; const x = PAD.left + (i / 23) * chartW; return <text key={d.hora} x={x} y={H - 6} textAnchor="middle" fontSize={8} fill="rgba(139,148,158,.7)">{d.hora}h</text>; })}
-    </svg>
   );
 }
