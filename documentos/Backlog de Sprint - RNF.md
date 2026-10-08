@@ -1,7 +1,5 @@
 # Backlog de Sprint — Implementación de Requisitos No Funcionales
 
-**Proyecto:** Tienda San Miguel — Sistema de Gestión de Inventario y Ventas
-**Origen:** [Informe de Verificación de RNF](./Informe%20de%20Verificacion%20de%20Requisitos%20No%20Funcionales.md)
 **Fecha:** 07/10/2026 · **Alcance:** 38 RNF · **Total:** 58 tareas en 6 sprints
 
 ---
@@ -19,37 +17,69 @@
 | **Esfuerzo** | Puntos de historia: **XS**=1 · **S**=2-3 · **M**=5 · **L**=8 · **XL**=13 (Fibonacci) |
 | **Tipo** | `SEG` seguridad · `DAT` datos · `PERF` rendimiento · `DIS` disponibilidad · `UX` interfaz · `DOC` documentación · `INT` interoperabilidad · `CFG` configuración · `EVD` evidencia |
 
-### Definición de Hecho (aplica a toda tarea)
+---
 
-Una tarea no se cierra hasta que cumple **los seis** puntos:
+## Chequeo de escalabilidad — las 3 mayores problemáticas
 
-1. ✅ **Implementado** el cambio en código, no solo documentado.
-2. ✅ **Prueba automatizada** que falle antes del cambio y pase después (salvo tareas puramente documentales, que requieren revisión de al menos 2 personas).
-3. ✅ **Criterios de aceptación** de la tarea verificados, con el número medido registrado.
-4. ✅ **`npm run lint` y `tsc --noEmit` sin errores.**
-5. ✅ Sin **regresión**: `npm test` con al menos el mismo número de pruebas verdes.
-6. ✅ **Evidencia adjunta** al cierre: captura, salida de consola, o cifra medida.
+Análisis realizado sobre el comportamiento del sistema **al crecer los datos y los
+usuarios**. Se revisaron los 47 endpoints, el pool de conexiones, los 13 índices
+del esquema y los resultados medidos de `documentos/Pruebas de volumen`.
 
-### Regla de dependencia entre sprints
+### El hallazgo que condiciona todo lo demás
 
-> **Ningún sprint puede cerrarse si tiene una tarea 🔴 o 🟠 abierta.**
-> Los sprints S3 y S5 son independientes entre sí y pueden ejecutarse en paralelo.
+`/api/deudas` con 5,000 deudas se descomponió así
+(`documentos/Pruebas de volumen:220-224`):
+
+| Etapa | Costo |
+|---|---|
+| Consulta SQL en PostgreSQL | **124 ms** |
+| Serialización JSON + transferencia de 3.94 MB | **~490 ms** |
+| **Total** | **611 ms** |
+
+**El SQL no es el problema: el payload lo es.** Indexar esa consulta casi no
+ayudaría. Y el efecto se amplifica con la carga:
+
+| Corrida | p(95) total | p(95) `/api/deudas` | Datos transferidos |
+|---|---:|---:|---:|
+| 20,180 ventas, 0 deudas | 20.11 s | 8.44 s | 6.4 MB |
+| 20,180 ventas, **5,000 deudas** | **36.39 s** | **29.33 s** | **256 MB** |
+
+Sumar 5,000 deudas —sin agregar una sola venta— llevó el p(95) de 20.11 s a
+36.39 s y multiplicó el tráfico **×40**. Cada usuario que abre Deudas descarga
+megabytes que no necesita.
+
+### Las 3 problemáticas seleccionadas
+
+| # | Problemática | Eje | Evidencia |
+|---|---|---|---|
+| **1** | **4 endpoints devuelven el conjunto completo sin paginación.** Cada respuesta crece sin límite con el tamaño del negocio | **Volumen de datos** | `/api/deudas` p95 **29.33 s** · **256 MB** por corrida · `/api/productos` **0 LIMIT, 0 WHERE** · `/api/gestion-inventario` **0 LIMIT** · `/api/facturacion` **0 LIMIT** |
+| **2** | **Agregaciones sobre la tabla completa antes de paginar, + 3 rutas de join sin índice que fuerzan escaneo secuencial** | **Volumen × complejidad** | `/api/ventas` p95 **22.61 s**; plan `GroupAggregate (20180)` + `Incremental Sort (50445)` · `factura` **sin ningún índice** · `bodega_producto.id_producto` inalcanzable por su PK compuesta |
+| **3** | **Techo de concurrencia en el pool de conexiones**, sin timeouts de consulta y sin reinicio automático del servicio `db` | **Cantidad de usuarios** | Pool `pg` con `max` = **10 por defecto**, sin configurar (`lib/db.ts:12-16`), frente a **50 VUs** medidos · `/api/estadisticas` retiene **1 conexión durante 24 round-trips** · `db` **sin `restart`** |
+
+Cada una ataca un eje distinto e independiente: **datos**, **complejidad** y
+**usuarios**. Corregir las tres es lo que convierte el sistema de «funciona con
+180 ventas» a «funciona con 5 años de historial».
 
 ---
 
-## Panorama de los 6 sprints
+## Panorama de los 7 sprints
 
 | Sprint | Foco | Tareas | Puntos | 🔴 | RNF que cierra |
 |---|---|:---:|---:|:---:|---|
 | **S0** | Autorización financiera | 6 | 17 | 6 | **8.3** |
 | **S1** | Datos, auditoría y fugas | 12 | 54 | 6 | 6.1, 6.2, 6.3, 8.1, 11.3 |
-| **S2** | Rendimiento y disponibilidad | 11 | 47 | 3 | 3.1, 3.2, 3.3, 8.2, 9.1, 9.2, 9.3, 13.1 |
+| **S7** | **Escalabilidad** | **3** | **26** | **3** | 3.1, 3.2, 3.3, 9.1 |
+| **S2** | **Disponibilidad y evidencia** | **7** | **25** | **1** | 3.1, 3.2, 3.3, 8.2, 9.1, 9.2, 9.3, 13.1 |
 | **S3** | Identidad visual | 8 | 27 | 3 | 1.1, 1.2, 1.3, 7.1, 7.3 |
 | **S4** | Ayuda y documentación | 8 | 33 | 5 | 11.1, 11.2, 2.3, 4.1, 4.3, 13.3 |
 | **S5** | Configuración e interoperabilidad | 9 | 54 | 3 | 4.2, 5.1, 5.2, 5.3, 10.1, 10.3, 13.2, 14.2 |
 | **S6** | Evidencia y mediciones | 4 | 18 | 1 | 2.1, 2.2, 7.2 |
-| | | **58** | **250** | **27** | **35 de 38 RNF** |
+| | | **57** | **258** | **29** | **35 de 38 RNF** |
 
+> **Orden de ejecución:** S7 aparece primero porque es el único sprint que
+> **no depende de nada** y corrige la degradación por crecimiento de datos.
+> Las filas están en orden de prioridad, no de número.
+>
 > Los 3 RNF restantes (**13.1**, **13.2**, **13.3**) no generan tareas de código:
 > dependen de hardware del negocio (ver [RNF no cubiertos por tareas](#rnf-que-no-generan-tareas)).
 
@@ -65,9 +95,9 @@ Una tarea no se cierra hasta que cumple **los seis** puntos:
 | 2.1 Novatos vs. expertos | ⚪ | S6-01 |
 | 2.2 Reducción ≥ 30 % | ⚪ | S6-02 |
 | 2.3 Manual 100 % | ❌ | S4-01, S4-02, S4-06 |
-| 3.1 Carga de vistas ≤ 3 s | ❌ | S2-01, S2-02, S2-03 |
-| 3.2 ≥ 10 usuarios | ⚪ | S2-04, S2-05 |
-| 3.3 Búsqueda ≤ 2 s | ⚪ | S2-06, S2-07 |
+| 3.1 Carga de vistas ≤ 3 s | ❌ | **S7-01**, **S7-02**, S2-01 |
+| 3.2 ≥ 10 usuarios | ⚪ | **S7-03**, S2-02 |
+| 3.3 Búsqueda ≤ 2 s | ⚪ | **S7-01**, S2-03, S2-04 |
 | 4.1 Documentación | ⚠️ | S4-03, S4-06, S4-07 |
 | 4.2 Configuración sin código | ❌ | S5-01, S5-02 |
 | 4.3 Procedimiento de instalación | ⚠️ | S4-07, S4-08 |
@@ -81,11 +111,11 @@ Una tarea no se cierra hasta que cumple **los seis** puntos:
 | 7.2 Lenguaje claro | ⚪ | S6-03 |
 | 7.3 Colores e iconos neutros | ⚠️ | S3-04, S3-08 |
 | 8.1 Facturas legales | ❌ | S1-07, S1-08 |
-| 8.2 Historial 5 años | ⚠️ | S2-09, S2-10 |
+| 8.2 Historial 5 años | ⚠️ | **S7-01**, S2-06 |
 | 8.3 Acceso financiero | ❌ | **S0-01 … S0-06** |
-| 9.1 Disponibilidad ≥ 95 % | ⚪ | S2-08 |
-| 9.2 Copias diarias | ⚠️ | S2-06, S2-07 |
-| 9.3 Recuperación ≤ 30 min | ⚪ | S2-11 |
+| 9.1 Disponibilidad ≥ 95 % | ⚪ | **S7-03**, S2-05 |
+| 9.2 Copias diarias | ⚠️ | S2-03, S2-04 |
+| 9.3 Recuperación ≤ 30 min | ⚪ | S2-04 |
 | 10.1 Importar/exportar .xlsx | ❌ | S5-05, S5-06 |
 | 10.2 BD relacional | ✅ | — *(ya cumple)* |
 | 10.3 Arquitectura modular | ⚠️ | S5-07, S5-08 |
@@ -315,7 +345,7 @@ decisión.**
 - [ ] `BACKUP_ENCRYPTION_KEY` **añadida a `.env.example`** (hoy falta, aunque `README.md:454` y `backup-db.sh:80` remiten a ella)
 - [ ] Un respaldo generado es **descifrable** con la clave del `.env` (prueba real de ciclo completo)
 - [ ] Procedimiento de rotación de claves documentado
-- [ ] **Considerado:** respaldos fuera del disco de la base (S2-06 cubre la програмación; aquí la copia externa)
+- [ ] **Considerado:** respaldos fuera del disco de la base (S2-03 cubre la programación; aquí la copia externa)
 
 ---
 
@@ -518,47 +548,26 @@ desactivación de usuario no deben diferirse**.
 
 ---
 
-## Sprint 2 — Rendimiento y disponibilidad
+## Sprint 2 — Disponibilidad y evidencia de rendimiento
 
-**Objetivo:** cumplir los umbrales de 3 s / 10 usuarios / 2 s y garantizar respaldos y disponibilidad.
-**Depende de:** Sprint 1 (para poder medir sin ruido de fugas de datos).
+**Objetivo:** instrumentar el rendimiento ya corregido por S7, y garantizar respaldos y disponibilidad.
+**Depende de:** **Sprint 7** (no se puede medir un sistema que todavía devuelve
+el conjunto completo) y **Sprint 1** (para medir sin ruido de fugas de datos).
 
-### S2-01 🔴 Corregir paginación de `/api/ventas`
-
-**RNF:** 3.1 · **Tipo:** PERF · **Esfuerzo:** M (5) · **Depende de:** —
-**Hallazgo:** `app/api/ventas/route.ts:78-92` aplica `LIMIT` **después** del
-`GROUP BY`/`json_agg`, por lo que PostgreSQL **agrega todas las filas antes de
-paginar**. Plan registrado en el informe de volumen: `GroupAggregate (actual rows=20180)`
-+ `Incremental Sort (actual rows=50445)`. **El propio equipo ya identificó la causa
-y la recomendación (informe de volumen, líneas 269-276); el patrón sigue sin corregirse.**
-
-**Criterios de aceptación:**
-- [ ] La paginación se aplica **antes** de la agregación (subconsulta o CTE paginado)
-- [ ] El plan de ejecución ya **no** muestra `GroupAggregate` sobre el conjunto completo
-- [ ] `/api/ventas` con 20,180 ventas: **p95 < 3 s** (base actual: 22.61 s)
-- [ ] El número de filas agregadas por consulta es **≤ el tamaño de página**, no 20,180
-- [ ] Prueba de integración que verifique que página 1 y página 2 devuelven ventas distintas y correctas
+> **Este sprint ya no contiene correcciones de rendimiento de queries.** Las 4
+> tareas que sí lo eran (paginación de `/api/ventas`, paginación de `/api/deudas`,
+> pool de conexiones y reagrupación de las 24 consultas) fueron **absorbidas por el
+> Sprint 7**, que las amplía con hallazgos nuevos. Ver
+> [Consolidación S2 ↔ S7](#consolidación-s2--s7).
+>
+> **Lo que queda aquí es lo que S7 no puede hacer:** medir el resultado, y
+> asegurar la continuidad del servicio.
 
 ---
 
-### S2-02 🔴 Paginar `/api/deudas`
+### S2-01 🔴 Instrumentar la carga de vistas
 
-**RNF:** 3.1 · **Tipo:** PERF · **Esfuerzo:** M (5) · **Depende de:** —
-**Hallazgo:** `app/api/deudas/route.ts:27-84` **no tiene paginación** — devuelve el
-conjunto completo. Con 5,000 deudas alcanzó **p95 = 29.33 s** (informe de volumen,
-línea 213). El propio informe lo marca como bug crítico (líneas 15-16, 201, 269-276).
-
-**Criterios de aceptación:**
-- [ ] La respuesta se pagina (los valores actuales de página inicial `[10,25,50]` en `deudas/page.tsx:350` se mantienen)
-- [ ] `/api/deudas` con 5,000 deudas: **p95 < 3 s** (base actual: 29.33 s)
-- [ ] La UI consume la nueva forma paginada **sin perder** filtros, orden ni búsqueda
-- [ ] Los KPIs de la cabecera se calculan **sin** recorrer el conjunto completo en el cliente
-
----
-
-### S2-03 🔴 Instrumentar la carga de vistas
-
-**RNF:** 3.1 · **Tipo:** PERF · **Esfuerzo:** M (5) · **Depende de:** S2-01, S2-02
+**RNF:** 3.1 · **Tipo:** PERF · **Esfuerzo:** M (5) · **Depende de:** **S7-01**, **S7-02**
 **Hallazgo:** **la carga de vistas nunca se midió.** `carga.js:90-94` solo itera
 `/api/stats`, `/api/ventas`, `/api/deudas`. Ninguna ruta de página. Sin Core Web
 Vitals, sin Lighthouse. Como 15 de 16 páginas son *client components*, la «carga
@@ -573,9 +582,9 @@ de vista» es navegación + fetch XHR, y **solo se midió la segunda mitad**.
 
 ---
 
-### S2-04 🟠 Probar 10 usuarios simultáneos con sesiones distintas
+### S2-02 🟠 Probar 10 usuarios simultáneos con sesiones distintas
 
-**RNF:** 3.2 · **Tipo:** PERF · **Esfuerzo:** M (5) · **Depende de:** S2-05
+**RNF:** 3.2 · **Tipo:** PERF · **Esfuerzo:** M (5) · **Depende de:** **S7-03**
 **Hallazgo:** los «50 VUs» de `carga.js:60-88` son **50 clientes con una sola
 cookie** (login único en `setup()`, reutilizada en `:96-97`). **No es una prueba de
 concurrencia multiusuario.** VOL-03 y VOL-04 usaron **1 usuario**. CPU y memoria
@@ -591,26 +600,7 @@ concurrencia multiusuario.** VOL-03 y VOL-04 usaron **1 usuario**. CPU y memoria
 
 ---
 
-### S2-05 🟠 Configurar el pool de conexiones
-
-**RNF:** 3.2 · **Tipo:** PERF · **Esfuerzo:** S (3) · **Depende de:** —
-**Hallazgo:** `lib/db.ts:12-16` crea `new Pool({ connectionString })` **sin `max`,
-sin `idleTimeoutMillis`, sin `connectionTimeoutMillis`** → usa el **default de `pg`
-(`max=10`)**. Con 50 VUs concurrentes eso significa **cola de conexiones**.
-No hay pgBouncer. `max_connections` de Postgres no configurado (default 100).
-`DATABASE_URL` sin `?pool_max=` ni `statement_timeout`.
-
-**Criterios de aceptación:**
-- [ ] `max`, `idleTimeoutMillis` y `connectionTimeoutMillis` configurables por variable de entorno
-- [ ] El valor por defecto permite **sostener ≥ 10 usuarios concurrentes** sin agotar el pool
-- [ ] `statement_timeout` configurado (evita consultas colgadas tipo `/api/deudas`)
-- [ ] Valores coherentes con `max_connections` de Postgres
-- [ ] `DATABASE_URL` acepta `?pool_max=` sin cambios de código
-- [ ] **S1-02 (TLS) no se rompe** al modificar `lib/db.ts`
-
----
-
-### S2-06 🟠 Garantizar la ejecución continua del respaldo diario
+### S2-03 🟠 Garantizar la ejecución continua del respaldo diario
 
 **RNF:** 9.2, 8.2 · **Tipo:** DIS · **Esfuerzo:** M (5) · **Depende de:** —
 **Hallazgo:** el servicio `db_backup` **está activo** (`docker-compose.yml:78`, con
@@ -628,9 +618,9 @@ unidad systemd, ni workflow. `backups/manual/` **no existe**.
 
 ---
 
-### S2-07 🟠 Probar y documentar la restauración
+### S2-04 🟠 Probar y documentar la restauración
 
-**RNF:** 9.3 · **Tipo:** DIS · **Esfuerzo:** M (5) · **Depende de:** S2-06
+**RNF:** 9.3 · **Tipo:** DIS · **Esfuerzo:** M (5) · **Depende de:** S2-03
 **Hallazgo:** el procedimiento es sólido — `restore-db.sh:80-100` valida **extensión
 y magic bytes** antes de tocar la base (`.sql.gz.enc` exige header `Salted__`,
 `.sql.gz` exige bytes `1f8b`), lo que impide restaurar un archivo renombrado.
@@ -648,26 +638,35 @@ y magic bytes** antes de tocar la base (`.sql.gz.enc` exige header `Salted__`,
 
 ---
 
-### S2-08 🟠 Health checks, reinicio y monitoreo
+### S2-05 🟠 Monitoreo y medición de disponibilidad
 
-**RNF:** 9.1 · **Tipo:** DIS · **Esfuerzo:** M (5) · **Depende de:** —
-**Hallazgo:** el health check existe (`api/health/route.ts:5-34`) pero **el servicio
-`db` no tiene `restart: unless-stopped`** (`docker-compose.yml:45-60`) ni `app`
-en desarrollo (`:2-26`). **Solo `db` tiene healthcheck; `app` no.** Sin monitoreo
-externo. Y el propio health check **puede colgarse**: no aplica timeout a la
-consulta, así que si Postgres se cuelga, el health check se cuelga con él.
+**RNF:** 9.1 · **Tipo:** DIS · **Esfuerzo:** M (5) · **Depende de:** **S7-03**
+**Hallazgo:** **cero monitoreo externo** (sin Sentry, Prometheus, Uptime Kuma ni
+Nagios) y **cero cifra de disponibilidad medida**. Búsqueda de
+`uptime|disponibilidad|95%|monitoreo|Sentry` en toda la documentación → solo
+2 falsos positivos sobre alertas de stock y deudas, que son de negocio.
+El único dato cuantitativo implícito es `http_req_failed = 0.00 %` en las cuatro
+carreras de k6, pero eso mide errores de aplicación bajo carga sintética durante
+~2 minutos, **no disponibilidad en tiempo laboral**.
+Y el propio health check **puede colgarse**: `api/health/route.ts:5-34` no aplica
+timeout a la consulta, así que si PostgreSQL se cuelga, el health check se cuelga
+con él y no puede reportar «caído».
+
+> **Lo absorbido por S7-03:** las políticas `restart: unless-stopped` en `db` y
+> `app`, el healthcheck del servicio `app` y la configuración del pool **ya no se
+> cotizan aquí**. Esta tarea cubre únicamente **detectar y medir**.
 
 **Criterios de aceptación:**
-- [ ] `restart: unless-stopped` en **`db`** y en **`app`** (ambos entornos)
-- [ ] Healthcheck en el servicio **`app`**, no solo en `db`
-- [ ] El health check aplica **timeout** a la consulta: si Postgres no responde, devuelve **«caído»** en vez de colgarse
-- [ ] Monitoreo externo o verificación periódica configurada (alertar si no hay respuesta)
-- [ ] **Disponibilidad mensual ≥ 95 % medida** en el periodo de observación
-- [ ] El servicio `db_backup` también se monitoriza (que esté arriba no significa que esté respaldando)
+- [ ] El health check aplica **timeout** a la consulta: si PostgreSQL no responde, devuelve **«caído»** en vez de colgarse
+- [ ] Monitoreo externo o verificación periódica configurada, con **alerta** si no hay respuesta
+- [ ] **Disponibilidad mensual ≥ 95 % medida** en el periodo de observación (el criterio del RNF)
+- [ ] Se registra el historial de incidentes, no solo el porcentaje final
+- [ ] El servicio `db_backup` **también se monitoriza**: que esté arriba no significa que esté respaldando (relevante por S2-03)
+- [ ] El health check **no expone** el nombre del motor ni el de la base de datos (coordinar con S1-09)
 
 ---
 
-### S2-09 🟠 Documentar la garantía de retención de ventas
+### S2-06 🟠 Documentar la garantía de retención de ventas
 
 **RNF:** 8.2 · **Tipo:** DAT · **Esfuerzo:** S (2) · **Depende de:** S1-03
 **Hallazgo:** hoy el historial **se preserva**, pero **por omisión**: no existe
@@ -684,22 +683,7 @@ Cualquiera que añada un endpoint de limpieza no tiene ninguna señal de que rom
 
 ---
 
-### S2-10 🟡 Vigilar el crecimiento de agregaciones
-
-**RNF:** 8.2, 3.1 · **Tipo:** PERF · **Esfuerzo:** M (5) · **Depende de:** S2-05
-**Hallazgo:** `/api/estadisticas` agrega sin filtro temporal en varios puntos
-(`route.ts:476-478`) y ejecuta **24 consultas secuenciales** por request. El repo ya
-documentó 20,180 ventas con 256 MB; a 5 años el crecimiento sería notable.
-
-**Criterios de aceptación:**
-- [ ] Las 24 consultas secuenciales se **reagrupan** (CTEs o consultas paralelas)
-- [ ] `/api/estadisticas` mantiene **p95 < 3 s** con el dataset de volumen
-- [ ] Las agregacionesperiodicass **no dependen de leer el conjunto completo**
-- [ ] Prueba con 20,000 ventas que el tiempo se mantiene dentro del umbral
-
----
-
-### S2-11 🟡 Prueba de arranque en frío
+### S2-07 🟡 Prueba de arranque en frío
 
 **RNF:** 13.1 · **Tipo:** EVD · **Esfuerzo:** S (2) · **Depende de:** —
 **Hallazgo:** sin medición. `README.md:37` dice «~2 min» en frío con `--build`,
@@ -1201,6 +1185,201 @@ una PWA instalable es la interpretación de menor coste y cumple «accesible en 
 
 ---
 
+## Sprint 7 — Escalabilidad 🔴
+
+**Objetivo:** que el sistema deje de degradarse cuando crecen los datos y los usuarios.
+**Depende de:** nada — **paralelizable desde el inicio** con S0, S3 y S5.
+**Prioridad:** 🔴 las 3 tareas. El sistema hoy funciona con 180 ventas; el negocio
+genera ~20,000/año según el volumen de pruebas, es decir **el problema aparece por
+crecimiento natural, no por un evento excepcional**.
+
+> **Relación con S2:** este sprint **absorbe** las tareas de corrección de
+> rendimiento de S2 y las amplía con hallazgos nuevos. La consolidación ya está
+> aplicada: ver [Consolidación S2 → S7](#consolidación-s2--s7-aplicada) al final.
+
+### S7-01 🔴 Paginar los 4 endpoints que devuelven el conjunto completo
+
+**RNF:** 3.1, 3.3, 8.2 · **Tipo:** PERF · **Esfuerzo:** L (8) · **Depende de:** —
+**Consolida y amplía:** la tarea de paginación de `/api/deudas` de S2 + **3 endpoints no identificados** en ella.
+
+**Hallazgo — el payload, no la consulta:**
+
+| Endpoint | `LIMIT` | Comportamiento actual |
+|---|:---:|---|
+| `app/api/deudas/route.ts:28-85` | **0** | Trae **todas** las deudas, cada una con productos y **todos** sus abonos anidados en `jsonb_agg`. Con 3 abonos por deuda la respuesta es **3.94 MB** |
+| `app/api/productos/route.ts:13-30` | **0** (y **0 `WHERE`**) | Devuelve el **catálogo completo**, sin filtro ni paginación |
+| `app/api/gestion-inventario/route.ts:39-68` | **0** | Devuelve **todas** las existencias de **todas** las bodegas, `ORDER BY` sobre el conjunto completo |
+| `app/api/facturacion/route.ts:15-30` | **0** | `LEFT JOIN factura` sobre **todas** las ventas, sin filtro de fecha |
+
+**Impacto medido** (`documentos/Pruebas de volumen:206-213`):
+
+| Corrida | p(95) total | p(95) `/api/deudas` | Datos transferidos |
+|---|---:|---:|---:|
+| 20,180 ventas, 0 deudas | 20.11 s | 8.44 s | 6.4 MB |
+| 20,180 ventas, **5,000 deudas** | **36.39 s** | **29.33 s** | **256 MB** |
+
+Sumar 5,000 deudas **sin agregar una sola venta** llevó el p(95) de 20.11 s a
+36.39 s y multiplicó el tráfico **×40**.
+
+**Y la descomposición explica por qué la indexación no basta:**
+
+| Etapa | Costo con 5,000 deudas |
+|---|---:|
+| Consulta SQL | **124 ms** |
+| **Serialización + transferencia de 3.94 MB** | **~490 ms** |
+| Total | 611 ms |
+
+**El 80 % del costo es payload.** Además, `/api/productos` y
+`/api/gestion-inventario` alimentan una búsqueda **100 % client-side**
+(`lib/ui-table.tsx:8-12`), por lo que la UI **necesita** la descarga completa para
+poder filtrar. Paginarlos obliga a resolver también el filtrado en servidor.
+
+**Tarea:** paginación server-side en los 4 endpoints, con filtro de texto en SQL
+para los dos que alimentan la búsqueda.
+
+**Criterios de aceptación:**
+- [ ] Los **4 endpoints** devuelven únicamente la página solicitada
+- [ ] El tamaño de la respuesta es **independiente del volumen total**: con 5,000 deudas la respuesta de `/api/deudas` es **< 200 KB** (base actual: 3.94 MB)
+- [ ] `/api/deudas` con 5,000 deudas: **p95 < 3 s** (base actual: **29.33 s**)
+- [ ] La respuesta **no incluye** los abonos anidados de cada deuda: se obtienen bajo demanda (endpoint hijo) o se resumen en un contador
+- [ ] **Búsqueda por texto en SQL** (`ILIKE` con `ESCAPE`, siguiendo el patrón ya existente en `lib/historial-ventas.ts:276-292`) en los endpoints de catálogo e inventario, replacing el `.filter()` de `InventarioView.tsx:246-275` y `CatalogoView.tsx:392-401`
+- [ ] El filtro de búsqueda **combina** con los filtros activos (categoría, marca, exento IVA, bajo stock mínimo) en SQL, no encadenando filtrados en el cliente
+- [ ] El payload de **256 MB** por corrida de carga se reduce a **< 20 MB**
+- [ ] La paginación es **estable**: `ORDER BY` incluye una columna única como desempate, para que dos páginas no repitan ni pierdan registros
+- [ ] El conteo total para la UI se obtiene **sin** recorrer el conjunto completo (subconsulta `COUNT` independiente)
+- [ ] La UI conserva **todos** los filtros, el orden y los valores de página inicial actuales (`[10,25,50]`)
+- [ ] Sin regresión: los 5 filtros de `CatalogoView.tsx:392-401` siguen funcionando
+
+**Archivos:** `app/api/deudas/route.ts`, `app/api/productos/route.ts`, `app/api/gestion-inventario/route.ts`, `app/api/facturacion/route.ts`, `lib/ui-table.tsx`, `components/inventario-catalogo/InventarioView.tsx`, `components/inventario-catalogo/CatalogoView.tsx`, `app/api/deudas/[id]/pagos/route.ts` (nuevo, bajo demanda)
+
+---
+
+### S7-02 🔴 Pre-paginar antes de agregar + índices en las rutas de join
+
+**RNF:** 3.1 · **Tipo:** PERF · **Esfuerzo:** M (5) · **Depende de:** —
+**Consolida:** la paginación de `/api/ventas` de S2 y su tarea de reagrupar las
+24 queries de `/api/estadisticas`, y **añade el hallazgo de índices faltantes**,
+que no estaba identificado en S2.
+
+**Hallazgo A — agregación sobre la tabla completa antes de paginar.**
+`app/api/ventas/route.ts:87-92` aplica `LIMIT` **después** del `GROUP BY` y del
+`json_agg`, así que PostgreSQL **agrega todas las filas antes de paginar**. Plan de
+ejecución registrado: `GroupAggregate (actual rows=20180)` +
+`Incremental Sort (actual rows=50445)` + `Execution Time: 585.669 ms`.
+**El propio equipo ya identificó la causa y la recomendación** (informe de
+volumen, líneas 269-276) y el patrón sigue sin corregirse. p95 = **22.61 s**.
+
+**Hallazgo B — `/api/estadisticas` ejecuta 24 consultas secuenciales**
+(`app/api/estadisticas/route.ts`, round-trips en líneas 98, 115, 135, 153, 170, …),
+una por request, y **retiene una conexión del pool durante los 24 round-trips**.
+Es decir: no solo es lento, sino que **ocupa un recurso scarce 24 veces más**.
+
+**Hallazgo C — tres rutas de join sin índice que fuerzan escaneo secuencial:**
+
+| Ruta | Problema |
+|---|---|
+| **`factura`** | **Sin ningún índice.** `GET /api/facturacion` hace `LEFT JOIN factura f ON f.id_venta = v.id_venta` sobre **todas** las ventas → escaneo secuencial de una tabla que crece con cada factura emitida |
+| **`bodega_producto.id_producto`** | La PK es compuesta `(id_bodega, id_producto)` (`init/01_schema.sql:200`). Una consulta `WHERE id_producto = X` **no puede usar** ese índice: la columna de búsqueda no es la primera. Toda consulta de stock por producto escanea la tabla |
+| **`venta.id_empleado`** | FK sin índice (`:245`). Filtra las ventas de un empleado sobre la tabla más grande del sistema |
+
+**Tarea:** reescribir el plan de las agregaciones y añadir los índices faltantes.
+
+**Criterios de aceptación:**
+- [ ] La paginación de `/api/ventas` se aplica **antes** de la agregación (CTE o subconsulta paginada)
+- [ ] El plan de ejecución **ya no** muestra `GroupAggregate` sobre el conjunto completo; las filas agregadas son **≤ el tamaño de página**
+- [ ] `/api/ventas` con 20,180 ventas: **p95 < 3 s** (base actual: **22.61 s**)
+- [ ] Índice en **`factura(id_venta)`** (FK sin cubrir)
+- [ ] Índice en **`bodega_producto(id_producto)`** (la PK compuesta no sirve para búsqueda por producto)
+- [ ] Índice en **`venta(id_empleado)`**
+- [ ] Las 24 consultas de `/api/estadisticas` se **reagrupan** en CTEs o se ejecutan **en paralelo**
+- [ ] `/api/estadisticas` pasa de **24 round-trips** a **≤ 3**, liberando la conexión del pool antes
+- [ ] Las **cifras devueltas** por `/api/estadisticas` son **idénticas** antes y después (comparar contra la salida actual como golden test)
+- [ ] Todos los índices se crean por **migración versionada**, nunca a mano
+- [ ] Se ejecuta `ANALYZE` tras la migración para que el planificador los considere
+- [ ] La lógica extraída vive en `lib/`, siguiendo el patrón de `lib/historial-ventas.ts`
+
+**Archivos:** `app/api/ventas/route.ts`, `app/api/estadisticas/route.ts`, nueva
+migración en `migrations/`, `lib/` (módulo de agregaciones nuevo)
+
+---
+
+### S7-03 🔴 Dimensionar el pool de conexiones y contener los fallos
+
+**RNF:** 3.2, 9.1 · **Tipo:** PERF · **Esfuerzo:** L (8) · **Depende de:** —
+**Consolida:** la configuración del pool de conexiones de S2 y la parte de health
+checks y reinicio, y **añade los timeouts de consulta**, que no estaban identificados.
+
+**Hallazgo A — el techo de concurrencia es 10, y nadie lo configuró.**
+`lib/db.ts:12-16` crea `new Pool({ connectionString })` **sin `max`, sin
+`idleTimeoutMillis`, sin `connectionTimeoutMillis`** → usa el **default de `pg`:
+`max = 10`**. La prueba de carga ejecutó **50 VUs concurrentes** contra esas 10
+conexiones produce **cola de conexiones, no concurrencia**. No hay pgBouncer.
+`max_connections` de PostgreSQL tampoco está configurado (default 100).
+`DATABASE_URL` no lleva `?pool_max=` ni `statement_timeout`.
+
+**Hallazgo B — sin timeout de consulta, una consulta lenta bloquea una conexión
+indefinidamente.** `statement_timeout` no está configurado en ningún sitio. Con el
+pool en 10, **10 consultas lentas dejan el sistema inservible** hasta que terminen.
+
+**Hallazgo C — el servicio `db` no se reinicia solo.** `docker-compose.yml:45-60`
+**no tiene `restart: unless-stopped`**. Si un fallo deja la base de datos en estado
+inconsistente, **nadie la recupera automáticamente**: el sistema queda caído hasta
+que una persona lo reinicie a mano. Para cualquier objetivo de disponibilidad esto
+es el riesgo individual más grande.
+
+**Hallazgo D — una conexión que se agota deja la petición colgada, sin respuesta.**
+`connectionTimeoutMillis` sin configurar significa que el cliente espera
+indefinidamente si el pool está saturado, en lugar de fallar rápido.
+
+**Tarea:** dimensionar el pool, añadir timeouts y contenedorizar el reinicio.
+
+**Criterios de aceptación:**
+- [ ] `max`, `idleTimeoutMillis`, `connectionTimeoutMillis` y `statement_timeout` configurables por variable de entorno
+- [ ] El valor por defecto **sostiene ≥ 10 usuarios concurrentes** sin agotar el pool (criterio del RNF 3.2)
+- [ ] `max` **coherente** con `max_connections` de PostgreSQL: `max_app × instancias ≤ max_connections × 0.8` (deja margen para psql, backups y mantenimiento)
+- [ ] `connectionTimeoutMillis` **corta rápido** ante saturación y devuelve un error 503 con mensaje en español, en lugar de colgar la petición
+- [ ] `statement_timeout` configurado: una consulta colgada se aborta sola
+- [ ] `DATABASE_URL` acepta `?pool_max=` sin cambios de código
+- [ ] **`restart: unless-stopped` en `db` y en `app`**, en desarrollo y producción
+- [ ] El health check de `db` **dispara el reinicio** cuando la base no responde (hoy `docker-compose.yml:56-60` ya tiene `pg_isready` con `retries: 5`; falta `restart: on-failure` para que esa detección tenga efecto)
+- [ ] Las consultas largas de `/api/estadisticas` **no retienen** la conexión del pool durante los 24 round-trips (coordinar con S7-02)
+- [ ] Verificado que **S1-02 (TLS) no se rompe** al modificar `lib/db.ts`
+- [ ] Prueba: **10 sesiones concurrentes reales** sin error de pool ni timeout
+
+**Archivos:** `lib/db.ts`, `docker-compose.yml`, `docker-compose.prod.yml`, `.env.example`
+
+---
+
+### Consolidación S2 → S7 (aplicada)
+
+**El Sprint 2 fue reducido de 11 a 7 tareas.** Las 4 correcciones de rendimiento
+de queries fueron absorbidas por este sprint, que las amplía con hallazgos que
+S2 no tenía. Los identificadores de S2 se **renumeraron** para quedar contiguos.
+
+| Tarea de S7 | Absorbió de S2 | Qué aporta de nuevo |
+|---|---|---|
+| **S7-01** | *Paginación de `/api/deudas`* | **3 endpoints más** que nadie había identificado (`/api/productos`, `/api/gestion-inventario`, `/api/facturacion`) + **búsqueda en SQL**, que la versión en S2 no incluía |
+| **S7-02** | *Paginación de `/api/ventas`* (GROUP BY post-LIMIT), *Reagrupar las 24 queries de `/api/estadisticas`* | **3 índices faltantes** en rutas de join calientes (`factura`, `bodega_producto.id_producto`, `venta.id_empleado`), hallazgo enteramente nuevo |
+| **S7-03** | *Configurar el pool de conexiones*, *Health checks y reinicio* (parte) | **`statement_timeout` y `connectionTimeoutMillis`**, que S2 no contemplaba |
+
+**Numeración final del Sprint 2** (antes → después):
+
+| Antes | Tarea | Ahora |
+|---|---|---|
+| S2-03 | Instrumentar la carga de vistas | **S2-01** |
+| S2-04 | Probar 10 usuarios simultáneos | **S2-02** |
+| S2-06 | Garantizar la ejecución continua del respaldo | **S2-03** |
+| S2-07 | Probar y documentar la restauración | **S2-04** |
+| S2-08 | Health checks, reinicio y monitoreo → **Monitoreo y medición de disponibilidad** | **S2-05** |
+| S2-09 | Documentar la garantía de retención | **S2-06** |
+| S2-11 | Prueba de arranque en frío | **S2-07** |
+
+**El Sprint 2 ya no contiene ninguna corrección de queries ni de pool.** Su
+alcance es **medir** el resultado de S7 y **asegurar la continuidad** del
+servicio. Por eso ahora depende de S7.
+
+---
+
 ## Sprint 6 — Evidencia y mediciones faltantes
 
 **Objetivo:** convertir los 9 requisitos ⚪ *no verificables* en verificables.
@@ -1294,74 +1473,3 @@ carencias que impiden usarlo como evidencia de auditoría:
 | **10.2** BD relacional | **Ya cumple.** No requiere acción. 27 tablas, 36 FK, transacciones, 33 archivos de pruebas |
 | **14.1** BD de productos al día | **Ya cumple en cuanto a sistema.** El CRUD completo existe. Que el catálogo esté *efectivamente* al día es un **dato del negocio**, no verificable desde el código |
 
----
-
-## Camino crítico
-
-```
-S0 (autorización)  ──┬──►  S1 (datos y auditoría)  ──►  S2 (rendimiento y
-                     │                                  disponibilidad)
-                     │                                        │
-                     └──►  S4 (ayuda y documentación) ──┐     ▼
-                                                      │   S6 (evidencia y
-S3 (identidad visual) ──── independiente ──────────────┤   mediciones)
-                                                      │     ▲
-S5 (configuración) ───── independiente ───────────────┘     │
-        ▲                                                 │
-        └─────────────────────────────────────────────────┘
-                          (S6 requiere S2 y S3)
-```
-
-**Secuencias que no deben romperse:**
-
-1. **S0 → S1**: la auditoría (S1-04/S1-05) registra el actor de las operaciones; conviene que el modelo de autorización ya sea correcto para no auditar eventos que van a cambiar.
-2. **S1 → S2**: el rendimiento debe medirse sin ruido de fugas de datos ni de auditoría per se.
-3. **S2, S3 → S6**: **medir un producto que va a cambiar no produce evidencia válida.**
-4. **S4-01 → S4-03, S4-05, S6-01, S6-03**: el manual de usuario es la entrada de la ayuda en línea, del PDF y de las dos pruebas con usuarios. **Es la dependencia más reordenada del backlog.**
-
-**Paralelizables desde el inicio:** S3 (identidad visual) y S5 (configuración e
-interoperabilidad) no dependen de nada. Si hay capacidad, deben empezar en
-paralelo con S0.
-
----
-
-## Métricas de cierre del backlog
-
-| Métrica | Valor actual | Valor objetivo |
-|---|:---:|:---:|
-| Requisitos ✅ CUMPLE | 3 / 38 | **≥ 26 / 38** |
-| Requisitos ⚪ no verificables | 9 / 38 | **≤ 3 / 38** |
-| Rutas financieras con autorización incorrecta | 7 | **0** |
-| Rutas mutantes sin auditoría | 31 / 39 | **0** |
-| Declaraciones de fuente < 14 px | 304 | **0** |
-| Hexadecimales fuera de paleta | 27 | **0** |
-| Vistas con botón de ayuda | 0 / 13 | **13 / 13** |
-| Funcionalidades con guía de uso | 0 / 40 | **40 / 40** |
-| p(95) `/api/ventas` con 20,180 ventas | 22.61 s | **< 3 s** |
-| p(95) `/api/deudas` con 5,000 deudas | 29.33 s | **< 3 s** |
-| Días consecutivos sin respaldo | 5 | **0** |
-| Retención de respaldos | 6 meses | **≥ 60 meses** |
-| Retención de logs de auditoría | volátil (5 × 50 MB) | **indefinida** |
-| Fugas `String(error)` al cliente | 6 | **0** |
-| Puntos de paso de error sin transformar (UI) | 42 | **0** |
-| Operaciones de config que exigen editar código | 6 / 12 | **0 / 12** |
-
----
-
-## Registro de avance
-
-| Sprint | Tareas | Completadas | Puntos | Fecha de cierre | Estado |
-|---|:---:|:---:|:---:|---|:---:|
-| S0 | 6 | 0 / 6 | 0 / 17 | — | 🔴 No iniciado |
-| S1 | 12 | 0 / 12 | 0 / 54 | — | 🔴 No iniciado |
-| S2 | 11 | 0 / 11 | 0 / 47 | — | 🔴 No iniciado |
-| S3 | 8 | 0 / 8 | 0 / 27 | — | 🔴 No iniciado |
-| S4 | 8 | 0 / 8 | 0 / 33 | — | 🔴 No iniciado |
-| S5 | 9 | 0 / 9 | 0 / 54 | — | 🔴 No iniciado |
-| S6 | 4 | 0 / 4 | 0 / 18 | — | 🔴 No iniciado |
-| **Total** | **58** | **0** | **0 / 250** | — | — |
-
-> Las tareas cuya **estimación no está cerrada** están marcadas con ⚠️ en su
-> ficha: `S0-05` (alcance a confirmar con el dueño), `S1-01` (frontera de datos a
-> cifrar), `S5-09` (depende de la decisión PWA vs. nativa). Re-estimar tras la
-> primera reunión de refinamiento.
