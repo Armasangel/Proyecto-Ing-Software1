@@ -22,6 +22,9 @@ type Usuario = {
 
 type TipoUsuario = keyof typeof TIPOS_USUARIO;
 
+/** Cupos de dueño tal como los calcula el servidor (cuenta a todos los dueños, sin filtros). */
+type CuposDueno = { usados: number; maximo: number; disponibles: number };
+
 const TIPO_META: Record<
   string,
   { label: string; color: string; bg: string; border: string }
@@ -70,6 +73,9 @@ export default function UsuariosPage() {
 
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [loading, setLoading] = useState(false);
+  // Totales reales que manda el servidor: los filtros de la tabla no deben cambiarlos.
+  const [totales, setTotales] = useState<Record<string, number> | null>(null);
+  const [cuposDueno, setCuposDueno] = useState<CuposDueno | null>(null);
   const [bodegas, setBodegas] = useState<{ id_bodega: number; nombre_bodega: string }[]>([]);
 
   // Filtros
@@ -122,7 +128,11 @@ export default function UsuariosPage() {
       if (filtroTipo) params.set("tipo", filtroTipo);
       const r = await fetch(`/api/usuarios?${params}`);
       const d = await r.json();
-      if (r.ok) setUsuarios(d.usuarios || []);
+      if (r.ok) {
+        setUsuarios(d.usuarios || []);
+        setTotales(d.totales_por_tipo ?? null);
+        setCuposDueno(d.cupos_dueno ?? null);
+      }
       else showToast(d.error || "Error al cargar usuarios", "err");
     } catch {
       showToast("Error de conexión", "err");
@@ -341,11 +351,19 @@ export default function UsuariosPage() {
 
   const totalPorTipo = TIPOS_OPCIONES.slice(1).map((t) => ({
     ...t,
-    count: usuarios.filter((u) => u.tipo_usuario === t.value).length,
+    // Si el servidor aún no respondió, se cuenta lo que hay en la lista.
+    count: totales?.[t.value] ?? usuarios.filter((u) => u.tipo_usuario === t.value).length,
   }));
 
-  const totalDuenosActual = usuarios.filter((u) => u.tipo_usuario === TIPOS_USUARIO.DUENO).length;
-  const limiteDuenosAlcanzado = totalDuenosActual >= MAX_DUENOS;
+  // Cupos de dueño: se leen del servidor para que no cambien al buscar o filtrar la tabla.
+  // El servidor igual valida el límite al promover, esto solo es la retroalimentación.
+  // Mientras no haya respuesta (cuposDueno null) no se muestra ningún mensaje de cupos.
+  const duenosUsados = cuposDueno?.usados ?? 0;
+  const cuposDisponibles = Math.max(0, MAX_DUENOS - duenosUsados);
+  const limiteDuenosAlcanzado = cuposDisponibles <= 0;
+  const cuposResumen = limiteDuenosAlcanzado
+    ? `Sin cupos de dueño (${duenosUsados} de ${MAX_DUENOS} en uso)`
+    : `${cuposDisponibles} de ${MAX_DUENOS} cupos de dueño disponibles`;
 
   return (
     <StaffShell
@@ -372,6 +390,19 @@ export default function UsuariosPage() {
                 {t.count}
               </div>
               <div style={{ fontSize: "0.78rem", color: "var(--muted)" }}>{t.label}</div>
+              {t.value === TIPOS_USUARIO.DUENO && cuposDueno && (
+                <div
+                  data-testid="cupos-dueno"
+                  style={{
+                    fontSize: "0.72rem",
+                    fontWeight: 600,
+                    marginTop: "0.4rem",
+                    color: limiteDuenosAlcanzado ? "var(--red)" : "var(--green)",
+                  }}
+                >
+                  {cuposResumen}
+                </div>
+              )}
             </div>
           );
         })}
@@ -534,17 +565,16 @@ export default function UsuariosPage() {
                         >
                           ✏️
                         </button>
-                        {u.tipo_usuario !== TIPOS_USUARIO.DUENO && (
+                        {/* Con el cupo lleno el botón no se muestra: el aviso está en la tarjeta de Dueño */}
+                        {u.tipo_usuario !== TIPOS_USUARIO.DUENO && !limiteDuenosAlcanzado && (
                           <button
                             type="button"
                             onClick={() => abrirPromover(u)}
                             style={s.btnEdit}
-                            disabled={esMismoUsuario || !u.estado_usuario || limiteDuenosAlcanzado}
+                            disabled={esMismoUsuario || !u.estado_usuario}
                             title={
                               !u.estado_usuario
                                 ? "No se puede promover a un usuario inactivo"
-                                : limiteDuenosAlcanzado
-                                ? `Ya hay ${MAX_DUENOS} dueños (el máximo)`
                                 : "Promover a Dueño (requiere verificación por correo)"
                             }
                           >
@@ -949,6 +979,26 @@ export default function UsuariosPage() {
                     ))}
                 </select>
               </div>
+
+              {cuposDueno && (
+                <div
+                  role="note"
+                  data-testid="nota-cupos-dueno"
+                  style={{
+                    fontSize: "0.76rem",
+                    color: "var(--muted)",
+                    background: "var(--surface2)",
+                    border: "1px dashed var(--border)",
+                    borderRadius: 10,
+                    padding: "0.6rem 0.8rem",
+                  }}
+                >
+                  <strong style={{ color: limiteDuenosAlcanzado ? "var(--red)" : "var(--green)" }}>{cuposResumen}.</strong>{" "}
+                  {limiteDuenosAlcanzado
+                    ? "Para dar el rol de dueño a otra persona, primero hay que quitárselo a uno de los actuales."
+                    : "El rol de dueño no se asigna al crear la cuenta: crea el usuario y luego usa el botón 👑 de la tabla."}
+                </div>
+              )}
 
               {nuevoForm.tipo_usuario === TIPOS_USUARIO.BODEGUERO && (
                 <div style={s.field}>

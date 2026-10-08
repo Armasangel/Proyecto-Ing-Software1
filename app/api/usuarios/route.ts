@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
-import { isDuenoTipo, TIPOS_USUARIO } from "@/lib/roles";
+import { isDuenoTipo, MAX_DUENOS, TIPOS_USUARIO } from "@/lib/roles";
 import { apiError, unauthorizedError, validationError } from "@/lib/api-error";
 import { checkRateLimit, getClientIp } from "@/lib/api-rate-limit";
 
@@ -48,25 +48,43 @@ export async function GET(req: NextRequest) {
 
     const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
-    const result = await pool.query(
-      `SELECT
-         u.id_usuario,
-         u.nombre,
-         u.correo,
-         u.telefono,
-         u.tipo_usuario,
-         u.estado_usuario,
-         u.id_bodega,
-         u.requiere_2fa,
-         b.nombre_bodega
-       FROM usuario u
-       LEFT JOIN bodega b ON b.id_bodega = u.id_bodega
-       ${where}
-       ORDER BY u.tipo_usuario, u.nombre`,
-      params
-    );
+    // Los totales por tipo se piden aparte y SIN filtros: los cupos de dueño
+    // dependen de cuántos dueños existen de verdad (el mismo conteo que usa
+    // el proceso de promoción), no de los que quedaron en la lista filtrada.
+    const [result, totalesResult] = await Promise.all([
+      pool.query(
+        `SELECT
+           u.id_usuario,
+           u.nombre,
+           u.correo,
+           u.telefono,
+           u.tipo_usuario,
+           u.estado_usuario,
+           u.id_bodega,
+           u.requiere_2fa,
+           b.nombre_bodega
+         FROM usuario u
+         LEFT JOIN bodega b ON b.id_bodega = u.id_bodega
+         ${where}
+         ORDER BY u.tipo_usuario, u.nombre`,
+        params
+      ),
+      pool.query<{ tipo_usuario: string; total: number }>(
+        `SELECT tipo_usuario, COUNT(*)::int AS total FROM usuario GROUP BY tipo_usuario`
+      ),
+    ]);
 
-    return NextResponse.json({ usuarios: result.rows });
+    const totales_por_tipo: Record<string, number> = Object.fromEntries(TIPOS_VALIDOS.map((tipo) => [tipo, 0]));
+    for (const fila of totalesResult.rows) {
+      if (fila.tipo_usuario in totales_por_tipo) totales_por_tipo[fila.tipo_usuario] = Number(fila.total) || 0;
+    }
+    const usados = totales_por_tipo[TIPOS_USUARIO.DUENO];
+
+    return NextResponse.json({
+      usuarios: result.rows,
+      totales_por_tipo,
+      cupos_dueno: { usados, maximo: MAX_DUENOS, disponibles: Math.max(0, MAX_DUENOS - usados) },
+    });
   } catch (error) {
     return apiError("USUARIOS GET", error);
   }

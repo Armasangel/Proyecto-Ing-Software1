@@ -83,6 +83,57 @@ describe("GET /api/usuarios", () => {
     const sql = query?.[0] as string;
     expect(sql).toContain("tipo_usuario");
   });
+
+  describe("cupos de dueño", () => {
+    /** Simula la base: la lista (posiblemente filtrada) y, aparte, el conteo real por tipo */
+    function mockBase(lista: unknown[], totales: { tipo_usuario: string; total: number }[]) {
+      mockPool.query.mockImplementation(async (sql: string) =>
+        sql.includes("GROUP BY") ? { rows: totales } : { rows: lista }
+      );
+    }
+
+    it("informa cuántos cupos de dueño quedan", async () => {
+      mockBase(mockUsuarios, [
+        { tipo_usuario: "DUENO", total: 1 },
+        { tipo_usuario: "EMPLEADO", total: 4 },
+      ]);
+      const res = await GET(createMockRequest("/api/usuarios", { user: testUserDueno }));
+      const data = await res.json();
+      expect(data.cupos_dueno).toEqual({ usados: 1, maximo: 2, disponibles: 1 });
+      expect(data.totales_por_tipo).toEqual({ DUENO: 1, EMPLEADO: 4, BODEGUERO: 0 });
+    });
+
+    it("con 2 dueños no quedan cupos (y nunca da negativos)", async () => {
+      mockBase(mockUsuarios, [{ tipo_usuario: "DUENO", total: 3 }]);
+      const res = await GET(createMockRequest("/api/usuarios", { user: testUserDueno }));
+      const data = await res.json();
+      expect(data.cupos_dueno).toEqual({ usados: 3, maximo: 2, disponibles: 0 });
+    });
+
+    it("cuenta a todos los dueños aunque la lista esté filtrada", async () => {
+      // Filtro por EMPLEADO: la lista no trae ningún dueño, pero hay 2 en la base
+      mockBase([mockUsuarios[1]], [
+        { tipo_usuario: "DUENO", total: 2 },
+        { tipo_usuario: "EMPLEADO", total: 1 },
+      ]);
+      const res = await GET(createMockRequest("/api/usuarios?tipo=EMPLEADO&q=maria", { user: testUserDueno }));
+      const data = await res.json();
+
+      expect(data.usuarios).toHaveLength(1);
+      expect(data.cupos_dueno.disponibles).toBe(0);
+
+      const consultaTotales = mockPool.query.mock.calls.find((c: unknown[]) => (c[0] as string).includes("GROUP BY"));
+      expect(consultaTotales?.[0]).not.toContain("WHERE");
+      expect(consultaTotales?.[1]).toBeUndefined();
+    });
+
+    it("sin dueños registrados informa todos los cupos libres", async () => {
+      mockBase([], []);
+      const res = await GET(createMockRequest("/api/usuarios", { user: testUserDueno }));
+      const data = await res.json();
+      expect(data.cupos_dueno).toEqual({ usados: 0, maximo: 2, disponibles: 2 });
+    });
+  });
 });
 
 describe("PATCH /api/usuarios", () => {
