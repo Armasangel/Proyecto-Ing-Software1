@@ -6,6 +6,7 @@ import { useStaffSession } from "@/hooks/useStaffSession";
 import { staffVariantFromTipo } from "@/lib/roles";
 import { Icon } from "@/components/Icon";
 import { matchesQuery } from "@/lib/ui-table";
+import { formatMoney } from "@/lib/format";
 
 type Fila = {
   id_producto: number;
@@ -660,8 +661,8 @@ export default function ProductosPage() {
                 <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">{p.nombre_producto}</td>
                 <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">{p.nombre_categoria}</td>
                 <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">{p.nombre_marca}</td>
-                <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)] text-right">Q{Number(p.precio_unitario).toFixed(2)}</td>
-                <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)] text-right">Q{Number(p.precio_mayoreo).toFixed(2)}</td>
+                <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)] text-right">{formatMoney(p.precio_unitario)}</td>
+                <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)] text-right">{formatMoney(p.precio_mayoreo)}</td>
                 <td className="px-3.5 py-2.5 text-[0.88rem] border-b border-[var(--border)]">
                   {p.estado_producto
                     ? <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold bg-market-50 text-market-600">Activo</span>

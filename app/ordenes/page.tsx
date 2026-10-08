@@ -5,6 +5,7 @@ import { StaffShell } from "@/components/StaffShell";
 import { useStaffSession } from "@/hooks/useStaffSession";
 import { staffVariantFromTipo } from "@/lib/roles";
 import { Icon } from "@/components/Icon";
+import { formatDateTime, formatMoney, formatQuantity } from "@/lib/format";
 
 type Cliente = {
   id_cliente: number;
@@ -379,7 +380,7 @@ export default function OrdenesPage() {
         setError(data.error || "No se pudo crear la orden");
         return;
       }
-      setOkMsg(`Orden #${data.id_orden} creada. Total: Q${Number(data.total).toFixed(2)}`);
+      setOkMsg(`Orden #${data.id_orden} creada. Total: ${formatMoney(data.total)}`);
       setIdCliente("");
       setBusquedaCliente("");
       setNotas("");
@@ -724,7 +725,7 @@ export default function OrdenesPage() {
             </div>
 
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "0.5rem", paddingTop: "1rem", borderTop: "1px solid var(--border)" }}>
-              <span style={{ fontWeight: 700, color: "var(--text)" }}>Total: Q{totalBorrador.toFixed(2)}</span>
+              <span style={{ fontWeight: 700, color: "var(--text)" }}>Total: {formatMoney(totalBorrador)}</span>
               <button
                 type="button"
                 onClick={handleSubmit}
@@ -782,7 +783,7 @@ export default function OrdenesPage() {
                   {ordenes.map((o, i) => (
                     <tr key={o.id_orden} style={{ background: i % 2 === 0 ? "var(--surface2)" : "var(--surface)", verticalAlign: "top" }}>
                       <td style={td}>{o.id_orden}</td>
-                      <td style={td}>{new Date(o.fecha_orden).toLocaleString("es-GT", { dateStyle: "short", timeStyle: "short" })}</td>
+                      <td style={td}>{formatDateTime(o.fecha_orden)}</td>
                       <td style={td}>
                         <div style={{ fontWeight: 500 }}>{o.nombre_cliente}</div>
                         <div style={{ fontSize: "0.78rem", color: "var(--muted)" }}>{o.correo_cliente}</div>
@@ -801,16 +802,16 @@ export default function OrdenesPage() {
                           {ESTADOS_LABEL[o.estado] || o.estado}
                         </span>
                       </td>
-                      <td style={{ ...td, textAlign: "right", fontWeight: 600 }}>Q{Number(o.total).toFixed(2)}</td>
+                      <td style={{ ...td, textAlign: "right", fontWeight: 600 }}>{formatMoney(o.total)}</td>
                       <td style={{ ...td, fontSize: "0.82rem", maxWidth: 320 }}>
                         {(o.productos || []).map((pr) => (
                           <div key={pr.id_detalle} style={{ marginBottom: "0.35rem" }}>
                             <span style={{ color: "var(--text)" }}>{pr.codigo_producto}</span>{" "}
-                            x {Number(pr.cantidad).toFixed(3)} @ Q{Number(pr.precio_unitario).toFixed(2)}{" "}
-                            {"->"} Q{Number(pr.subtotal).toFixed(2)}
+                            x {formatQuantity(pr.cantidad)} @ {formatMoney(pr.precio_unitario)}{" "}
+                            {"->"} {formatMoney(pr.subtotal)}
                             {pr.nombre_presentacion && pr.cantidad_presentacion && (
                               <span style={{ color: "var(--muted)", fontSize: "0.75rem" }}>
-                                {" "}({Number(pr.cantidad_presentacion).toFixed(0)} × {pr.nombre_presentacion})
+                                {" "}({formatQuantity(pr.cantidad_presentacion, 0)} × {pr.nombre_presentacion})
                               </span>
                             )}
                             <div style={{ fontSize: "0.75rem", color: "var(--muted)", marginTop: "0.1rem" }}>

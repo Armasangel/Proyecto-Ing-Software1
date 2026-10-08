@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { StaffShell } from "@/components/StaffShell";
 import { useStaffSession } from "@/hooks/useStaffSession";
 import { matchesQuery, paginar, PaginationBar, type PageSize } from "@/lib/ui-table";
+import { formatDate, formatMoney } from "@/lib/format";
 
 type Venta = {
   id_venta: number;
@@ -216,9 +217,9 @@ export default function FacturacionPage() {
                       <td className="px-3.5 py-2.5 border-b border-[var(--border)] text-ink-muted">{v.id_venta}</td>
                       <td className="px-3.5 py-2.5 border-b border-[var(--border)] text-ink">{v.nombre}</td>
                       <td className="px-3.5 py-2.5 border-b border-[var(--border)] text-ink-muted">
-                        {new Date(v.fecha_venta).toLocaleDateString("es-GT")}
+                        {formatDate(v.fecha_venta)}
                       </td>
-                      <td className="px-3.5 py-2.5 border-b border-[var(--border)] text-ink">Q{Number(v.total).toFixed(2)}</td>
+                      <td className="px-3.5 py-2.5 border-b border-[var(--border)] text-ink">{formatMoney(v.total)}</td>
                       <td className="px-3.5 py-2.5 border-b border-[var(--border)]">
                         <span
                           className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
@@ -272,7 +273,7 @@ export default function FacturacionPage() {
                 <div>
                   <h2 className="text-lg font-bold text-ink">Factura {facturaDetalle.numero_factura}</h2>
                   <p className="text-ink-muted text-sm">
-                    {new Date(facturaDetalle.fecha_venta).toLocaleDateString("es-GT")}
+                    {formatDate(facturaDetalle.fecha_venta)}
                   </p>
                 </div>
                 <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-market-50 text-market-600">
@@ -309,8 +310,8 @@ export default function FacturacionPage() {
                       <tr key={p.id_detalle} className="border-b border-[var(--border)]">
                         <td className="py-1.5 text-ink">{p.nombre_producto}</td>
                         <td className="py-1.5 text-right text-ink-muted">{p.cantidad}</td>
-                        <td className="py-1.5 text-right text-ink-muted">Q{Number(p.precio_unitario).toFixed(2)}</td>
-                        <td className="py-1.5 text-right text-ink">Q{Number(p.subtotal).toFixed(2)}</td>
+                        <td className="py-1.5 text-right text-ink-muted">{formatMoney(p.precio_unitario)}</td>
+                        <td className="py-1.5 text-right text-ink">{formatMoney(p.subtotal)}</td>
                       </tr>
                     ))
                   )}
@@ -319,7 +320,7 @@ export default function FacturacionPage() {
 
               <div className="flex justify-end">
                 <p className="text-base font-bold text-ink">
-                  Total: Q{Number(facturaDetalle.total_factura).toFixed(2)}
+                  Total: {formatMoney(facturaDetalle.total_factura)}
                 </p>
               </div>
             </div>

@@ -2,6 +2,7 @@ import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Icon } from "@/components/Icon";
 import { matchesQuery, paginar, PaginationBar, PAGE_SIZES_COMPACT, type PageSize } from "@/lib/ui-table";
+import { formatDateTime, formatNumber, formatQuantity } from "@/lib/format";
 
 const MIS_ITEMS = [
   {label: "editar", icon: "pencil"},
@@ -511,12 +512,12 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
                         <div style={{ fontWeight: 600 }}><code style={s.code}>{r.codigo_producto}</code> {r.nombre_producto}</div>
                         <div style={{ fontSize: "0.78rem", color: "var(--muted)" }}>{r.nombre_categoria} · {r.nombre_marca} · {r.unidad_medida}{!r.estado_producto ? " · inactivo" : ""}</div>
                       </td>
-                      <td style={{ ...s.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{Number(r.cantidad_disponible).toFixed(3)}</td>
+                      <td style={{ ...s.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{formatQuantity(r.cantidad_disponible)}</td>
                       <td style={{ ...s.td, textAlign: "right" }}>
                         <input value={minVal} onChange={e => setMinEdits(m => ({ ...m, [key]: e.target.value }))} style={{ ...s.select, padding: "0.45rem 0.55rem", maxWidth: 120, textAlign: "right" }} />
                       </td>
                       <td style={s.td}>{r.bajo_minimo ? <span style={s.badgeWarn}>Bajo mínimo</span> : <span style={s.badgeOk}>OK</span>}</td>
-                      <td style={{ ...s.td, fontSize: "0.82rem", color: "var(--muted)" }}>{new Date(r.ultima_actualizacion).toLocaleString("es-GT")}</td>
+                      <td style={{ ...s.td, fontSize: "0.82rem", color: "var(--muted)" }}>{formatDateTime(r.ultima_actualizacion)}</td>
                       <td style={s.td}>
                         <button type="button" style={{ ...s.btnPrimary, color: "#000000" }} onClick={() => void patchMinimo(r.id_bodega, r.id_producto)}>Guardar</button>
                       </td>
@@ -581,7 +582,7 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
                 <input type="number" min="0.001" step="1" value={entradaForm.cantidad} onChange={e => setEntradaForm(f => ({ ...f, cantidad: e.target.value }))} style={s.select} />
                 {entradaForm.id_presentacion && entradaForm.cantidad && (
                   <span style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
-                    = {(Number(entradaForm.cantidad) * Number(entradaPresentaciones.find(p => p.id_presentacion === Number(entradaForm.id_presentacion))?.factor_conversion || 1)).toLocaleString("es-GT")} {productoSeleccionado?.unidad_medida || "unidades"} en total
+                    = {formatNumber(Number(entradaForm.cantidad) * Number(entradaPresentaciones.find(p => p.id_presentacion === Number(entradaForm.id_presentacion))?.factor_conversion || 1))} {productoSeleccionado?.unidad_medida || "unidades"} en total
                   </span>
                 )}
               </div>
@@ -599,7 +600,7 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
                 <strong style={{ color: "var(--text)" }}>Entrada registrada</strong>
                 <div style={{ fontSize: "0.82rem", marginTop: "0.35rem", color: "var(--muted)" }}>
                   {entradaResultado.nombre_producto} · {entradaResultado.nombre_bodega}<br />
-                  Stock actual: <strong style={{ color: "var(--text)" }}>{Number(entradaResultado.cantidad_disponible).toFixed(2)} {entradaResultado.unidad_medida}</strong>
+                  Stock actual: <strong style={{ color: "var(--text)" }}>{formatQuantity(entradaResultado.cantidad_disponible, 2)} {entradaResultado.unidad_medida}</strong>
                 </div>
               </div>
             )}
@@ -699,11 +700,11 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
                   <tr><td colSpan={6} style={{ ...s.td, textAlign: "center", padding: "2rem", color: "var(--muted)" }}>{qKardex.trim() ? "Ningún resultado para esa búsqueda." : "No hay movimientos para estos filtros."}</td></tr>
                 ) : kardexPage.slice.map(m => (
                   <tr key={m.id_kardex} style={{ borderTop: "1px solid var(--border)" }}>
-                    <td style={{ ...s.td, fontSize: "0.82rem", color: "var(--muted)", whiteSpace: "nowrap" }}>{new Date(m.fecha_movimiento).toLocaleString("es-GT")}</td>
+                    <td style={{ ...s.td, fontSize: "0.82rem", color: "var(--muted)", whiteSpace: "nowrap" }}>{formatDateTime(m.fecha_movimiento)}</td>
                     <td style={s.td}><span style={tipoBadge(m.tipo_movimiento)}>{m.tipo_movimiento}</span></td>
                     <td style={s.td}><div style={{ fontWeight: 600 }}>{m.nombre_bodega}</div></td>
                     <td style={s.td}><div style={{ fontWeight: 600 }}><code style={s.code}>{m.codigo_producto}</code> {m.nombre_producto}</div><div style={{ fontSize: "0.78rem", color: "var(--muted)" }}>{m.unidad_medida}</div></td>
-                    <td style={{ ...s.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{Number(m.cantidad).toFixed(3)}</td>
+                    <td style={{ ...s.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{formatQuantity(m.cantidad)}</td>
                     <td style={{ ...s.td, color: "var(--muted)", fontSize: "0.88rem" }}>{m.descripcion || "—"}</td>
                   </tr>
                 ))}
@@ -761,7 +762,7 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
                       <td style={{ ...s.td, fontWeight: 600 }}>{b.nombre_bodega}</td>
                       <td style={{ ...s.td, color: "var(--muted)" }}>{b.ubicacion || "—"}</td>
                       <td style={{ ...s.td, textAlign: "right" }}>{b.total_productos}</td>
-                      <td style={{ ...s.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{Number(b.stock_total).toLocaleString("es-GT", { maximumFractionDigits: 3 })}</td>
+                      <td style={{ ...s.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{formatNumber(b.stock_total, { maxDecimals: 3 })}</td>
                       <td style={{ ...s.td, textAlign: "center" }}>
                         <div style={{ display: "flex", gap: "0.4rem", justifyContent: "center" }}>
                           <button type="button" onClick={() => abrirEditarBodega(b)} style={s.btnEdit} title="Editar">✏️</button>
@@ -871,7 +872,7 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
                   ) : presLista.map((pr) => (
                     <tr key={pr.id_presentacion}>
                       <td style={{ ...s.td, fontWeight: 600 }}>{pr.nombre_presentacion}</td>
-                      <td style={{ ...s.td, textAlign: "right" }}>{Number(pr.factor_conversion).toLocaleString("es-GT")}</td>
+                      <td style={{ ...s.td, textAlign: "right" }}>{formatNumber(pr.factor_conversion)}</td>
                       <td style={{ ...s.td, textAlign: "center" }}>
                         <button type="button" onClick={() => eliminarPresentacion(pr.id_presentacion)} style={s.btnDel} title="Eliminar">
                           <Icon name="trash" size={14} />

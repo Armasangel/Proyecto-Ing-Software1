@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { isDuenoTipo } from "@/lib/roles";
+import { formatQuantity } from "@/lib/format";
 
 type Body = {
   id_bodega: unknown;
@@ -95,14 +96,14 @@ export async function POST(req: NextRequest) {
       const abs = Math.abs(delta);
       const descBase =
         descripcion ??
-        `Ajuste manual (antes: ${anterior.toFixed(3)} → después: ${nueva.toFixed(3)})`;
+        `Ajuste manual (antes: ${formatQuantity(anterior)} → después: ${formatQuantity(nueva)})`;
 
       await client.query(
         `
         INSERT INTO kardex (id_bodega, id_producto, tipo_movimiento, cantidad, descripcion)
         VALUES ($1, $2, 'AJUSTE', $3, $4)
         `,
-        [idBodega, idProducto, abs, `${descBase} (delta ${delta > 0 ? "+" : "-"}${abs.toFixed(3)})`]
+        [idBodega, idProducto, abs, `${descBase} (delta ${delta > 0 ? "+" : "-"}${formatQuantity(abs)})`]
       );
 
       await client.query("COMMIT");

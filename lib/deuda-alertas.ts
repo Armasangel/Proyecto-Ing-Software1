@@ -12,6 +12,7 @@
 // el modelo.
 
 import { PoolClient } from "pg";
+import { formatMoney } from "@/lib/format";
 
 export type ResultadoVerificacionLimite = {
   permitido: boolean;
@@ -65,9 +66,7 @@ export async function verificarLimiteAntesDeDeuda(
   if (limite !== null && limite > 0 && deudaPendienteActual + montoNuevo >= limite) {
     return {
       permitido: false,
-      motivo: `Esta deuda (Q${montoNuevo.toFixed(2)}) haría que ${nombre} alcance o supere su límite de deuda (Q${limite.toFixed(
-        2
-      )}). Deuda pendiente actual: Q${deudaPendienteActual.toFixed(2)}.`,
+      motivo: `Esta deuda (${formatMoney(montoNuevo)}) haría que ${nombre} alcance o supere su límite de deuda (${formatMoney(limite)}). Deuda pendiente actual: ${formatMoney(deudaPendienteActual)}.`,
       deuda_pendiente_actual: deudaPendienteActual,
       limite_deuda: limite,
     };

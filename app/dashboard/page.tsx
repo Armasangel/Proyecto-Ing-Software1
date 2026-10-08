@@ -5,6 +5,7 @@ import Link from "next/link";
 import { StaffShell } from "@/components/StaffShell";
 import { useStaffSession } from "@/hooks/useStaffSession";
 import { Icon } from "@/components/Icon";
+import { formatDateLong, formatNumber } from "@/lib/format";
 
 export default function DashboardPage() {
   const usuario = useStaffSession();
@@ -79,11 +80,7 @@ export default function DashboardPage() {
     <StaffShell
       usuario={usuario}
       title="Dashboard"
-      subtitle={`Hola, ${usuario.nombre.split(" ")[0]} — ${new Date().toLocaleDateString("es-GT", {
-        weekday: "long",
-        day: "numeric",
-        month: "long",
-      })}`}
+      subtitle={`Hola, ${usuario.nombre.split(" ")[0]} — ${formatDateLong()}`}
     >
       {/* ── Stat cards ── */}
       <div className="grid gap-4 mb-8" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))" }}>
@@ -114,7 +111,7 @@ export default function DashboardPage() {
                 <Icon name={stat.icon} variant="dark" size={24} />
               </div>
               <div className={`font-head text-[2rem] font-extrabold leading-none ${stat.valueClass}`}>
-                {stat.value.toLocaleString("es-GT")}
+                {formatNumber(stat.value)}
               </div>
               <div className="text-[0.8rem] text-ink-muted font-medium">{stat.label}</div>
             </div>

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { StaffShell } from "@/components/StaffShell";
 import { useDuenoSession } from "@/hooks/useDuenoSession";
 import { Icon, type IconName } from "@/components/Icon";
+import { formatDayMonth, formatMoney, formatNumber, toISODate } from "@/lib/format";
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -166,21 +167,9 @@ const CAT_COLORS = [
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function q(n: number) {
-  return `Q${n.toLocaleString("es-GT", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
-}
-
 function pct(a: number, b: number): number | null {
   if (b === 0) return null;
   return Math.round(((a - b) / b) * 1000) / 10;
-}
-
-function fmtDate(iso: string) {
-  const [, mm, dd] = iso.split("-");
-  return `${dd}/${mm}`;
 }
 
 // ─── Gráficas SVG puras ───────────────────────────────────────────────────────
@@ -223,9 +212,9 @@ function BarChart({ data, height = 160 }: { data: { fecha: string; total_dia: nu
         return (
           <g key={d.fecha}>
             <rect x={x} y={y} width={barW} height={barH} rx={3} fill="rgba(45,106,79,.75)">
-              <title>{`${d.fecha}: ${q(d.total_dia)} · ${d.cantidad} venta${d.cantidad !== 1 ? "s" : ""}`}</title>
+              <title>{`${d.fecha}: ${formatMoney(d.total_dia)} · ${d.cantidad} venta${d.cantidad !== 1 ? "s" : ""}`}</title>
             </rect>
-            {showLabel && <text x={x + barW / 2} y={H - 6} textAnchor="middle" fontSize={8} fill="rgba(139,148,158,.8)">{fmtDate(d.fecha)}</text>}
+            {showLabel && <text x={x + barW / 2} y={H - 6} textAnchor="middle" fontSize={8} fill="rgba(139,148,158,.8)">{formatDayMonth(d.fecha)}</text>}
           </g>
         );
       })}
@@ -269,7 +258,7 @@ function HBarChart({ data, valueKey, labelKey, color = "rgba(45,106,79,.75)", fo
           <div key={i}>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.78rem", marginBottom: "0.25rem" }}>
               <span style={{ color: "var(--text)", fontWeight: 500, maxWidth: "65%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
-              <span style={{ color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>{formatValue ? formatValue(val) : val.toLocaleString("es-GT")}</span>
+              <span style={{ color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>{formatValue ? formatValue(val) : formatNumber(val)}</span>
             </div>
             <div style={{ background: "var(--surface2)", borderRadius: 4, height: 7, overflow: "hidden" }}>
               <div style={{ width: `${pctW}%`, height: "100%", background: color, borderRadius: 4, transition: "width .5s ease" }} />
@@ -489,7 +478,7 @@ export default function EstadisticasPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      const fechaHoy = new Date().toISOString().slice(0, 10);
+      const fechaHoy = toISODate();
       a.download = `reporte-${tipo === "todo" ? "completo" : periodo}-${fechaHoy}.xlsx`;
       a.click();
       URL.revokeObjectURL(url);
@@ -580,23 +569,23 @@ export default function EstadisticasPage() {
               <div>
                 <div style={s.kpiGroupLabel}>Ventas</div>
                 <div style={s.statsGrid}>
-                  <StatCard icon="money-bag" label="Ventas al crédito" value={`${data.kpis.ventas.pct_ventas_credito}%`} sub={`${data.kpis.ventas.ventas_credito} venta${data.kpis.ventas.ventas_credito !== 1 ? "s" : ""} · ${q(data.kpis.ventas.monto_credito)} sin cobrar de inmediato`} />
+                  <StatCard icon="money-bag" label="Ventas al crédito" value={`${data.kpis.ventas.pct_ventas_credito}%`} sub={`${data.kpis.ventas.ventas_credito} venta${data.kpis.ventas.ventas_credito !== 1 ? "s" : ""} · ${formatMoney(data.kpis.ventas.monto_credito)} sin cobrar de inmediato`} />
                 </div>
               </div>
 
               <div>
                 <div style={s.kpiGroupLabel}>Inventario</div>
                 <div style={s.statsGrid}>
-                  <StatCard icon="inventory" label="Bajo su mínimo"      value={data.kpis.inventario.productos_bajo_minimo.toLocaleString("es-GT")} sub="productos que ya tocan reordenar" />
-                  <StatCard icon="transfer"  label="Rotación de inventario" value={data.kpis.inventario.rotacion_inventario.toLocaleString("es-GT")} sub="unidades vendidas / stock actual" />
-                  <StatCard icon="box"       label="Sin movimiento"     value={data.kpis.inventario.productos_sin_movimiento.toLocaleString("es-GT")} sub="sin salidas de bodega en el periodo" />
+                  <StatCard icon="inventory" label="Bajo su mínimo"      value={formatNumber(data.kpis.inventario.productos_bajo_minimo)} sub="productos que ya tocan reordenar" />
+                  <StatCard icon="transfer"  label="Rotación de inventario" value={formatNumber(data.kpis.inventario.rotacion_inventario)} sub="unidades vendidas / stock actual" />
+                  <StatCard icon="box"       label="Sin movimiento"     value={formatNumber(data.kpis.inventario.productos_sin_movimiento)} sub="sin salidas de bodega en el periodo" />
                 </div>
               </div>
 
               <div>
                 <div style={s.kpiGroupLabel}>Clientes y deuda</div>
                 <div style={s.statsGrid}>
-                  <StatCard icon="lockout" label="Cartera vencida"          value={`${data.kpis.deuda.pct_cartera_vencida}%`} sub={`${q(data.kpis.deuda.deuda_pendiente_bloqueados)} en clientes ya bloqueados`} />
+                  <StatCard icon="lockout" label="Cartera vencida"          value={`${data.kpis.deuda.pct_cartera_vencida}%`} sub={`${formatMoney(data.kpis.deuda.deuda_pendiente_bloqueados)} en clientes ya bloqueados`} />
                   <StatCard icon="debt"    label="Tasa de recuperación"     value={`${data.kpis.deuda.tasa_recuperacion}%`}   sub="deuda pagada / deuda generada (histórico)" />
                 </div>
               </div>
@@ -604,8 +593,8 @@ export default function EstadisticasPage() {
               <div>
                 <div style={s.kpiGroupLabel}>Operación</div>
                 <div style={s.statsGrid}>
-                  <StatCard icon="shopping-cart" label="Ventas sin cerrar" value={data.kpis.operacion.ventas_pendientes.toLocaleString("es-GT")} sub={`${q(data.kpis.operacion.monto_ventas_pendientes)} sin cobrar/entregar`} />
-                  <StatCard icon="hand-truck"    label="Pedidos pendientes" value={data.kpis.operacion.pedidos_pendientes.toLocaleString("es-GT")} sub={`${q(data.kpis.operacion.monto_pedidos_pendientes)} en pedidos abiertos`} />
+                  <StatCard icon="shopping-cart" label="Ventas sin cerrar" value={formatNumber(data.kpis.operacion.ventas_pendientes)} sub={`${formatMoney(data.kpis.operacion.monto_ventas_pendientes)} sin cobrar/entregar`} />
+                  <StatCard icon="hand-truck"    label="Pedidos pendientes" value={formatNumber(data.kpis.operacion.pedidos_pendientes)} sub={`${formatMoney(data.kpis.operacion.monto_pedidos_pendientes)} en pedidos abiertos`} />
                   <StatCard icon="close"         label="% cancelación"     value={`${data.kpis.operacion.pct_cancelacion}%`} sub="de las ventas del periodo" />
                 </div>
               </div>
@@ -649,7 +638,7 @@ export default function EstadisticasPage() {
                                   <div style={{ fontSize: "0.72rem", color: "var(--muted)" }}>{d.nombre_bodega}</div>
                                 </td>
                                 <td style={{ ...s.td, textAlign: "right", color: "var(--muted)" }}>{d.cantidad_disponible}</td>
-                                <td style={{ ...s.td, textAlign: "right", fontWeight: 600 }}>{q(d.valor_inmovilizado)}</td>
+                                <td style={{ ...s.td, textAlign: "right", fontWeight: 600 }}>{formatMoney(d.valor_inmovilizado)}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -664,10 +653,10 @@ export default function EstadisticasPage() {
 
           {/* Fila 1 — Tarjetas de resumen */}
           <div style={s.statsGrid}>
-            <StatCard icon="bill"     label="Ventas totales"   value={data.resumen.total_ventas.toLocaleString("es-GT")} sub={comp ? `vs ${comp.total_ventas_anterior} periodo ant.` : undefined} delta={deltaVentas} />
-            <StatCard icon="money-bag" label="Ingresos totales" value={q(data.resumen.ingresos_totales)} sub={comp ? `vs ${q(comp.ingresos_anteriores)} periodo ant.` : undefined} delta={deltaIngresos} />
-            <StatCard icon="ticket"   label="Ticket promedio"  value={q(data.resumen.ticket_promedio)} sub="por venta (media)" />
-            <StatCard icon="close"    label="Canceladas"       value={data.resumen.ventas_canceladas.toLocaleString("es-GT")} sub="excluidas de ingresos" />
+            <StatCard icon="bill"     label="Ventas totales"   value={formatNumber(data.resumen.total_ventas)} sub={comp ? `vs ${comp.total_ventas_anterior} periodo ant.` : undefined} delta={deltaVentas} />
+            <StatCard icon="money-bag" label="Ingresos totales" value={formatMoney(data.resumen.ingresos_totales)} sub={comp ? `vs ${formatMoney(comp.ingresos_anteriores)} periodo ant.` : undefined} delta={deltaIngresos} />
+            <StatCard icon="ticket"   label="Ticket promedio"  value={formatMoney(data.resumen.ticket_promedio)} sub="por venta (media)" />
+            <StatCard icon="close"    label="Canceladas"       value={formatNumber(data.resumen.ventas_canceladas)} sub="excluidas de ingresos" />
           </div>
 
           {/* Fila 2 — Gráfica de barras + Producto #1 */}
@@ -676,7 +665,7 @@ export default function EstadisticasPage() {
               <BarChart data={data.ventas_por_dia} />
               {data.ventas_por_dia.length > 0 && (() => {
                 const peak = data.ventas_por_dia.reduce((a, b) => b.total_dia > a.total_dia ? b : a);
-                return <p style={{ marginTop: "0.6rem", fontSize: "0.78rem", color: "var(--muted)" }}>Día pico: <strong style={{ color: "var(--accent)" }}>{peak.fecha}</strong>{" · "}{q(peak.total_dia)} en {peak.cantidad} venta{peak.cantidad !== 1 ? "s" : ""}</p>;
+                return <p style={{ marginTop: "0.6rem", fontSize: "0.78rem", color: "var(--muted)" }}>Día pico: <strong style={{ color: "var(--accent)" }}>{peak.fecha}</strong>{" · "}{formatMoney(peak.total_dia)} en {peak.cantidad} venta{peak.cantidad !== 1 ? "s" : ""}</p>;
               })()}
             </Card>
 
@@ -693,8 +682,8 @@ export default function EstadisticasPage() {
                 </div>
                 <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
                   {[
-                    { val: `${data.producto_mas_comprado.total_unidades.toLocaleString("es-GT", { maximumFractionDigits: 2 })}`, sub: data.producto_mas_comprado.unidad_medida + " vendidas" },
-                    { val: q(data.producto_mas_comprado.total_ingresos), sub: "en ingresos" },
+                    { val: `${formatNumber(data.producto_mas_comprado.total_unidades, { maxDecimals: 2 })}`, sub: data.producto_mas_comprado.unidad_medida + " vendidas" },
+                    { val: formatMoney(data.producto_mas_comprado.total_ingresos), sub: "en ingresos" },
                     { val: String(data.producto_mas_comprado.veces_vendido), sub: "pedidos" },
                   ].map(({ val, sub }) => (
                     <div key={sub} style={s.heroStat}>
@@ -713,14 +702,14 @@ export default function EstadisticasPage() {
           <Card title="Resumen de tus ventas (Q)">
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "0 2.5rem" }}>
               <div>
-                <StatDescRow label="Ticket promedio" value={q(data.estadisticas_descriptivas.media)} hint="Cuánto se vende en promedio por venta" />
-                <StatDescRow label="Ticket típico" value={q(data.estadisticas_descriptivas.mediana)} hint="La mitad de tus ventas fue menor a este monto, la otra mitad mayor" />
-                <StatDescRow label="Monto más común" value={data.estadisticas_descriptivas.moda.length > 0 ? data.estadisticas_descriptivas.moda.map(q).join(", ") : "Sin un monto repetido"} hint="El valor que más se repitió en tus ventas" />
+                <StatDescRow label="Ticket promedio" value={formatMoney(data.estadisticas_descriptivas.media)} hint="Cuánto se vende en promedio por venta" />
+                <StatDescRow label="Ticket típico" value={formatMoney(data.estadisticas_descriptivas.mediana)} hint="La mitad de tus ventas fue menor a este monto, la otra mitad mayor" />
+                <StatDescRow label="Monto más común" value={data.estadisticas_descriptivas.moda.length > 0 ? data.estadisticas_descriptivas.moda.map((m) => formatMoney(m)).join(", ") : "Sin un monto repetido"} hint="El valor que más se repitió en tus ventas" />
               </div>
               <div>
-                <StatDescRow label="Qué tanto varían tus ventas" value={q(data.estadisticas_descriptivas.desviacion_estandar)} hint="Entre más alto, más distintos son los montos entre sí" />
-                <StatDescRow label="Ticket mínimo" value={q(data.estadisticas_descriptivas.min_total)} />
-                <StatDescRow label="Ticket máximo" value={q(data.estadisticas_descriptivas.max_total)} />
+                <StatDescRow label="Qué tanto varían tus ventas" value={formatMoney(data.estadisticas_descriptivas.desviacion_estandar)} hint="Entre más alto, más distintos son los montos entre sí" />
+                <StatDescRow label="Ticket mínimo" value={formatMoney(data.estadisticas_descriptivas.min_total)} />
+                <StatDescRow label="Ticket máximo" value={formatMoney(data.estadisticas_descriptivas.max_total)} />
               </div>
 
               <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem 0" }}>
@@ -738,7 +727,7 @@ export default function EstadisticasPage() {
               <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
                 <div style={{ width: 110, flexShrink: 0 }}><DonutChart segments={tipoSegments} size={110} /></div>
                 <div style={{ flex: 1 }}>
-                  {data.ventas_por_tipo.map((t, i) => <LegendPill key={t.tipo_venta} color={tipoSegments[i]?.color} label={t.tipo_venta} value={`${t.cantidad} · ${q(t.ingresos)}`} />)}
+                  {data.ventas_por_tipo.map((t, i) => <LegendPill key={t.tipo_venta} color={tipoSegments[i]?.color} label={t.tipo_venta} value={`${t.cantidad} · ${formatMoney(t.ingresos)}`} />)}
                   {data.ventas_por_tipo.length === 0 && <p style={{ color: "var(--muted)", fontSize: "0.82rem" }}>Sin datos</p>}
                 </div>
               </div>
@@ -754,7 +743,7 @@ export default function EstadisticasPage() {
             </Card>
             <Card title="Bodegas con mayor movimiento">
               {data.top_bodegas.length === 0 ? <EmptyChart label="Sin movimientos en el periodo" /> : (
-                <HBarChart data={data.top_bodegas as unknown as Record<string, number | string>[]} labelKey="nombre_bodega" valueKey="total_unidades" formatValue={(v) => `${v.toLocaleString("es-GT", { maximumFractionDigits: 2 })} u.`} color="rgba(88,166,255,.75)" />
+                <HBarChart data={data.top_bodegas as unknown as Record<string, number | string>[]} labelKey="nombre_bodega" valueKey="total_unidades" formatValue={(v) => `${formatNumber(v, { maxDecimals: 2 })} u.`} color="rgba(88,166,255,.75)" />
               )}
             </Card>
           </div>
@@ -787,8 +776,8 @@ export default function EstadisticasPage() {
                               {" · "}{p.nombre_categoria}
                             </div>
                           </td>
-                          <td style={{ ...s.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{p.total_unidades.toLocaleString("es-GT", { maximumFractionDigits: 2 })} <span style={{ fontSize: "0.72rem", color: "var(--muted)" }}>{p.unidad_medida}</span></td>
-                          <td style={{ ...s.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{q(p.total_ingresos)}</td>
+                          <td style={{ ...s.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{formatNumber(p.total_unidades, { maxDecimals: 2 })} <span style={{ fontSize: "0.72rem", color: "var(--muted)" }}>{p.unidad_medida}</span></td>
+                          <td style={{ ...s.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{formatMoney(p.total_ingresos)}</td>
                           <td style={{ ...s.td, textAlign: "right" }}>{p.veces_vendido}</td>
                         </tr>
                       ))}
@@ -805,10 +794,10 @@ export default function EstadisticasPage() {
                       <DonutChart segments={data.ingresos_por_categoria.map((c, i) => ({ label: c.nombre_categoria, value: c.total_ingresos, color: CAT_COLORS[i % CAT_COLORS.length] }))} size={100} />
                     </div>
                     <div style={{ flex: 1 }}>
-                      {data.ingresos_por_categoria.map((c, i) => <LegendPill key={c.nombre_categoria} color={CAT_COLORS[i % CAT_COLORS.length]} label={c.nombre_categoria} value={q(c.total_ingresos)} />)}
+                      {data.ingresos_por_categoria.map((c, i) => <LegendPill key={c.nombre_categoria} color={CAT_COLORS[i % CAT_COLORS.length]} label={c.nombre_categoria} value={formatMoney(c.total_ingresos)} />)}
                     </div>
                   </div>
-                  <HBarChart data={data.ingresos_por_categoria as unknown as Record<string, number | string>[]} labelKey="nombre_categoria" valueKey="total_ingresos" formatValue={q} color="rgba(232,160,69,.75)" />
+                  <HBarChart data={data.ingresos_por_categoria as unknown as Record<string, number | string>[]} labelKey="nombre_categoria" valueKey="total_ingresos" formatValue={formatMoney} color="rgba(232,160,69,.75)" />
                 </div>
               )}
             </Card>
@@ -836,7 +825,7 @@ export default function EstadisticasPage() {
                         <div style={{ fontSize: "0.72rem", color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.correo}</div>
                       </div>
                       <div style={{ textAlign: "right", flexShrink: 0 }}>
-                        <div style={{ fontSize: "0.88rem", fontWeight: 700, color: "var(--text)", fontVariantNumeric: "tabular-nums" }}>{q(c.total_compras)}</div>
+                        <div style={{ fontSize: "0.88rem", fontWeight: 700, color: "var(--text)", fontVariantNumeric: "tabular-nums" }}>{formatMoney(c.total_compras)}</div>
                         <div style={{ fontSize: "0.72rem", color: "var(--muted)" }}>{c.cantidad_pedidos} pedido{c.cantidad_pedidos !== 1 ? "s" : ""}</div>
                       </div>
                     </div>
@@ -849,10 +838,10 @@ export default function EstadisticasPage() {
           {/* Fila 7 — Deudas y deudores (estado actual, no filtrado por periodo) */}
           <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
             <div style={s.statsGrid}>
-              <StatCard icon="money-bag" label="Deuda pendiente"       value={q(data.deudas.resumen.deuda_pendiente_total)} sub={`${data.deudas.resumen.cantidad_deudas_pendientes} deuda${data.deudas.resumen.cantidad_deudas_pendientes !== 1 ? "s" : ""} sin pagar`} />
-              <StatCard icon="ticket"   label="Deudores activos"       value={data.deudas.resumen.cantidad_deudores.toLocaleString("es-GT")} sub="con deuda pendiente" />
-              <StatCard icon="close"    label="Clientes bloqueados"    value={data.deudas.resumen.clientes_bloqueados.toLocaleString("es-GT")} sub="alcanzaron su límite de deuda" />
-              <StatCard icon="bill"     label="Deuda promedio"         value={q(data.deudas.resumen.deuda_promedio_por_deudor)} sub="por deudor" />
+              <StatCard icon="money-bag" label="Deuda pendiente"       value={formatMoney(data.deudas.resumen.deuda_pendiente_total)} sub={`${data.deudas.resumen.cantidad_deudas_pendientes} deuda${data.deudas.resumen.cantidad_deudas_pendientes !== 1 ? "s" : ""} sin pagar`} />
+              <StatCard icon="ticket"   label="Deudores activos"       value={formatNumber(data.deudas.resumen.cantidad_deudores)} sub="con deuda pendiente" />
+              <StatCard icon="close"    label="Clientes bloqueados"    value={formatNumber(data.deudas.resumen.clientes_bloqueados)} sub="alcanzaron su límite de deuda" />
+              <StatCard icon="bill"     label="Deuda promedio"         value={formatMoney(data.deudas.resumen.deuda_promedio_por_deudor)} sub="por deudor" />
             </div>
 
             <Card title="Top deudores (deuda pendiente actual)">
@@ -888,9 +877,9 @@ export default function EstadisticasPage() {
                             )}
                           </td>
                           <td style={{ ...s.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                            {q(d.deuda_pendiente)}
+                            {formatMoney(d.deuda_pendiente)}
                             {d.limite_deuda !== null && (
-                              <div style={{ fontSize: "0.7rem", color: "var(--muted)" }}>límite {q(d.limite_deuda)}</div>
+                              <div style={{ fontSize: "0.7rem", color: "var(--muted)" }}>límite {formatMoney(d.limite_deuda)}</div>
                             )}
                           </td>
                           <td style={{ ...s.td, textAlign: "right" }}>{d.cantidad_deudas}</td>

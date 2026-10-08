@@ -7,6 +7,7 @@ import { StaffShell } from "@/components/StaffShell";
 import { useStaffSession } from "@/hooks/useStaffSession";
 import { HISTORIAL_VENTAS_DEFAULT_LIMIT } from "@/lib/historial-ventas";
 import { TIPOS_USUARIO } from "@/lib/roles";
+import { formatDateTime, formatMoney } from "@/lib/format";
 
 type LineaHistorial = {
   codigo_producto: string | null;
@@ -412,17 +413,14 @@ export default function HistorialVentasPage() {
                     <code style={s.code}>{v.id_venta}</code>
                   </td>
                   <td style={{ ...s.td, color: "var(--muted)", whiteSpace: "nowrap" }}>
-                    {new Date(v.fecha_venta).toLocaleString("es-GT", {
-                      dateStyle: "short",
-                      timeStyle: "short",
-                    })}
+                    {formatDateTime(v.fecha_venta)}
                   </td>
                   <td style={s.td}>
                     <div style={{ fontWeight: 500 }}>{v.nombre_cliente}</div>
                     <div style={{ fontSize: "0.78rem", color: "var(--muted)" }}>{v.correo_cliente}</div>
                   </td>
                   <td style={{ ...s.td, maxWidth: 220 }}>{resumenLineas(v)}</td>
-                  <td style={{ ...s.td, textAlign: "right", fontWeight: 600 }}>Q{num(v.total).toFixed(2)}</td>
+                  <td style={{ ...s.td, textAlign: "right", fontWeight: 600 }}>{formatMoney(num(v.total))}</td>
                   <td style={s.td}>
                     <span style={{ ...s.badgeEstado, ...estadoStyle(v.estado_venta) }}>{v.estado_venta}</span>
                   </td>
@@ -590,8 +588,8 @@ export default function HistorialVentasPage() {
               ) : (
                 <>
                   <div style={s.rangeRow}>
-                    <span style={s.rangeVal}>Min: Q{(minTotal ?? 0).toFixed(2)}</span>
-                    <span style={s.rangeVal}>Max: Q{(maxTotal ?? sliderMaxBound).toFixed(2)}</span>
+                    <span style={s.rangeVal}>Min: {formatMoney(minTotal ?? 0)}</span>
+                    <span style={s.rangeVal}>Max: {formatMoney(maxTotal ?? sliderMaxBound)}</span>
                   </div>
                   <input
                     type="range"

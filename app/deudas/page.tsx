@@ -4,6 +4,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { StaffShell } from "@/components/StaffShell";
 import { useStaffSession } from "@/hooks/useStaffSession";
 import { matchesQuery, paginar, PaginationBar, type PageSize } from "@/lib/ui-table";
+import { formatDate, formatMoney, toISODate } from "@/lib/format";
 
 type ProductoDeuda = {
   id_producto: number;
@@ -69,7 +70,7 @@ type LineaForm = { id_producto: string; cantidad: string };
 
 const formVacio = {
   id_cliente: "",
-  fecha_inicio: new Date().toISOString().slice(0, 10),
+  fecha_inicio: toISODate(),
   fecha_limite_pago: "",
 };
 
@@ -143,7 +144,7 @@ function SaldoCubierto({ d }: { d: Deuda }) {
   return (
     <div>
       <div style={{ fontSize: "0.8rem", marginBottom: 3 }}>
-        <strong>Q{saldo.toFixed(2)}</strong>
+        <strong>{formatMoney(saldo)}</strong>
         <span style={{ color: "var(--muted)" }}> pendiente · {pct}%</span>
       </div>
       <div
@@ -205,7 +206,7 @@ function FormPago({
       }}
     >
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <label style={{ fontSize: "0.75rem", color: "var(--muted)" }}>Monto a abonar (saldo: Q{saldo.toFixed(2)})</label>
+        <label style={{ fontSize: "0.75rem", color: "var(--muted)" }}>Monto a abonar (saldo: {formatMoney(saldo)})</label>
         <input
           type="number"
           min="0.01"
@@ -244,7 +245,7 @@ function FormPago({
       </div>
       <button
         type="button"
-        onClick={() => setMonto(saldo.toFixed(2))}
+        onClick={() => setMonto(saldo.toFixed(2))} /* valor de <input>: sin separador de miles */
         style={{
           padding: "0.4rem 0.7rem",
           borderRadius: 10,
@@ -453,8 +454,8 @@ export default function DeudasPage() {
     if (!alerta) return;
     if (alerta.bloqueado) {
       setAlertaBloqueo(
-        `⚠️ Este cliente alcanzó su límite de deuda (Q${alerta.limite_deuda?.toFixed(2)}). ` +
-          `Deuda pendiente: Q${alerta.deuda_pendiente.toFixed(2)}. Ya no puede comprar ni hacer pedidos.`
+        `⚠️ Este cliente alcanzó su límite de deuda (${formatMoney(alerta.limite_deuda)}). ` +
+          `Deuda pendiente: ${formatMoney(alerta.deuda_pendiente)}. Ya no puede comprar ni hacer pedidos.`
       );
     } else if (alerta.cambioEstado) {
       setAlertaBloqueo("✓ El cliente volvió a estar por debajo de su límite y puede comprar de nuevo.");
@@ -534,7 +535,7 @@ export default function DeudasPage() {
         body: JSON.stringify({
           nombre_deudor: nuevo.nombre,
           telefono_deudor: nuevo.telefono,
-          fecha_inicio: new Date().toISOString().slice(0, 10),
+          fecha_inicio: toISODate(),
           id_cliente: nuevo.id_cliente,
           monto_libre: deudaInicial,
         }),
@@ -1128,9 +1129,9 @@ export default function DeudasPage() {
                 {clienteSeleccionado && (
                   <p style={{ fontSize: "0.82rem", marginTop: 4 }}>
                     {clienteSeleccionado.telefono && <>Tel: {clienteSeleccionado.telefono} · </>}
-                    Deuda pendiente actual: Q{deudaPendienteDe(clienteSeleccionado.id_cliente).toFixed(2)}
+                    Deuda pendiente actual: {formatMoney(deudaPendienteDe(clienteSeleccionado.id_cliente))}
                     {clienteSeleccionado.limite_deuda && (
-                      <> / límite Q{Number(clienteSeleccionado.limite_deuda).toFixed(2)}</>
+                      <> / límite {formatMoney(clienteSeleccionado.limite_deuda)}</>
                     )}
                   </p>
                 )}
@@ -1174,7 +1175,7 @@ export default function DeudasPage() {
                     <option value="">Seleccionar un producto…</option>
                     {productos.map((p) => (
                       <option key={p.id_producto} value={p.id_producto}>
-                        {p.nombre_producto} (Q{Number(p.precio_unitario).toFixed(2)}/{p.unidad_medida})
+                        {p.nombre_producto} ({formatMoney(p.precio_unitario)}/{p.unidad_medida})
                       </option>
                     ))}
                   </select>
@@ -1219,7 +1220,7 @@ export default function DeudasPage() {
               </button>
 
               <p style={{ fontWeight: 700, marginBottom: "1rem" }}>
-                Total: Q{totalPreview().toFixed(2)}
+                Total: {formatMoney(totalPreview())}
               </p>
 
               <div style={{ display: "flex", gap: 8 }}>
@@ -1347,11 +1348,11 @@ export default function DeudasPage() {
                           )}
                         </td>
                         <td style={{ padding: "0.75rem", fontWeight: 600 }}>
-                          Q{g.totalPendiente.toFixed(2)}
+                          {formatMoney(g.totalPendiente)}
                           {g.limite_deuda !== null && (
                             <span style={{ color: "var(--muted)", fontWeight: 400 }}>
                               {" "}
-                              / límite Q{g.limite_deuda.toFixed(2)}
+                              / límite {formatMoney(g.limite_deuda)}
                             </span>
                           )}
                         </td>
@@ -1391,11 +1392,11 @@ export default function DeudasPage() {
                                   <Fragment key={d.id_deuda}>
                                     <tr style={{ borderTop: "1px solid var(--border)" }}>
                                     <td style={{ padding: "0.4rem" }}>
-                                      {new Date(d.fecha_inicio).toLocaleDateString("es-GT")}
+                                      {formatDate(d.fecha_inicio)}
                                     </td>
                                     <td style={{ padding: "0.4rem" }}>
                                       {d.fecha_limite_pago
-                                        ? new Date(d.fecha_limite_pago).toLocaleDateString("es-GT")
+                                        ? formatDate(d.fecha_limite_pago)
                                         : "—"}
                                     </td>
                                     <td style={{ padding: "0.4rem", color: "var(--muted)" }}>
@@ -1404,7 +1405,7 @@ export default function DeudasPage() {
                                         : "—"}
                                     </td>
                                     <td style={{ padding: "0.4rem", fontWeight: 600 }}>
-                                      Q{Number(d.monto_total).toFixed(2)}
+                                      {formatMoney(d.monto_total)}
                                     </td>
                                     <td style={{ padding: "0.4rem", minWidth: 140 }}>
                                       <SaldoCubierto d={d} />
@@ -1534,14 +1535,14 @@ export default function DeudasPage() {
                             )}
                           </td>
                           <td style={{ padding: "0.75rem", fontWeight: 600 }}>
-                            Q{Number(d.monto_total).toFixed(2)}
+                            {formatMoney(d.monto_total)}
                           </td>
                           <td style={{ padding: "0.75rem", minWidth: 140 }}>
                             <SaldoCubierto d={d} />
                           </td>
                           <td style={{ padding: "0.75rem", color: "var(--muted)" }}>
                             {d.fecha_limite_pago
-                              ? new Date(d.fecha_limite_pago).toLocaleDateString("es-GT")
+                              ? formatDate(d.fecha_limite_pago)
                               : "—"}
                           </td>
                           <td style={{ padding: "0.75rem", color: rest.color, fontWeight: 600 }}>
@@ -1723,7 +1724,7 @@ export default function DeudasPage() {
                         {c.estado_cliente ? "Activo" : "Bloqueado"}
                       </span>
                     </td>
-                    <td style={{ padding: "0.75rem" }}>Q{deudaPendienteDe(c.id_cliente).toFixed(2)}</td>
+                    <td style={{ padding: "0.75rem" }}>{formatMoney(deudaPendienteDe(c.id_cliente))}</td>
                     <td style={{ padding: "0.75rem" }}>
                       <input
                         type="number"

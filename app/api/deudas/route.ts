@@ -5,6 +5,7 @@ import { isStaffTipo, TIPOS_USUARIO } from "@/lib/roles";
 import { apiError, unauthorizedError, validationError } from "@/lib/api-error";
 import { recalcularBloqueoCliente, verificarLimiteAntesDeDeuda } from "@/lib/deuda-alertas";
 import { getLogger } from "@/lib/logger";
+import { roundMoney } from "@/lib/format";
 
 const log = getLogger("api/deudas");
 
@@ -170,7 +171,7 @@ export async function POST(req: NextRequest) {
         if (precio === undefined) {
           throw new Error(`Producto ${linea.id_producto} no existe`);
         }
-        const subtotal = Number((precio * linea.cantidad).toFixed(2));
+        const subtotal = roundMoney(precio * linea.cantidad);
         montoTotal += subtotal;
         return { ...linea, precio_unitario: precio, subtotal };
       });
@@ -206,7 +207,7 @@ export async function POST(req: NextRequest) {
         telefono_deudor || null,
         fecha_inicio || null,
         fecha_limite_pago || null,
-        Number(montoTotal.toFixed(2)),
+        roundMoney(montoTotal),
         usuario!.id_usuario,
         idClienteNum,
       ]
@@ -230,7 +231,7 @@ export async function POST(req: NextRequest) {
 
     await client.query("COMMIT");
     log.info(
-      { id_deuda: deuda.id_deuda, monto_total: Number(montoTotal.toFixed(2)), id_cliente: idClienteNum, usuario: usuario!.id_usuario },
+      { id_deuda: deuda.id_deuda, monto_total: roundMoney(montoTotal), id_cliente: idClienteNum, usuario: usuario!.id_usuario },
       "Deuda registrada"
     );
     return NextResponse.json({ deuda, alerta }, { status: 201 });

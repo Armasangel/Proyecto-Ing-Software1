@@ -5,6 +5,7 @@ import type { CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import { useBodegueroSession } from "@/hooks/useBodegueroSession";
 import { Icon } from "@/components/Icon";
+import { formatDateTime, formatNumber, formatTime } from "@/lib/format";
 
 type Producto = {
   id_producto: number;
@@ -325,7 +326,7 @@ export default function BodegaPage() {
                           <div style={s.pedidoCardHeader}>
                             <span style={{ fontWeight: 700 }}>Pedido #{p.id_orden}</span>
                             <span style={{ fontSize: "0.72rem", color: "var(--muted)" }}>
-                              {new Date(p.fecha_orden).toLocaleTimeString("es-GT", { hour: "2-digit", minute: "2-digit" })}
+                              {formatTime(p.fecha_orden)}
                             </span>
                           </div>
                           <div style={{ fontSize: "0.82rem", color: "var(--muted)", marginBottom: "0.4rem" }}>
@@ -336,7 +337,7 @@ export default function BodegaPage() {
                               .filter((pr) => pr.es_mi_bodega)
                               .map((pr) => (
                                 <div key={pr.id_detalle} style={{ fontSize: "0.85rem" }}>
-                                  <strong>{Number(pr.cantidad).toLocaleString("es-GT")}</strong>{" "}
+                                  <strong>{formatNumber(pr.cantidad)}</strong>{" "}
                                   {pr.unidad_medida} — {pr.nombre_producto}
                                 </div>
                               ))}
@@ -493,7 +494,7 @@ export default function BodegaPage() {
                     }}
                   >
                     {m.tipo_movimiento === "SALIDA" ? "− " : "+ "}
-                    {Number(m.cantidad).toLocaleString("es-GT")} {m.unidad_medida}
+                    {formatNumber(m.cantidad)} {m.unidad_medida}
                   </span>{" "}
                   {m.nombre_producto}
                   {m.nombre_presentacion && (
@@ -507,7 +508,7 @@ export default function BodegaPage() {
                   {m.motivo ? MOTIVO_LABEL[m.motivo] + " — " : ""}
                   {m.descripcion || ""}
                   {" · "}
-                  {new Date(m.fecha_movimiento).toLocaleString("es-GT", { dateStyle: "short", timeStyle: "short" })}
+                  {formatDateTime(m.fecha_movimiento)}
                 </div>
               </div>
             ))}

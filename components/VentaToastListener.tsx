@@ -11,6 +11,7 @@
    último que vi?" y si las hay, las apila como toasts. */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { formatMoney } from "@/lib/format";
 
 const POLL_MS = 8000;
 
@@ -79,7 +80,7 @@ export function VentaToastListener() {
             <div style={s.title}>Venta realizada</div>
             <div style={s.body}>
               {t.nombre_empleado ?? "Un colaborador"} registró una venta de{" "}
-              <strong>Q{Number(t.total).toFixed(2)}</strong>
+              <strong>{formatMoney(t.total)}</strong>
             </div>
           </div>
         </div>

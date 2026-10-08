@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { Icon } from "@/components/Icon";
 import { matchesQuery, paginar, PaginationBar, type PageSize } from "@/lib/ui-table";
+import { formatMoney } from "@/lib/format";
 
 const MIS_ITEMS = [
   {label: "editar", icon: "pencil"},
@@ -474,8 +475,8 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
                     <td style={s.td}>{p.nombre_categoria}</td>
                     <td style={s.td}>{p.nombre_marca}</td>
                     <td style={s.td}>{p.unidad_medida}</td>
-                    <td style={{ ...s.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{p.precio_unitario ? `Q${Number(p.precio_unitario).toFixed(2)}` : "—"}</td>
-                    <td style={{ ...s.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{p.precio_mayoreo ? `Q${Number(p.precio_mayoreo).toFixed(2)}` : "—"}</td>
+                    <td style={{ ...s.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{p.precio_unitario ? formatMoney(p.precio_unitario) : "—"}</td>
+                    <td style={{ ...s.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{p.precio_mayoreo ? formatMoney(p.precio_mayoreo) : "—"}</td>
                     <td style={{ ...s.td, textAlign: "center" }}>
                       <span style={{ ...s.statusBadge, background: p.estado_producto ? "rgba(63,185,80,.15)" : "rgba(139,148,158,.1)", color: p.estado_producto ? "var(--green)" : "var(--muted)", borderColor: p.estado_producto ? "rgba(63,185,80,.3)" : "rgba(139,148,158,.2)" }}>
                         {p.estado_producto ? "Activo" : "Inactivo"}
@@ -536,14 +537,14 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
                         {editingThis ? (
                           <input type="number" step="0.01" min="0" value={precioForm.precio_unitario} onChange={(e) => setPrecioForm(f => ({ ...f, precio_unitario: e.target.value }))} style={{ ...s.priceInput }} />
                         ) : (
-                          <span style={{ fontVariantNumeric: "tabular-nums" }}>Q{Number(p.precio_unitario ?? 0).toFixed(2)}</span>
+                          <span style={{ fontVariantNumeric: "tabular-nums" }}>{formatMoney(p.precio_unitario ?? 0)}</span>
                         )}
                       </td>
                       <td style={{ ...s.td, textAlign: "right" }}>
                         {editingThis ? (
                           <input type="number" step="0.01" min="0" value={precioForm.precio_mayoreo} onChange={(e) => setPrecioForm(f => ({ ...f, precio_mayoreo: e.target.value }))} style={{ ...s.priceInput }} />
                         ) : (
-                          <span style={{ fontVariantNumeric: "tabular-nums" }}>Q{Number(p.precio_mayoreo ?? 0).toFixed(2)}</span>
+                          <span style={{ fontVariantNumeric: "tabular-nums" }}>{formatMoney(p.precio_mayoreo ?? 0)}</span>
                         )}
                       </td>
                       <td style={{ ...s.td, textAlign: "center" }}>

@@ -6,6 +6,7 @@ import { StaffShell } from "@/components/StaffShell";
 import { useStaffSession } from "@/hooks/useStaffSession";
 import { TIPOS_USUARIO } from "@/lib/roles";
 import { Icon } from "@/components/Icon";
+import { formatDateTime, formatMoney, formatQuantity } from "@/lib/format";
 
 type Cliente = {
   id_cliente: number;
@@ -326,7 +327,7 @@ export default function VentasPage() {
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error || "No se pudo registrar la venta"); return; }
-      setOkMsg(`Venta #${data.id_venta} registrada. Total: Q${Number(data.total).toFixed(2)}`);
+      setOkMsg(`Venta #${data.id_venta} registrada. Total: ${formatMoney(data.total)}`);
       setVentaDeshacer({ id: data.id_venta, total: Number(data.total) });
       setSegundosRestantes(VENTANA_DESHACER_SEGUNDOS);
       setIdCliente(""); setBusquedaCliente(""); setEstadoPago("PAGADO"); setTipoVenta("MINORISTA"); setForzarTipoVenta(false); setTipoEntrega("EN_TIENDA");
@@ -551,7 +552,7 @@ export default function VentasPage() {
             </div>
 
             <div className="flex justify-between items-center mt-2 pt-4 border-t border-[var(--border)]">
-              <span className="font-bold text-ink">Total: Q{totalBorrador.toFixed(2)}</span>
+              <span className="font-bold text-ink">Total: {formatMoney(totalBorrador)}</span>
               <button
                 type="button"
                 onClick={() => setConfirmando(true)}
@@ -597,7 +598,7 @@ export default function VentasPage() {
               <h3 className="font-head text-lg font-bold text-ink mb-2">¿Confirmar esta venta?</h3>
               <p className="text-ink-muted text-[0.9rem] mb-4">
                 {clientes.find((c) => String(c.id_cliente) === idCliente)?.nombre ?? "Cliente"} ·{" "}
-                {lineas.filter((l) => l.id_producto).length} producto(s) · Total: Q{totalBorrador.toFixed(2)}
+                {lineas.filter((l) => l.id_producto).length} producto(s) · Total: {formatMoney(totalBorrador)}
               </p>
               <div className="flex gap-2 justify-end">
                 <button
@@ -643,7 +644,7 @@ export default function VentasPage() {
                   {ventas.map((v, i) => (
                     <tr key={v.id_venta} className={`align-top ${i % 2 === 0 ? "bg-cream/40" : "bg-white"}`}>
                       <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">{v.id_venta}</td>
-                      <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">{new Date(v.fecha_venta).toLocaleString("es-GT", { dateStyle: "short", timeStyle: "short" })}</td>
+                      <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">{formatDateTime(v.fecha_venta)}</td>
                       <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">
                         <div className="font-medium">{v.nombre_cliente}</div>
                         <div className="text-[0.78rem] text-ink-muted">{v.correo_cliente}</div>
@@ -651,11 +652,11 @@ export default function VentasPage() {
                       <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">{v.nombre_colaborador ?? "—"}</td>
                       <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">{v.estado_venta}</td>
                       <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">{v.tipo_venta}</td>
-                      <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)] text-right font-semibold">Q{Number(v.total).toFixed(2)}</td>
+                      <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)] text-right font-semibold">{formatMoney(v.total)}</td>
                       <td className="px-3.5 py-2.5 text-[0.82rem] border-b border-[var(--border)] max-w-[320px]">
                         {(v.productos || []).map((pr) => (
                           <div key={pr.id_detalle} className="mb-1.5">
-                            <span className="text-ink">{pr.codigo_producto}</span>{" "}× {Number(pr.cantidad).toFixed(3)} @ Q{Number(pr.precio_unitario_venta).toFixed(2)} → Q{Number(pr.subtotal).toFixed(2)}
+                            <span className="text-ink">{pr.codigo_producto}</span>{" "}× {formatQuantity(pr.cantidad)} @ {formatMoney(pr.precio_unitario_venta)} → {formatMoney(pr.subtotal)}
                           </div>
                         ))}
                       </td>
