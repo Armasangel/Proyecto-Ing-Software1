@@ -163,7 +163,11 @@ describe("persistencia en archivo rotado", () => {
   });
 
   it("escribe NDJSON a un archivo y rota al superar el tamaño", async () => {
-    const stream = createRotatedFileStream({ dir: tmpDir, maxSize: "20B", maxFiles: 2, compress: false });
+    // `createRotatedFileStream` se declara como `DestinationStream` de pino,
+    // que es opaco a propósito (también acepta funciones sync) y por eso no
+    // expone `once`/`end`. En runtime sí es un Writable de Node, que es lo que
+    // hace falta para drenar y cerrar el stream antes de borrar el temporal.
+    const stream = createRotatedFileStream({ dir: tmpDir, maxSize: "20B", maxFiles: 2, compress: false }) as unknown as Writable;
     const log = pino({ level: "info" }, stream);
 
     for (let i = 0; i < 60; i++) {

@@ -191,6 +191,8 @@ jest.mock("next/navigation", () => ({
 ### Logging (pino)
 
 - No usar `console.log` / `console.error`; usar el logger de `lib/logger.ts`.
+  **Esto ya no es solo una recomendación: ESLint lo hace cumplir** con
+  `"no-console": "error"` en `.eslintrc.json`.
 - Niveles: `error` (servidor), `warn` (rate limits, logins fallidos, stock), `info` (eventos de negocio), `debug` (detalle).
 - **Siempre** preceder el mensaje con un objeto de contexto: `log.info({ id_venta }, "Venta registrada")` (pino tipa el primer argumento).
 - Pasar errores como `{ err }` para que pino serialice `stack`/`type`.
@@ -203,6 +205,49 @@ jest.mock("next/navigation", () => ({
 - Tests del logger: `__tests__/lib/logger.test.ts` (usa `createLogger({ destination })`
   para capturar NDJSON y destinos `rotating-file-stream` con directorios temporales
   para verificar la rotación; se limpian solos en `afterEach`).
+
+### Logging en el cliente (`lib/client-logger.ts`)
+
+`lib/logger.ts` **no se puede importar desde el navegador**: depende de
+`rotating-file-stream`, que usa `fs` de Node, y meterlo en el bundle de cliente
+rompe `next build`.
+
+- En componentes de cliente (`"use client"`, hooks del navegador) usá
+  `logClientError(mensaje, error?, contexto?)` de `lib/client-logger.ts`.
+- `lib/client-logger.ts` es el **único** archivo del proyecto con el override
+  de `no-console`. Si necesitás `console` en otro lado, el error de ESLint
+  está para que se discuta, no para silenciarse con un disable.
+- Pasá el `digest` cuando el error venga de un error boundary: es lo que
+  permite correlacionarlo con el log del servidor.
+
+```ts
+import { logClientError } from "@/lib/client-logger";
+
+logClientError("Error al renderizar la página", error, { digest: error.digest });
+```
+
+### Errores en el navegador
+
+`app/error.tsx`, `app/global-error.tsx` y `app/not-found.tsx` ya cubren toda la
+app. **No agregues una frontera de error por página**: `app/error.tsx` está en
+el segmento raíz, así que todo lo que agregues debajo queda cubierto solo.
+
+Si una pantalla necesita UI de error propia (un formulario, una tabla), no
+dupliques la estructura: usá `components/ErrorScreen.tsx`, que es la UI
+compartida por las tres fronteras.
+
+El `digest` que muestra la pantalla es el código con el que se busca el error
+en el log del servidor (`pm2 logs` en producción, `scripts/logs.sh` en
+desarrollo). No lo quites de la UI: es lo único que hace rastreable un error
+de cliente.
+
+### Headers de seguridad
+
+Se configuran una sola vez en `next.config.mjs` con el patrón `/:path*` y
+aplican a páginas y API por igual. **No los repitas ruta por ruta** ni los
+agregues desde el middleware. Para cambiar la lista o el HSTS, editá las
+constantes de arriba de ese archivo y actualizá el test de
+`__tests__/lib/next-config.test.ts`.
 
 - Los `<label>` sin `htmlFor` no se pueden consultar con `getByLabelText`; usar `getByPlaceholderText` o `getByText`
 - `<img alt="">` tiene rol `presentation`; usar `document.querySelector("img")` en lugar de `getByRole("img")`
