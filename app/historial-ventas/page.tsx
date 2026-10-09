@@ -7,6 +7,7 @@ import { StaffShell } from "@/components/StaffShell";
 import { useStaffSession } from "@/hooks/useStaffSession";
 import { HISTORIAL_VENTAS_DEFAULT_LIMIT } from "@/lib/historial-ventas";
 import { TIPOS_USUARIO } from "@/lib/roles";
+import { filtrarClientesPorTexto } from "@/lib/clientes-busqueda";
 
 type LineaHistorial = {
   codigo_producto: string | null;
@@ -47,7 +48,7 @@ type ProductoOpt = {
 type ClienteOpt = {
   id_usuario: number;
   nombre: string;
-  correo: string;
+  correo: string | null;
 };
 
 type ProveedorOpt = {
@@ -307,13 +308,8 @@ export default function HistorialVentasPage() {
   }, [productosCat, pickerBusqueda]);
 
   const clientesPickerFiltrados = useMemo(() => {
-    const q = pickerBusqueda.trim().toLowerCase();
-    if (!q) return clientesCat;
-    return clientesCat.filter(
-      (c) =>
-        c.nombre.toLowerCase().includes(q) ||
-        c.correo.toLowerCase().includes(q)
-    );
+    if (!pickerBusqueda.trim()) return clientesCat;
+    return filtrarClientesPorTexto(clientesCat, pickerBusqueda);
   }, [clientesCat, pickerBusqueda]);
 
   const proveedoresPickerFiltrados = useMemo(() => {

@@ -85,6 +85,26 @@ describe("DeudasPage", () => {
     expect(screen.getAllByText("Q100.00").length).toBeGreaterThanOrEqual(1);
   });
 
+  it("sigue funcionando si el servidor no tiene la ruta de recordatorios (404 con HTML)", async () => {
+    setupServerDeudas([deudaBase()]);
+    server.use(
+      rest.get("/api/configuracion/notificaciones-deuda", (_req, res, ctx) =>
+        res(ctx.status(404), ctx.set("Content-Type", "text/html"), ctx.body("<!DOCTYPE html><html><body>404</body></html>"))
+      )
+    );
+    const unhandled = jest.fn();
+    process.on("unhandledRejection", unhandled);
+    const user = userEvent.setup();
+    render(<DeudasPage />);
+
+    // La página carga y se usa normalmente...
+    await user.click(await screen.findByRole("button", { name: "Detalle" }));
+    expect(await screen.findByText("pendiente · 25%")).toBeInTheDocument();
+    // ...y el fallo de la configuración se avisa en vez de romper con "Unexpected token '<'".
+    await waitFor(() => expect(unhandled).not.toHaveBeenCalled());
+    process.off("unhandledRejection", unhandled);
+  });
+
   it("shows 'Cubierto al 100%' for a fully paid debt", async () => {
     setupServerDeudas([deudaBase({ estado_deuda: "PAGADA", total_pagado: "100.00", saldo_pendiente: "0.00", porcentaje_cubierto: "100" })]);
     const user = userEvent.setup();
