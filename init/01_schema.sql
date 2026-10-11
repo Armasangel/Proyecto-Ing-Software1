@@ -117,6 +117,19 @@ CREATE TABLE usuario (
     -- DUENO y BODEGUERO nunca pasan por 2FA sin importar este valor (ver
     -- app/api/login/route.ts).
     requiere_2fa      BOOLEAN         NOT NULL DEFAULT TRUE,
+    -- Revocación de sesiones. El JWT lleva este valor como claim `sv` y cada
+    -- request lo compara contra la fila actual: si difiere, el token ya no
+    -- sirve. Subir el contador equivale a "cerrar todas las sesiones" de este
+    -- usuario (cambio de contraseña, cambio de rol, deshabilitación).
+    sesion_version    INT             NOT NULL DEFAULT 1,
+    -- Última señal de acceso, para mostrar "inicio de sesión anterior" en
+    -- /mi-cuenta y detectar accesos sospechosos.
+    ultimo_login_en   TIMESTAMP,
+    ultimo_login_ip   VARCHAR(45),
+    -- Fuerza el cambio de contraseña en el próximo login. Se activa para las
+    -- cuentas que aún usan la contraseña de ejemplo publicada en este repo
+    -- (ver migrations/06_seguridad_credenciales.sql).
+    requiere_cambio_contrasena BOOLEAN NOT NULL DEFAULT FALSE,
     -- Bodega fija asignada (obligatoria solo para BODEGUERO). La FK hacia
     -- bodega(id_bodega) se agrega más abajo con ALTER TABLE porque la tabla
     -- bodega todavía no existe en este punto del script.
@@ -425,11 +438,15 @@ GROUP BY v.id_venta, c.nombre, c.correo, v.fecha_venta, v.fecha_limite_pago, v.t
 HAVING v.total - COALESCE(SUM(p.monto), 0) > 0;
 
 --  TABLA DE RATE-LIMIT DE LOGIN (compartida entre instancias vía Postgres)
+-- La clave es polimórfica a propósito: el login escribe filas "ip:<direccion>"
+-- y "acct:<correo>", de modo que un ataque distribuido desde muchas IP contra
+-- una sola cuenta también se contiene (OWASP ASVS V2.5). Ver
+-- lib/login-rate-limit.ts.
 CREATE TABLE login_intento (
-    ip              VARCHAR(45)     PRIMARY KEY,
-    intentos        INT             NOT NULL DEFAULT 0,
-    bloqueado_hasta TIMESTAMP,
-    ultimo_intento  TIMESTAMP       NOT NULL DEFAULT NOW()
+    clave            VARCHAR(200)    PRIMARY KEY,
+    intentos         INT             NOT NULL DEFAULT 0,
+    bloqueado_hasta  TIMESTAMP,
+    ultimo_intento   TIMESTAMP       NOT NULL DEFAULT NOW()
 );
 
 -- API_RATE_LIMIT (contador genérico de rate limiting, migración 03)
