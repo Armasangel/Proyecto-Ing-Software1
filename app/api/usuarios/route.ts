@@ -4,6 +4,7 @@ import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { isDuenoTipo, TIPOS_USUARIO } from "@/lib/roles";
 import { apiError, unauthorizedError, validationError } from "@/lib/api-error";
 import { checkRateLimit, getClientIp } from "@/lib/api-rate-limit";
+import { respuestaSiLimiteAlcanzado } from "@/lib/limites-usuarios";
 
 const TIPOS_VALIDOS = Object.values(TIPOS_USUARIO);
 
@@ -184,7 +185,8 @@ export async function PATCH(req: NextRequest) {
 
     return NextResponse.json({ usuario: result.rows[0] });
   } catch (error) {
-    return apiError("USUARIOS PATCH", error);
+    // El trigger de la BD rechaza reactivar o cambiar de tipo si se pasa del límite.
+    return respuestaSiLimiteAlcanzado(error) ?? apiError("USUARIOS PATCH", error);
   }
 }
 
@@ -283,6 +285,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ usuario: result.rows[0] }, { status: 201 });
   } catch (error) {
-    return apiError("USUARIOS POST", error);
+    // El trigger de la BD rechaza el alta si se pasa del límite del tipo.
+    return respuestaSiLimiteAlcanzado(error) ?? apiError("USUARIOS POST", error);
   }
 }

@@ -108,11 +108,11 @@ describe("POST /api/usuarios/promover-dueno/solicitar", () => {
     mockPool.query
       .mockResolvedValueOnce({ rows: [objetivoValido] }) // objetivo
       .mockResolvedValueOnce({ rows: [solicitanteFila] }) // solicitante
-      .mockResolvedValueOnce({ rows: [{ count: MAX_DUENOS }] }); // conteo de dueños
+      .mockResolvedValueOnce({ rows: [{ configurado: true, limite: MAX_DUENOS, activos: MAX_DUENOS }] }); // conteo de dueños
     const res = await POST(makeReq({ id_usuario: 2 }));
     expect(res.status).toBe(400);
     const data = await res.json();
-    expect(data.error).toMatch(new RegExp(`${MAX_DUENOS} usuarios dueño`));
+    expect(data.error).toMatch(/usuarios activos tipo dueño/);
     expect(mockMailer).not.toHaveBeenCalled();
   });
 
@@ -120,7 +120,7 @@ describe("POST /api/usuarios/promover-dueno/solicitar", () => {
     mockPool.query
       .mockResolvedValueOnce({ rows: [objetivoValido] }) // objetivo
       .mockResolvedValueOnce({ rows: [solicitanteFila] }) // solicitante
-      .mockResolvedValueOnce({ rows: [{ count: 1 }] }) // conteo de dueños (bajo el máximo)
+      .mockResolvedValueOnce({ rows: [{ configurado: true, limite: MAX_DUENOS, activos: 1 }] }) // conteo de dueños (bajo el máximo)
       .mockResolvedValueOnce({ rows: [{ id_solicitud: 55 }] }); // INSERT solicitud
 
     const res = await POST(makeReq({ id_usuario: 2 }));
@@ -137,7 +137,7 @@ describe("POST /api/usuarios/promover-dueno/solicitar", () => {
     mockPool.query
       .mockResolvedValueOnce({ rows: [objetivoValido] })
       .mockResolvedValueOnce({ rows: [solicitanteFila] })
-      .mockResolvedValueOnce({ rows: [{ count: 1 }] })
+      .mockResolvedValueOnce({ rows: [{ configurado: true, limite: MAX_DUENOS, activos: 1 }] })
       .mockResolvedValueOnce({ rows: [{ id_solicitud: 55 }] });
     mockMailer.mockRejectedValue(new Error("smtp caído"));
 

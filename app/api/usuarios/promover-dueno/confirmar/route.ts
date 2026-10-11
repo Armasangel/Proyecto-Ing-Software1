@@ -2,17 +2,23 @@
 //
 // Paso 2 del proceso de ascenso a DUENO: valida el código de 6 dígitos que
 // se mandó en /solicitar y, si es correcto, recién ahí aplica el cambio de
-// tipo_usuario. Todo el chequeo del límite (MAX_DUENOS) y la aplicación del
+// tipo_usuario. Todo el chequeo del límite de dueños y la aplicación del
 // cambio ocurren dentro de una misma transacción con un advisory lock, para
 // que dos promociones confirmadas casi al mismo tiempo no se cuelen las dos
 // y dejen más dueños de los permitidos.
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
-import { isDuenoTipo, MAX_DUENOS, TIPOS_USUARIO } from "@/lib/roles";
+import { isDuenoTipo, TIPOS_USUARIO } from "@/lib/roles";
 import { apiError, tooManyRequestsError, unauthorizedError, validationError } from "@/lib/api-error";
 import { checkRateLimit, getClientIp } from "@/lib/api-rate-limit";
 import { compararCodigo, getMaxIntentos, verifyPromocionToken } from "@/lib/verificacion";
+import {
+  cupoLleno,
+  leerCupo,
+  mensajeLimiteAlcanzado,
+  respuestaSiLimiteAlcanzado,
+} from "@/lib/limites-usuarios";
 import { getLogger } from "@/lib/logger";
 
 const log = getLogger("api/usuarios/promover-dueno/confirmar");
@@ -118,14 +124,11 @@ export async function POST(req: NextRequest) {
     // Revalidación final del límite, ya con el advisory lock tomado: si
     // otra promoción se coló entre el "solicitar" y este momento, se
     // rechaza acá aunque el código en sí sea correcto.
-    const conteo = await client.query<{ count: number }>(
-      `SELECT COUNT(*)::int AS count FROM usuario WHERE tipo_usuario = $1`,
-      [TIPOS_USUARIO.DUENO]
-    );
-    if (conteo.rows[0].count >= MAX_DUENOS) {
+    const cupo = await leerCupo(client, TIPOS_USUARIO.DUENO);
+    if (cupoLleno(cupo)) {
       await client.query("ROLLBACK");
       return validationError(
-        `Ya existen ${MAX_DUENOS} usuarios dueño, el máximo permitido. La promoción no se pudo aplicar.`
+        `${mensajeLimiteAlcanzado(TIPOS_USUARIO.DUENO, cupo.limite)} La promoción no se pudo aplicar.`
       );
     }
 
@@ -173,7 +176,7 @@ export async function POST(req: NextRequest) {
       // Si el ROLLBACK también falla la conexión ya está en mal estado;
       // se libera igual en el finally y el pool la descarta.
     }
-    return apiError("PROMOVER-DUENO CONFIRMAR POST", error);
+    return respuestaSiLimiteAlcanzado(error) ?? apiError("PROMOVER-DUENO CONFIRMAR POST", error);
   } finally {
     client.release();
   }
