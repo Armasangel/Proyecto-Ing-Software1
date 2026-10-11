@@ -1,4 +1,4 @@
-/ lib/password-policy.ts
+// lib/password-policy.ts
 //
 // Política de contraseñas según NIST SP 800-63B y OWASP ASVS 1.1.2.
 //
