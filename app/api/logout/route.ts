@@ -1,8 +1,25 @@
 // app/api/logout/route.ts
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { AUTH_COOKIE } from "@/lib/auth";
+import { getUsuarioFromRequest } from "@/lib/server-auth";
+import { getClientIp } from "@/lib/login-rate-limit";
+import { getLogger } from "@/lib/logger";
 
-export async function POST() {
+const log = getLogger("api/logout");
+
+export async function POST(req: NextRequest) {
+  // Se registra el cierre de sesión: sin esto, la reutilización de un token
+  // robado después de un logout es indetectable (ASVS V7).
+  const usuario = getUsuarioFromRequest(req);
+  if (usuario) {
+    log.info(
+      { id_usuario: usuario.id_usuario, tipo_usuario: usuario.tipo_usuario, ip: getClientIp(req) },
+      "Logout"
+    );
+  } else {
+    log.warn({ ip: getClientIp(req) }, "Logout sin sesión válida");
+  }
+
   const res = NextResponse.json({ ok: true });
   res.cookies.set(AUTH_COOKIE, "", { path: "/", maxAge: 0 });
   return res;

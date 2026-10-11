@@ -148,7 +148,8 @@ export async function POST(req: NextRequest) {
 
     const actualizado = await client.query(
       `UPDATE usuario
-       SET tipo_usuario = $1
+       SET tipo_usuario = $1,
+           sesion_version = sesion_version + 1
        WHERE id_usuario = $2
        RETURNING id_usuario, nombre, correo, tipo_usuario, estado_usuario, id_bodega, requiere_2fa`,
       [TIPOS_USUARIO.DUENO, fila.id_usuario_objetivo]
@@ -162,7 +163,7 @@ export async function POST(req: NextRequest) {
 
     log.info(
       { id_usuario_objetivo: fila.id_usuario_objetivo, id_dueno_solicitante: solicitante.id_usuario },
-      "Usuario promovido a DUENO"
+      "Usuario promovido a DUENO; sesiones revocadas"
     );
 
     return NextResponse.json({ ok: true, usuario: actualizado.rows[0] });
