@@ -36,6 +36,7 @@ const PROTECTED_PREFIXES = [
   "/facturacion",
   "/catalogo",
   "/proveedores",
+  "/mi-cuenta",
 ];
 
 function getClientIp(req: NextRequest): string {
@@ -177,6 +178,8 @@ export const config = {
     "/catalogo/:path*",
     "/proveedores",
     "/proveedores/:path*",
+    "/mi-cuenta",
+    "/mi-cuenta/:path*",
     "/api",
     "/api/:path*",
   ],

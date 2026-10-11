@@ -163,6 +163,13 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
               <div className={`text-[0.7rem] mt-0.5 ${t.rolTextClass}`}>{labelRol(usuario.tipo_usuario)}</div>
             </div>
           </div>
+          <Link
+            href="/mi-cuenta"
+            className="w-full flex items-center gap-2 bg-transparent border border-sidebar-border rounded-control text-sidebar-muted px-3 py-2 text-[0.82rem] text-left transition-colors duration-150 hover:bg-white/5 hover:text-cream mb-2"
+          >
+            <Icon name="lockout" size={14} variant="light" />
+            Mi cuenta
+          </Link>
           <button
             type="button"
             onClick={handleLogout}
