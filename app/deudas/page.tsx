@@ -4,6 +4,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { StaffShell } from "@/components/StaffShell";
 import { useStaffSession } from "@/hooks/useStaffSession";
 import { matchesQuery, paginar, PaginationBar, type PageSize } from "@/lib/ui-table";
+import { ProductoAutocompletar } from "@/components/ProductoAutocompletar";
 
 type ProductoDeuda = {
   id_producto: number;
@@ -43,6 +44,7 @@ type Deuda = {
 type Producto = {
   id_producto: number;
   nombre_producto: string;
+  codigo_producto: string;
   precio_unitario: string;
   unidad_medida: string;
 };
@@ -1166,18 +1168,14 @@ export default function DeudasPage() {
               </label>
               {lineas.map((linea, idx) => (
                 <div key={idx} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
-                  <select
-                    style={inputStyle}
+                  <ProductoAutocompletar
+                    productos={productos}
                     value={linea.id_producto}
-                    onChange={(e) => actualizarLinea(idx, "id_producto", e.target.value)}
-                  >
-                    <option value="">Seleccionar un producto…</option>
-                    {productos.map((p) => (
-                      <option key={p.id_producto} value={p.id_producto}>
-                        {p.nombre_producto} (Q{Number(p.precio_unitario).toFixed(2)}/{p.unidad_medida})
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(id) => actualizarLinea(idx, "id_producto", id)}
+                    style={inputStyle}
+                    wrapperStyle={{ flex: 1 }}
+                    detalle={(p) => `(Q${Number(p.precio_unitario).toFixed(2)}/${p.unidad_medida})`}
+                  />
                   <input
                     type="number"
                     min={0.001}

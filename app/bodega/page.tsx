@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import { useBodegueroSession } from "@/hooks/useBodegueroSession";
 import { Icon } from "@/components/Icon";
+import { ProductoAutocompletar } from "@/components/ProductoAutocompletar";
 
 type Producto = {
   id_producto: number;
@@ -44,17 +45,6 @@ const MOTIVO_LABEL: Record<string, string> = {
   USO_INTERNO: "Uso interno",
   TRASLADO: "Traslado",
 };
-
-// Cantidad de productos sugeridos (los más vendidos/pedidos) al abrir el selector.
-const SUGERIDOS_PRODUCTOS = 8;
-
-// Para buscar sin importar mayúsculas ni acentos ("cafe" encuentra "Café").
-function normalizar(texto: string): string {
-  return texto
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-}
 
 // ─── Tablero "en vivo" de pedidos (como ordenes en fast food) ─────────────────
 
@@ -103,11 +93,11 @@ export default function BodegaPage() {
   const [idProducto, setIdProducto] = useState("");
   const [idPresentacion, setIdPresentacion] = useState(""); // "" = unidad base
   const [cantidad, setCantidad] = useState("");
-  // Selector de producto con sugerencias: al enfocarlo sin escribir muestra
-  // los más vendidos/pedidos; al escribir filtra la lista completa.
-  const [busquedaProducto, setBusquedaProducto] = useState("");
-  const [sugerenciasProductoAbiertas, setSugerenciasProductoAbiertas] = useState(false);
-  const [productosFrecuentes, setProductosFrecuentes] = useState<Producto[]>([]);
+  // Sugerencias del selector de producto: 5 al azar (ver ProductoAutocompletar);
+  // el resto del catálogo aparece al escribir. Se vuelven a sortear al cambiar
+  // de pestaña y después de cada movimiento registrado.
+  const [productosSugeridos, setProductosSugeridos] = useState<Producto[]>([]);
+  const [versionSugeridos, setVersionSugeridos] = useState(0);
   const [idBodegaDestino, setIdBodegaDestino] = useState("");
   const [descripcion, setDescripcion] = useState("");
 
@@ -183,37 +173,16 @@ export default function BodegaPage() {
     cargarHistorial();
   }, [usuario, cargarHistorial]);
 
-  // Los más vendidos/pedidos de tu bodega. En Salida y Traslado solo cuentan
-  // los que tienen existencias (no se puede sacar lo que no hay).
+  // En Salida y Traslado solo se sugieren productos con existencias en tu
+  // bodega (no se puede sacar lo que no hay); en Entrada, cualquiera.
   useEffect(() => {
     if (!usuario || tab === "pedidos") return;
     const soloConStock = tab === "salida" || tab === "traslado";
-    fetch(`/api/productos/frecuentes?limit=${SUGERIDOS_PRODUCTOS}${soloConStock ? "&con_stock=1" : ""}`)
+    fetch(`/api/productos/frecuentes?limit=5${soloConStock ? "&con_stock=1" : ""}`)
       .then((r) => r.json())
-      .then((d) => setProductosFrecuentes(d.productos || []))
-      .catch(() => setProductosFrecuentes([]));
-  }, [usuario, tab]);
-
-  const productosSugeridos = useMemo(() => {
-    const q = normalizar(busquedaProducto.trim());
-    if (q === "") return productosFrecuentes;
-    // Al escribir se busca en todo el catálogo; los más vendidos salen primero.
-    const posicion = new Map(productosFrecuentes.map((p, i) => [p.id_producto, i]));
-    return productos
-      .filter((p) => normalizar(p.nombre_producto).includes(q) || normalizar(p.codigo_producto).includes(q))
-      .sort((a, b) => {
-        const pa = posicion.get(a.id_producto) ?? Infinity;
-        const pb = posicion.get(b.id_producto) ?? Infinity;
-        return pa !== pb ? pa - pb : a.nombre_producto.localeCompare(b.nombre_producto);
-      })
-      .slice(0, 8);
-  }, [busquedaProducto, productos, productosFrecuentes]);
-
-  const seleccionarProducto = (p: Producto) => {
-    setIdProducto(String(p.id_producto));
-    setBusquedaProducto(`${p.nombre_producto} (${p.codigo_producto})`);
-    setSugerenciasProductoAbiertas(false);
-  };
+      .then((d) => setProductosSugeridos(d.productos || []))
+      .catch(() => setProductosSugeridos([]));
+  }, [usuario, tab, versionSugeridos]);
 
   useEffect(() => {
     setIdPresentacion("");
@@ -233,7 +202,6 @@ export default function BodegaPage() {
     setCantidad("");
     setDescripcion("");
     setIdBodegaDestino("");
-    setBusquedaProducto("");
   };
 
   const handleLogout = async () => {
@@ -300,6 +268,7 @@ export default function BodegaPage() {
         setMensaje({ texto: "Movimiento registrado ✓", tipo: "ok" });
         limpiarFormulario();
         cargarHistorial();
+        setVersionSugeridos((v) => v + 1);
       }
     } catch {
       setMensaje({ texto: "Error de conexión", tipo: "err" });
@@ -416,43 +385,16 @@ export default function BodegaPage() {
         {tab !== "pedidos" && <div style={s.card}>
           <div style={s.field}>
             <label style={s.label}>Producto</label>
-            <div style={{ position: "relative" }}>
-              <input
-                style={s.input}
-                placeholder="Busca por nombre o código…"
-                value={busquedaProducto}
-                autoComplete="off"
-                onChange={(e) => {
-                  setBusquedaProducto(e.target.value);
-                  setIdProducto("");
-                  setSugerenciasProductoAbiertas(true);
-                }}
-                onFocus={() => setSugerenciasProductoAbiertas(true)}
-                onBlur={() => setTimeout(() => setSugerenciasProductoAbiertas(false), 150)}
-              />
-              {sugerenciasProductoAbiertas && (
-                <div style={s.sugerencias}>
-                  {busquedaProducto.trim() === "" && productosSugeridos.length > 0 && (
-                    <div style={s.sugerenciasTitulo}>Más pedidos y vendidos</div>
-                  )}
-                  {productosSugeridos.length === 0 && (
-                    <div style={{ padding: "0.6rem 0.8rem", fontSize: "0.85rem", color: "var(--muted)" }}>
-                      {busquedaProducto.trim() === ""
-                        ? tab === "entrada"
-                          ? "Escribe para buscar un producto"
-                          : "No hay productos con existencias en tu bodega"
-                        : "Sin resultados"}
-                    </div>
-                  )}
-                  {productosSugeridos.map((p) => (
-                    <div key={p.id_producto} onMouseDown={() => seleccionarProducto(p)} style={s.sugerenciaItem}>
-                      {p.nombre_producto}{" "}
-                      <span style={{ color: "var(--muted)", fontSize: "0.78rem" }}>({p.codigo_producto})</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            <ProductoAutocompletar
+              productos={productos}
+              sugeridos={productosSugeridos}
+              value={idProducto}
+              onChange={setIdProducto}
+              style={s.input}
+              mensajeVacio={
+                tab === "entrada" ? "Escribe para buscar un producto" : "No hay productos con existencias en tu bodega"
+              }
+            />
           </div>
 
           <div style={s.row}>
@@ -581,34 +523,6 @@ export default function BodegaPage() {
 }
 
 const s: Record<string, CSSProperties> = {
-  sugerencias: {
-    position: "absolute",
-    top: "100%",
-    left: 0,
-    right: 0,
-    marginTop: 2,
-    zIndex: 20,
-    maxHeight: 320,
-    overflowY: "auto",
-    background: "var(--surface)",
-    border: "1px solid var(--border)",
-    borderRadius: 10,
-    boxShadow: "0 4px 10px rgba(0,0,0,0.12)",
-  },
-  sugerenciasTitulo: {
-    padding: "0.5rem 0.8rem 0.3rem",
-    fontSize: "0.72rem",
-    fontWeight: 700,
-    color: "var(--muted)",
-    textTransform: "uppercase",
-    letterSpacing: "0.04em",
-  },
-  sugerenciaItem: {
-    padding: "0.75rem 0.8rem", // objetivo táctil cómodo en tablet
-    cursor: "pointer",
-    fontSize: "0.92rem",
-    borderTop: "1px solid var(--border)",
-  },
   page: { minHeight: "100vh", background: "var(--bg)", fontFamily: "var(--font-body)" },
   pedidosBoard: {
     display: "flex",

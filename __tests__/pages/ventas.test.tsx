@@ -48,7 +48,6 @@ function setupServerVentas() {
 
 async function llenarFormulario(user: ReturnType<typeof userEvent.setup>) {
   // Espera a que lleguen las opciones (y el resto del form).
-  await screen.findByText("[PROD-001] Leche Entera");
   await screen.findByText("Bodega Central");
 
   // El cliente ya no es un <select>: es un buscador con sugerencias. Al
@@ -57,13 +56,17 @@ async function llenarFormulario(user: ReturnType<typeof userEvent.setup>) {
   await user.click(buscadorCliente);
   await user.click(await screen.findByText("Carlos Ruiz (carlos@email.com)"));
 
+  // El producto tampoco es un <select>: es un buscador que sugiere 5 al azar
+  // al enfocarlo (acá solo hay uno en el catálogo).
+  await user.click(screen.getByRole("textbox", { name: "Producto" }));
+  await user.click(await screen.findByText("Leche Entera"));
+
   const combos = screen.getAllByRole("combobox");
-  // Orden del DOM (ya sin el <select> de cliente): estado de pago, tipo de
-  // entrega, producto, bodega. El tipo de venta ya no es un <select> propio
-  // salvo que se active "Forzar un tipo distinto al del cliente" — se
+  // Orden del DOM (ya sin los <select> de cliente y producto): estado de
+  // pago, tipo de entrega, bodega. El tipo de venta ya no es un <select>
+  // propio salvo que se active "Forzar un tipo distinto al del cliente" — se
   // detecta solo a partir del tipo_cliente del cliente elegido.
-  await user.selectOptions(combos[2], "1"); // producto
-  await user.selectOptions(combos[3], "1"); // bodega
+  await user.selectOptions(combos[2], "1"); // bodega
 
   const spinbuttons = screen.getAllByRole("spinbutton");
   await user.type(spinbuttons[0], "2"); // cantidad → total Q50.00
@@ -220,5 +223,92 @@ describe("VentasPage", () => {
     await user.click(screen.getByRole("button", { name: /Deshacer \(\d+s\)/ }));
 
     expect(await screen.findByText(/Ya pasaron más de 10 minutos/)).toBeInTheDocument();
+  });
+});
+
+describe("VentasPage — cliente nuevo", () => {
+  beforeEach(() => {
+    (useRouter as jest.Mock).mockReturnValue({ replace: mockReplace, push: mockReplace });
+    (usePathname as jest.Mock).mockReturnValue("/ventas");
+  });
+
+  async function abrirFormulario(user: ReturnType<typeof userEvent.setup>) {
+    await screen.findByPlaceholderText("Buscar cliente por nombre o correo…");
+    await user.click(screen.getByRole("button", { name: "+ Cliente nuevo" }));
+    return {
+      nombre: screen.getByPlaceholderText("Nombre del cliente"),
+      correo: screen.getByPlaceholderText("nombre@correo.com"),
+    };
+  }
+
+  it("requires the correo (and a valid one) before creating the client", async () => {
+    setupServerVentas();
+    const posts: unknown[] = [];
+    server.use(
+      rest.post("/api/clientes", async (req, res, ctx) => {
+        posts.push(await req.json());
+        return res(ctx.status(201), ctx.json({ cliente: {} }));
+      })
+    );
+    const user = userEvent.setup();
+    render(<VentasPage />);
+    const { nombre, correo } = await abrirFormulario(user);
+
+    await user.type(nombre, "Pedro Nuevo");
+    await user.click(screen.getByRole("button", { name: "Crear cliente" }));
+    expect(await screen.findByText(/correo es obligatorio/i)).toBeInTheDocument();
+
+    await user.type(correo, "no-es-correo");
+    await user.click(screen.getByRole("button", { name: "Crear cliente" }));
+    expect(await screen.findByText(/correo válido/i)).toBeInTheDocument();
+    expect(posts).toHaveLength(0);
+  });
+
+  it("creates the client, selects it and detects its tipo_venta", async () => {
+    setupServerVentas();
+    let body: Record<string, unknown> | null = null;
+    server.use(
+      rest.post("/api/clientes", async (req, res, ctx) => {
+        body = (await req.json()) as Record<string, unknown>;
+        return res(
+          ctx.status(201),
+          ctx.json({
+            cliente: { id_cliente: 9, nombre: "Pedro Nuevo", correo: "pedro@correo.com", tipo_cliente: "MAYORISTA", telefono: null, limite_deuda: null },
+          })
+        );
+      })
+    );
+    const user = userEvent.setup();
+    render(<VentasPage />);
+    const { nombre, correo } = await abrirFormulario(user);
+
+    await user.type(nombre, "Pedro Nuevo");
+    await user.type(correo, "pedro@correo.com");
+    await user.selectOptions(screen.getByDisplayValue("Minorista"), "MAYORISTA");
+    await user.click(screen.getByRole("button", { name: "Crear cliente" }));
+
+    expect(await screen.findByText(/Cliente "Pedro Nuevo" creado y seleccionado/)).toBeInTheDocument();
+    expect(body).toMatchObject({ nombre: "Pedro Nuevo", correo: "pedro@correo.com", tipo_cliente: "MAYORISTA" });
+    expect(screen.getByPlaceholderText("Buscar cliente por nombre o correo…")).toHaveValue("Pedro Nuevo (pedro@correo.com)");
+    expect(await screen.findByText("Mayorista")).toBeInTheDocument();
+    // El formulario se cierra tras crear.
+    expect(screen.queryByPlaceholderText("Nombre del cliente")).not.toBeInTheDocument();
+  });
+
+  it("shows the API error (e.g. duplicated correo) and keeps the form open", async () => {
+    setupServerVentas();
+    server.use(
+      rest.post("/api/clientes", (_req, res, ctx) =>
+        res(ctx.status(400), ctx.json({ error: "Ya existe un cliente registrado con ese correo" }))
+      )
+    );
+    const user = userEvent.setup();
+    render(<VentasPage />);
+    const { nombre, correo } = await abrirFormulario(user);
+    await user.type(nombre, "Carlos Ruiz");
+    await user.type(correo, "carlos@email.com");
+    await user.click(screen.getByRole("button", { name: "Crear cliente" }));
+    expect(await screen.findByText("Ya existe un cliente registrado con ese correo")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Nombre del cliente")).toBeInTheDocument();
   });
 });

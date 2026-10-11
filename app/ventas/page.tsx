@@ -6,12 +6,15 @@ import { StaffShell } from "@/components/StaffShell";
 import { useStaffSession } from "@/hooks/useStaffSession";
 import { TIPOS_USUARIO } from "@/lib/roles";
 import { Icon } from "@/components/Icon";
+import { ProductoAutocompletar } from "@/components/ProductoAutocompletar";
 
 type Cliente = {
   id_cliente: number;
   nombre: string;
   correo: string;
   tipo_cliente: string;
+  telefono?: string | null;
+  limite_deuda?: string | null;
   total_ventas?: number;
 };
 
@@ -79,6 +82,17 @@ const inputCls =
   "w-full px-3 py-2.5 rounded-control border border-[var(--border)] bg-cream/60 text-ink text-[0.95rem] outline-none focus:ring-2 focus:ring-market/40 transition-shadow";
 const labelCls = "font-semibold text-[0.88rem] text-ink-muted";
 
+// Formulario de "+ Cliente nuevo" (mismo patrón que en Deudas, pero acá el
+// correo es obligatorio: la venta queda ligada a un cliente localizable).
+const clienteFormVacio = {
+  nombre: "",
+  telefono: "",
+  correo: "",
+  tipo_cliente: "MINORISTA",
+  limite_deuda: "",
+};
+const CORREO_VALIDO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 function nuevaLinea(): LineaVenta {
   return {
     key: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
@@ -116,6 +130,13 @@ export default function VentasPage() {
   // sugieren de entrada los más frecuentes y se busca el resto por texto.
   const [busquedaCliente, setBusquedaCliente] = useState("");
   const [sugerenciasClienteAbiertas, setSugerenciasClienteAbiertas] = useState(false);
+  // Alta rápida de cliente sin salir de Ventas
+  const [creandoCliente, setCreandoCliente] = useState(false);
+  const [formCliente, setFormCliente] = useState(clienteFormVacio);
+  const [guardandoCliente, setGuardandoCliente] = useState(false);
+  const [errorCliente, setErrorCliente] = useState<string | null>(null);
+  // Confirmación visible bajo el buscador (okMsg solo se muestra tras una venta).
+  const [avisoCliente, setAvisoCliente] = useState<string | null>(null);
   const [estadoPago, setEstadoPago] = useState<string>("PAGADO");
   const [tipoVenta, setTipoVenta] = useState<string>("MINORISTA");
   // El tipo de venta ya no lo escoge el colaborador a mano: se detecta solo
@@ -202,6 +223,8 @@ export default function VentasPage() {
     productos.forEach((p) => m.set(p.id_producto, p));
     return m;
   }, [productos]);
+
+  const productosActivos = useMemo(() => productos.filter((p) => p.estado_producto), [productos]);
 
   const clienteSeleccionado = useMemo(
     () => clientes.find((c) => String(c.id_cliente) === idCliente),
@@ -297,7 +320,72 @@ export default function VentasPage() {
     setSugerenciasClienteAbiertas(false);
   }
 
+  async function crearCliente() {
+    const nombre = formCliente.nombre.trim();
+    const correo = formCliente.correo.trim();
+    if (!nombre) {
+      setErrorCliente("El nombre del cliente nuevo es obligatorio");
+      return;
+    }
+    if (!correo) {
+      setErrorCliente("El correo es obligatorio para crear un cliente desde Ventas");
+      return;
+    }
+    if (!CORREO_VALIDO.test(correo)) {
+      setErrorCliente("Escribe un correo válido (ej. nombre@correo.com)");
+      return;
+    }
+    const limite = formCliente.limite_deuda.trim() === "" ? null : Number(formCliente.limite_deuda);
+    if (limite !== null && (!Number.isFinite(limite) || limite < 0)) {
+      setErrorCliente("El límite de deuda debe ser un número mayor o igual a 0");
+      return;
+    }
+
+    setGuardandoCliente(true);
+    setErrorCliente(null);
+    try {
+      const res = await fetch("/api/clientes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nombre,
+          correo,
+          telefono: formCliente.telefono.trim(),
+          tipo_cliente: formCliente.tipo_cliente,
+          limite_deuda: limite,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setErrorCliente(data.error || "No se pudo crear el cliente");
+        return;
+      }
+      const nuevo: Cliente = data.cliente;
+      setClientes((prev) => [...prev, nuevo].sort((a, b) => a.nombre.localeCompare(b.nombre)));
+
+      // Se deja seleccionado de una vez. onClienteChange no sirve acá porque
+      // busca en `clientes`, que todavía no incluye al recién creado.
+      setIdCliente(String(nuevo.id_cliente));
+      setBusquedaCliente(`${nuevo.nombre} (${nuevo.correo})`);
+      setSugerenciasClienteAbiertas(false);
+      if (!forzarTipoVenta) {
+        const detectado = nuevo.tipo_cliente === "MAYORISTA" ? "MAYORISTA" : "MINORISTA";
+        setTipoVenta(detectado);
+        aplicarPreciosPorTipo(detectado);
+      }
+      setError(null);
+      setAvisoCliente(`Cliente "${nuevo.nombre}" creado y seleccionado ✓`);
+      setCreandoCliente(false);
+      setFormCliente(clienteFormVacio);
+    } catch {
+      setErrorCliente("Error de conexión al crear el cliente");
+    } finally {
+      setGuardandoCliente(false);
+    }
+  }
+
   function limpiarClienteSeleccionado() {
+    setAvisoCliente(null);
     setBusquedaCliente("");
     setSugerenciasClienteAbiertas(false);
     onClienteChange("");
@@ -432,6 +520,105 @@ export default function VentasPage() {
                   </div>
                 )}
               </div>
+              <div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCreandoCliente((v) => !v);
+                    setErrorCliente(null);
+                    setAvisoCliente(null);
+                  }}
+                  className="text-[0.84rem] font-semibold text-market-600 hover:underline"
+                >
+                  {creandoCliente ? "Cancelar cliente nuevo" : "+ Cliente nuevo"}
+                </button>
+              </div>
+
+              {avisoCliente && idCliente && !creandoCliente && (
+                <div className="text-[0.85rem] text-market-600 font-medium">{avisoCliente}</div>
+              )}
+
+              {creandoCliente && (
+                <div className="flex flex-col gap-2.5 p-3 border border-dashed border-[var(--border)] rounded-control">
+                  <div className="grid gap-2.5" style={{ gridTemplateColumns: "1fr 1fr" }}>
+                    <div className="flex flex-col gap-1.5">
+                      <label className={labelCls}>Nombre *</label>
+                      <input
+                        className={inputCls}
+                        value={formCliente.nombre}
+                        onChange={(e) => setFormCliente((f) => ({ ...f, nombre: e.target.value }))}
+                        placeholder="Nombre del cliente"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className={labelCls}>Teléfono</label>
+                      <input
+                        className={inputCls}
+                        value={formCliente.telefono}
+                        onChange={(e) => setFormCliente((f) => ({ ...f, telefono: e.target.value }))}
+                        placeholder="Opcional"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className={labelCls}>Correo *</label>
+                      <input
+                        type="email"
+                        className={inputCls}
+                        value={formCliente.correo}
+                        onChange={(e) => setFormCliente((f) => ({ ...f, correo: e.target.value }))}
+                        placeholder="nombre@correo.com"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className={labelCls}>Tipo de cliente</label>
+                      <select
+                        className={inputCls}
+                        value={formCliente.tipo_cliente}
+                        onChange={(e) => setFormCliente((f) => ({ ...f, tipo_cliente: e.target.value }))}
+                      >
+                        <option value="MINORISTA">Minorista</option>
+                        <option value="MAYORISTA">Mayorista</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label className={labelCls}>Límite de deuda (opcional)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      className={inputCls}
+                      value={formCliente.limite_deuda}
+                      onChange={(e) => setFormCliente((f) => ({ ...f, limite_deuda: e.target.value }))}
+                      placeholder="Sin límite"
+                    />
+                  </div>
+                  {errorCliente && (
+                    <div className="text-[0.85rem] text-achiote-600 font-medium">{errorCliente}</div>
+                  )}
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={crearCliente}
+                      disabled={guardandoCliente}
+                      className="bg-market text-white border-none rounded-control px-4 py-2 text-[0.88rem] font-semibold hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {guardandoCliente ? "Creando…" : "Crear cliente"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCreandoCliente(false);
+                        setFormCliente(clienteFormVacio);
+                        setErrorCliente(null);
+                      }}
+                      className="bg-transparent border border-[var(--border)] text-ink-muted rounded-control px-4 py-2 text-[0.88rem] font-semibold"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex gap-4 flex-wrap">
@@ -500,10 +687,12 @@ export default function VentasPage() {
                     <div key={ln.key} className="grid gap-2 items-end" style={{ gridTemplateColumns: "1fr 140px 100px 120px auto" }}>
                       <div className="flex flex-col gap-1.5">
                         <label className={labelCls}>Producto</label>
-                        <select value={ln.id_producto} onChange={(e) => onProductoChange(ln.key, e.target.value)} className={inputCls}>
-                          <option value="">— Producto —</option>
-                          {productos.filter((p) => p.estado_producto).map((p) => <option key={p.id_producto} value={p.id_producto}>[{p.codigo_producto}] {p.nombre_producto}</option>)}
-                        </select>
+                        <ProductoAutocompletar
+                          productos={productosActivos}
+                          value={ln.id_producto}
+                          onChange={(id) => onProductoChange(ln.key, id)}
+                          className={inputCls}
+                        />
                       </div>
                       <div className="flex flex-col gap-1.5">
                         <label className={labelCls}>Bodega *</label>

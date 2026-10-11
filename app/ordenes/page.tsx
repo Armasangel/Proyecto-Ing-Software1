@@ -5,6 +5,7 @@ import { StaffShell } from "@/components/StaffShell";
 import { useStaffSession } from "@/hooks/useStaffSession";
 import { staffVariantFromTipo } from "@/lib/roles";
 import { Icon } from "@/components/Icon";
+import { ProductoAutocompletar } from "@/components/ProductoAutocompletar";
 
 type Cliente = {
   id_cliente: number;
@@ -228,6 +229,8 @@ export default function OrdenesPage() {
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [usuario, cargarClientes]);
+
+  const productosActivos = useMemo(() => productos.filter((p) => p.estado_producto), [productos]);
 
   const productoPorId = useMemo(() => {
     const m = new Map<number, Producto>();
@@ -656,14 +659,12 @@ export default function OrdenesPage() {
                     <div key={ln.key} style={{ display: "grid", gridTemplateColumns: "1fr 160px 100px 120px auto", gap: "0.5rem", alignItems: "end" }}>
                       <div style={field}>
                         <label style={label}>Producto</label>
-                        <select value={ln.id_producto} onChange={(e) => onProductoChange(ln.key, e.target.value)} style={input}>
-                          <option value="">-- Producto --</option>
-                          {productos.filter((p) => p.estado_producto).map((p) => (
-                            <option key={p.id_producto} value={p.id_producto}>
-                              [{p.codigo_producto}] {p.nombre_producto}
-                            </option>
-                          ))}
-                        </select>
+                        <ProductoAutocompletar
+                          productos={productosActivos}
+                          value={ln.id_producto}
+                          onChange={(id) => onProductoChange(ln.key, id)}
+                          style={input}
+                        />
                       </div>
                       <div style={field}>
                         <label style={label}>Presentacion (opc.)</label>

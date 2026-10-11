@@ -44,20 +44,29 @@ describe("GET /api/productos/frecuentes", () => {
     expect(res.status).toBe(403);
   });
 
-  it("scopes the ranking to the bodeguero's bodega and filters by stock when asked", async () => {
+  it("returns 5 random products by default, filtered by stock in the bodeguero's bodega when asked", async () => {
     mockPool.query.mockResolvedValueOnce({ rows: [{ id_producto: 7, nombre_producto: "Frijol" }] });
     const res = await productosFrecuentes(
       createMockRequest("/api/productos/frecuentes?con_stock=1", { user: bodeguero })
     );
     expect(res.status).toBe(200);
-    // [idBodega, limite, ventanaDias, soloConStock]
-    expect(mockPool.query.mock.calls[0][1]).toEqual([3, 8, 90, true]);
+    expect(String(mockPool.query.mock.calls[0][0])).toMatch(/ORDER BY RANDOM\(\)/);
+    // [idBodega, limite, soloConStock]
+    expect(mockPool.query.mock.calls[0][1]).toEqual([3, 5, true]);
   });
 
-  it("ignores con_stock for staff (no bodega) and ranks the whole store", async () => {
+  it("ignores con_stock for staff (no bodega)", async () => {
     mockPool.query.mockResolvedValueOnce({ rows: [] });
     await productosFrecuentes(createMockRequest("/api/productos/frecuentes?con_stock=1", { user: testUserDueno }));
-    expect(mockPool.query.mock.calls[0][1]).toEqual([null, 8, 90, false]);
+    expect(mockPool.query.mock.calls[0][1]).toEqual([null, 5, false]);
+  });
+
+  it("ranks by recent sales/orders with orden=frecuentes", async () => {
+    mockPool.query.mockResolvedValueOnce({ rows: [] });
+    await productosFrecuentes(createMockRequest("/api/productos/frecuentes?orden=frecuentes", { user: bodeguero }));
+    expect(String(mockPool.query.mock.calls[0][0])).toMatch(/popularidad/);
+    // [idBodega, limite, ventanaDias, soloConStock]
+    expect(mockPool.query.mock.calls[0][1]).toEqual([3, 5, 90, false]);
   });
 });
 

@@ -7,19 +7,21 @@ import { apiError, unauthorizedError } from "@/lib/api-error";
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
 
-const LIMITE_POR_DEFECTO = 8;
+const LIMITE_POR_DEFECTO = 5;
 const LIMITE_MAXIMO = 30;
 const VENTANA_DIAS = 90;
 
 /**
- * GET /api/productos/frecuentes?limit=8&con_stock=1
- * Productos activos más vendidos/pedidos en los últimos 90 días (unidades en
- * ventas y órdenes no canceladas). Para un bodeguero cuenta solo lo que salió
- * de SU bodega; para el resto cuenta toda la tienda.
+ * GET /api/productos/frecuentes?limit=5&con_stock=1&orden=azar|frecuentes
+ * Sugerencias de producto para los selectores, antes de que el usuario escriba.
+ *
+ * orden=azar (por defecto): `limit` productos activos al azar.
+ * orden=frecuentes: los más vendidos/pedidos en los últimos 90 días (unidades
+ *   en ventas y órdenes no canceladas). Para un bodeguero cuenta solo lo que
+ *   salió de SU bodega; para el resto cuenta toda la tienda.
  *
  * con_stock=1 deja solo los que tienen existencias en la bodega del bodeguero
  * (útil en Salida y Traslado, donde no se puede sacar lo que no hay).
- * Sirve de sugerencia en los selectores de producto antes de escribir nada.
  */
 export async function GET(req: NextRequest) {
   const usuario = getUsuarioFromRequest(req);
@@ -38,7 +40,26 @@ export async function GET(req: NextRequest) {
   const idBodega: number | null = esBodeguero && usuario.id_bodega ? Number(usuario.id_bodega) : null;
   const soloConStock = sp.get("con_stock") === "1" && idBodega !== null;
 
+  const porFrecuencia = sp.get("orden") === "frecuentes";
+
   try {
+    if (!porFrecuencia) {
+      const aleatorio = await pool.query(
+        `SELECT p.id_producto, p.nombre_producto, p.codigo_producto, p.unidad_medida
+           FROM producto p
+          WHERE p.estado_producto = TRUE
+            AND ($3::boolean = FALSE OR EXISTS (
+                  SELECT 1 FROM bodega_producto bp
+                   WHERE bp.id_producto = p.id_producto
+                     AND bp.id_bodega = $1
+                     AND bp.cantidad_disponible > 0))
+          ORDER BY RANDOM()
+          LIMIT $2`,
+        [idBodega, limite, soloConStock]
+      );
+      return NextResponse.json({ productos: aleatorio.rows });
+    }
+
     const result = await pool.query(
       `WITH popularidad AS (
          SELECT id_producto, SUM(cantidad) AS unidades
