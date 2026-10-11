@@ -9,11 +9,26 @@ import { pool } from "@/lib/db";
 import { apiError } from "@/lib/api-error";
 import { getLogger } from "@/lib/logger";
 import { compararCodigo, getMaxIntentos, signResetToken } from "@/lib/verificacion";
+import { checkRateLimit, getClientIp } from "@/lib/api-rate-limit";
 
 const log = getLogger("api/recuperar/verificar");
 
+// Límite sobre el endpoint que valida el código de recuperación. El contador
+// por código (5 intentos) no alcanzaba solo: pedir un código nuevo reiniciaba
+// ese contador, dejando probar 5 códigos nuevos por cada código pedido.
+const LIMITE_VERIFICAR_MAX = 5;
+const LIMITE_VERIFICAR_VENTANA_MS = 5 * 60_000;
+
+// Mismo mensaje genérico para cualquier falla del código (correo inexistente,
+// código vencido, incorrecto, excedido, etc.) para no revelar qué correos
+// existen ni en qué situación está la cuenta.
+const ERROR_GENERICO =
+  "Código incorrecto o vencido. Pedí un código nuevo para recuperar tu contraseña.";
+
 export async function POST(req: NextRequest) {
   try {
+    const ip = getClientIp(req);
+
     const body = await req.json();
     const correo = typeof body.correo === "string" ? body.correo.trim().toLowerCase() : "";
     const codigo = typeof body.codigo === "string" ? body.codigo.trim() : "";
@@ -22,20 +37,28 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Faltan datos para verificar el código" }, { status: 400 });
     }
 
+    const limite = await checkRateLimit(
+      `recuperar:verificar:${correo}`,
+      LIMITE_VERIFICAR_MAX,
+      LIMITE_VERIFICAR_VENTANA_MS
+    );
+    if (limite.limited) {
+      log.warn({ correo, ip }, "Verificación de recuperación bloqueada por rate limit");
+      return NextResponse.json(
+        { error: ERROR_GENERICO },
+        { status: 429 }
+      );
+    }
+
     const usuarioResult = await pool.query<{ id_usuario: number }>(
       `SELECT id_usuario FROM usuario
        WHERE LOWER(correo) = LOWER($1) AND estado_usuario = TRUE`,
       [correo]
     );
 
-    // Mismo mensaje genérico para cualquier falla del código (correo inexistente,
-    // código vencido, incorrecto, etc.) para no revelar qué correos existen.
-    const errorGenerico =
-      "Código incorrecto o vencido. Pedí un código nuevo para recuperar tu contraseña.";
-
     if (usuarioResult.rows.length === 0) {
       log.warn({ correo }, "Verificación de recuperación para correo no registrado");
-      return NextResponse.json({ error: errorGenerico }, { status: 400 });
+      return NextResponse.json({ error: ERROR_GENERICO }, { status: 400 });
     }
 
     const idUsuario = usuarioResult.rows[0].id_usuario;
@@ -58,22 +81,22 @@ export async function POST(req: NextRequest) {
     );
 
     if (result.rows.length === 0) {
-      return NextResponse.json({ error: errorGenerico }, { status: 400 });
+      return NextResponse.json({ error: ERROR_GENERICO }, { status: 400 });
     }
 
     const fila = result.rows[0];
 
     if (fila.usado) {
-      return NextResponse.json({ error: errorGenerico }, { status: 400 });
+      return NextResponse.json({ error: ERROR_GENERICO }, { status: 400 });
     }
 
     if (new Date(fila.expira_en).getTime() < Date.now()) {
-      return NextResponse.json({ error: errorGenerico }, { status: 400 });
+      return NextResponse.json({ error: ERROR_GENERICO }, { status: 400 });
     }
 
     if (fila.intentos >= getMaxIntentos()) {
       return NextResponse.json(
-        { error: errorGenerico },
+        { error: ERROR_GENERICO },
         { status: 429 }
       );
     }
@@ -84,7 +107,7 @@ export async function POST(req: NextRequest) {
         [fila.id_recuperacion]
       );
       log.warn({ id_usuario: idUsuario }, "Código de recuperación incorrecto");
-      return NextResponse.json({ error: errorGenerico }, { status: 401 });
+      return NextResponse.json({ error: ERROR_GENERICO }, { status: 401 });
     }
 
     await pool.query(

@@ -1,8 +1,8 @@
-import { AuthUsuario } from "@/lib/auth";
+import { UsuarioParaFirmar } from "@/lib/auth";
 
-export const mockUsuarios: AuthUsuario[] = [
-  { id_usuario: 1, nombre: "Juan Pérez", correo: "juan@tienda.com", tipo_usuario: "DUENO" },
-  { id_usuario: 2, nombre: "María López", correo: "maria@tienda.com", tipo_usuario: "EMPLEADO" },
+export const mockUsuarios: UsuarioParaFirmar[] = [
+  { id_usuario: 1, nombre: "Juan Pérez", correo: "juan@tienda.com", tipo_usuario: "DUENO", sesion_version: 1 },
+  { id_usuario: 2, nombre: "María López", correo: "maria@tienda.com", tipo_usuario: "EMPLEADO", sesion_version: 1 },
 ];
 
 export const mockCliente = {

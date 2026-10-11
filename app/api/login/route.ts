@@ -1,10 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
-import { AUTH_COOKIE, signAuthToken, verifyPassword } from "@/lib/auth";
+import {
+  AUTH_COOKIE,
+  authCookieOptions,
+  signAuthToken,
+  verifyPassword,
+} from "@/lib/auth";
 import { apiError } from "@/lib/api-error";
 import { getLogger } from "@/lib/logger";
 import { TIPOS_USUARIO } from "@/lib/roles";
-import { enviarCodigoVerificacion } from "@/lib/mailer";
+import { enviarAvisoBloqueoCuenta, enviarCodigoVerificacion } from "@/lib/mailer";
+import { registrarAcceso } from "@/lib/sesion";
+import { registrarAuditoria, TIPOS_EVENTO } from "@/lib/audit";
 import {
   enmascararCorreo,
   fechaExpiracion,
@@ -13,7 +20,11 @@ import {
   signPreToken,
 } from "@/lib/verificacion";
 import {
+  ACCOUNT_LOCKOUT_MAX,
+  ACCOUNT_LOCKOUT_WINDOW_MS,
   clearFailedLogins,
+  claveCuenta,
+  claveIp,
   getClientIp,
   isLoginRateLimited,
   recordFailedLogin,
@@ -21,11 +32,21 @@ import {
 
 const log = getLogger("api/login");
 
+/**
+ * Hash señuelo para que el tiempo de respuesta sea el mismo exista o no el
+ * usuario. Sin esto, un correo no registrado devuelve en ~1 ms y uno
+ * registrado con contraseña incorrecta en ~80 ms (el costo de bcrypt), lo que
+ * permite enumerar qué correos tienen cuenta probando la API de login.
+ */
+const HASH_SENUELO = "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy";
+
 export async function POST(req: NextRequest) {
   try {
     const ip = getClientIp(req);
+    const userAgent = req.headers.get("user-agent");
+    const ipClave = claveIp(ip);
 
-    if (await isLoginRateLimited(ip)) {
+    if (await isLoginRateLimited(ipClave)) {
       log.warn({ ip }, "Intento de login bloqueado por rate limit");
       return NextResponse.json(
         { error: "Demasiados intentos. Intenta de nuevo en un minuto." },
@@ -44,6 +65,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const cuentaClave = claveCuenta(username);
+
+    // Bloqueo por cuenta además del de IP: frena el credential stuffing
+    // distribuido, que reparte los intentos entre muchas direcciones.
+    if (await isLoginRateLimited(cuentaClave)) {
+      log.warn({ ip, cuenta: cuentaClave }, "Cuenta bloqueada por intentos fallidos");
+      // Respuesta idéntica a la de credenciales incorrectas: no se confirma
+      // que la cuenta exista ni que esté bloqueada.
+      return NextResponse.json({ error: "Credenciales incorrectas" }, { status: 401 });
+    }
+
     const result = await pool.query<{
       id_usuario: number;
       nombre: string;
@@ -52,15 +84,31 @@ export async function POST(req: NextRequest) {
       id_bodega: number | null;
       contrasena_hash: string;
       requiere_2fa: boolean;
+      requiere_cambio_contrasena: boolean;
+      sesion_version: number;
     }>(
-      `SELECT id_usuario, nombre, correo, tipo_usuario, id_bodega, contrasena_hash, requiere_2fa
-       FROM usuario
-       WHERE LOWER(correo) = LOWER($1) AND estado_usuario = TRUE`,
+      `SELECT id_usuario, nombre, correo, tipo_usuario, id_bodega, contrasena_hash,
+              requiere_2fa, requiere_cambio_contrasena, sesion_version
+         FROM usuario
+        WHERE LOWER(correo) = LOWER($1) AND estado_usuario = TRUE`,
       [username]
     );
 
     if (result.rows.length === 0) {
-      await recordFailedLogin(ip);
+      // Se ejecuta el bcrypt igual, contra el hash señuelo, para no filtrar por
+      // tiempo si el correo existe.
+      await verifyPassword(password, HASH_SENUELO);
+
+      await recordFailedLogin(ipClave);
+      await registrarAuditoria({
+        correo: username,
+        tipo_evento: TIPOS_EVENTO.LOGIN_FALLIDO,
+        ip,
+        user_agent: userAgent,
+        // Sin id_usuario: justamente se está registrando que ese correo NO
+        // corresponde a ninguna cuenta.
+        detalle: { motivo: "correo_no_registrado" },
+      });
       log.warn({ ip }, "Login fallido: usuario no encontrado");
       return NextResponse.json({ error: "Credenciales incorrectas" }, { status: 401 });
     }
@@ -68,12 +116,80 @@ export async function POST(req: NextRequest) {
     const row = result.rows[0];
 
     if (!verifyPassword(password, row.contrasena_hash)) {
-      await recordFailedLogin(ip);
+      await recordFailedLogin(ipClave);
+
+      // Aviso al dueño de la cuenta sólo en el intento que realmente la
+      // bloquea, no en los siguientes (ver recordFailedLogin).
+      const seBloqueo = await recordFailedLogin(
+        cuentaClave,
+        ACCOUNT_LOCKOUT_MAX,
+        ACCOUNT_LOCKOUT_WINDOW_MS
+      );
+      if (seBloqueo) {
+        await registrarAuditoria({
+          id_usuario: row.id_usuario,
+          correo: row.correo,
+          tipo_evento: TIPOS_EVENTO.CUENTA_BLOQUEADA,
+          ip,
+          user_agent: userAgent,
+          detalle: { minutos: ACCOUNT_LOCKOUT_WINDOW_MS / 60000, intentos: ACCOUNT_LOCKOUT_MAX },
+        });
+
+        try {
+          await enviarAvisoBloqueoCuenta(
+            row.correo,
+            row.nombre,
+            ACCOUNT_LOCKOUT_WINDOW_MS / 60000,
+            ip
+          );
+        } catch (mailError) {
+          // El bloqueo ya está aplicado en la base; que falle el aviso no
+          // debe convertir un 401 en un 500.
+          log.error({ err: mailError, id_usuario: row.id_usuario }, "No se pudo enviar el aviso de bloqueo de cuenta");
+        }
+      }
+
+      await registrarAuditoria({
+        id_usuario: row.id_usuario,
+        correo: row.correo,
+        tipo_evento: TIPOS_EVENTO.LOGIN_FALLIDO,
+        ip,
+        user_agent: userAgent,
+        detalle: { motivo: "contrasena_incorrecta" },
+      });
       log.warn({ ip, id_usuario: row.id_usuario }, "Login fallido: contraseña incorrecta");
       return NextResponse.json({ error: "Credenciales incorrectas" }, { status: 401 });
     }
 
-    await clearFailedLogins(ip);
+    await clearFailedLogins(ipClave);
+    await clearFailedLogins(cuentaClave);
+
+    // Cuenta con una contraseña que se conoce públicamente (la de ejemplo
+    // del seed). Se bloquea el login hasta que la cambie por el flujo de
+    // recuperación, que exige confirmar por correo.
+    if (row.requiere_cambio_contrasena) {
+      await registrarAuditoria({
+        id_usuario: row.id_usuario,
+        correo: row.correo,
+        tipo_evento: TIPOS_EVENTO.LOGIN_FALLIDO,
+        ip,
+        user_agent: userAgent,
+        detalle: { motivo: "requiere_cambio_contrasena" },
+      });
+      log.warn(
+        { ip, id_usuario: row.id_usuario },
+        "Login bloqueado: la cuenta debe cambiar su contraseña"
+      );
+      return NextResponse.json(
+        {
+          error:
+            "Por seguridad tenés que cambiar tu contraseña antes de continuar. Usá «¿Olvidaste tu contraseña?» en la pantalla de acceso.",
+        },
+        { status: 403 }
+      );
+    }
+
+    await registrarAcceso(row.id_usuario, ip);
 
     const usuario = {
       id_usuario: row.id_usuario,
@@ -81,33 +197,41 @@ export async function POST(req: NextRequest) {
       correo: row.correo,
       tipo_usuario: row.tipo_usuario,
       id_bodega: row.id_bodega,
+      // Sin esto, el token se firmaría con la versión 1 por defecto y, tras
+      // una revocación, el usuario no podría volver a entrar nunca.
+      sesion_version: row.sesion_version,
     };
 
-    // El 2FA es solo para colaboradores (EMPLEADO). El dueño entra directo
-    // porque es el que administra el sistema y los códigos se mandan al
-    // correo configurado en GMAIL_USER (que puede no ser el del dueño). El
-    // bodeguero tampoco pasa por 2FA: no maneja dinero ni facturación.
-    // Dentro de los EMPLEADO, el dueño puede además eximir puntualmente a
-    // alguno del 2FA (columna requiere_2fa) — p. ej. mientras se resuelve
-    // un problema con su correo.
-    if (row.tipo_usuario !== TIPOS_USUARIO.EMPLEADO || row.requiere_2fa === false) {
+    // El 2AF aplica a DUENO y a EMPLEADO: son los roles que manejan dinero,
+    // facturación y datos de clientes. Quedarse fuera el Dueño dejaba al
+    // usuario con más privilegios como el más expuesto. BODEGUERO sigue
+    // exento: no toca facturación ni ve datos de otros usuarios.
+    //
+    // Dentro de los EMPLEADO, el dueño puede eximir puntualmente a alguno
+    // (columna requiere_2fa), p. ej. mientras se resuelve un problema con su
+    // correo.
+    if (row.tipo_usuario === TIPOS_USUARIO.BODEGUERO || row.requiere_2fa === false) {
       const token = signAuthToken(usuario);
+      // El token viaja SOLO en la cookie httpOnly. Devolverlo también en el
+      // cuerpo de la respuesta lo haría legible desde JavaScript y anularía
+      // la protección httpOnly frente a XSS.
       const response = NextResponse.json({
         ok: true,
         requiere_verificacion: false,
-        token,
         usuario,
       });
 
-      response.cookies.set(AUTH_COOKIE, token, {
-        httpOnly: true,
-        path: "/",
-        maxAge: 60 * 60 * 8,
-        sameSite: "lax",
-        secure: process.env.NODE_ENV === "production",
-      });
-
+      response.cookies.set(AUTH_COOKIE, token, authCookieOptions());
       response.cookies.set("session", "", { path: "/", maxAge: 0 });
+
+      await registrarAuditoria({
+        id_usuario: usuario.id_usuario,
+        correo: usuario.correo,
+        tipo_evento: TIPOS_EVENTO.LOGIN_OK,
+        ip,
+        user_agent: userAgent,
+        detalle: { tipo_usuario: usuario.tipo_usuario, con_2fa: false },
+      });
 
       log.info({ id_usuario: usuario.id_usuario, tipo_usuario: usuario.tipo_usuario, ip }, "Login exitoso (sin 2FA)");
 
@@ -129,6 +253,14 @@ export async function POST(req: NextRequest) {
 
     try {
       await enviarCodigoVerificacion(row.correo, codigo);
+      await registrarAuditoria({
+        id_usuario: row.id_usuario,
+        correo: row.correo,
+        tipo_evento: TIPOS_EVENTO.LOGIN_OK,
+        ip,
+        user_agent: userAgent,
+        detalle: { tipo_usuario: row.tipo_usuario, con_2fa: true, etapa: "codigo_enviado" },
+      });
       log.info({ id_usuario: row.id_usuario, ip }, "Código 2FA enviado por correo");
     } catch (mailError) {
       log.error({ err: mailError }, "No se pudo enviar el código de verificación");

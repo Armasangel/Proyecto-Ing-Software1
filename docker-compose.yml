@@ -3,12 +3,16 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      # Sin `target`, Docker construye el ÚLTIMO stage del Dockerfile
+      # (production), que trae `npm ci --omit=dev`: sin typescript, tailwind,
+      # jest ni nada de devDependencies, así que `next dev` no compilaba.
+      target: dev
     ports:
       - "3001:3000"
     environment:
       - NODE_ENV=development
       - JWT_SECRET=deposito_san_miguel_dev_secret_cambia_en_produccion
-      - DATABASE_URL=postgresql://dsm_user:dsm_password@db:5432/deposito_san_miguel
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-dsm_user}:${POSTGRES_PASSWORD:-dsm_password}@db:5432/${POSTGRES_DB:-deposito_san_miguel}
       - GMAIL_USER=${GMAIL_USER}
       - GMAIL_APP_PASSWORD=${GMAIL_APP_PASSWORD}
       - LOG_LEVEL=${LOG_LEVEL:-debug}
@@ -29,10 +33,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      # stage dev: hace falta jest/typescript/MSW (ver servicio `app`).
+      target: dev
     environment:
       - NODE_ENV=test
       - JWT_SECRET=${JWT_SECRET:?JWT_SECRET no está definido — copia .env.example a .env}
-      - DATABASE_URL=postgresql://dsm_user:dsm_password@db:5432/deposito_san_miguel
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-dsm_user}:${POSTGRES_PASSWORD:-dsm_password}@db:5432/${POSTGRES_DB:-deposito_san_miguel}
     volumes:
       - .:/app
       - /app/node_modules
@@ -45,25 +51,33 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: dsm_user
-      POSTGRES_PASSWORD: dsm_password
-      POSTGRES_DB: deposito_san_miguel
+      POSTGRES_USER: ${POSTGRES_USER:-dsm_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dsm_password}
+      POSTGRES_DB: ${POSTGRES_DB:-deposito_san_miguel}
     ports:
       - "5433:5432"
     volumes:
       - ./init:/docker-entrypoint-initdb.d
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U dsm_user -d deposito_san_miguel"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dsm_user} -d ${POSTGRES_DB:-deposito_san_miguel}"]
       interval: 5s
       timeout: 5s
       retries: 5
 
   pgadmin:
     image: dpage/pgadmin4:latest
+    # Perfil "tools": no arranca con `docker compose up`. Debe pedirse
+    # explícitamente con `docker compose --profile tools up -d pgadmin`.
+    # Así la UI de administración de la base no queda expuesta por defecto,
+    # y en particular nunca en producción (docker-compose.prod.yml lo hereda
+    # pero sin el perfil activo no se levanta).
+    profiles: ["tools"]
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@dsm.com
-      PGADMIN_DEFAULT_PASSWORD: admin123
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@dsm.com}
+      # Sin default a propósito: la UI de pgAdmin queda expuesta en el puerto
+      # 5050, así que la contraseña debe venir del entorno.
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:?define PGADMIN_DEFAULT_PASSWORD en tu .env}
     ports:
       - "5050:80"
     depends_on:

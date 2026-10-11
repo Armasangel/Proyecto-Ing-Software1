@@ -49,7 +49,17 @@ docker compose down
 Eso es todo. Docker levanta automáticamente:
 - La app Next.js en **http://localhost:3001**
 - PostgreSQL con la base de datos ya inicializada
-- pgAdmin en **http://localhost:5050**
+
+pgAdmin **no** arranca por defecto: está detrás del perfil `tools`, para que la
+UI de administración de la base no quede expuesta por defecto (y nunca en
+producción). Para levantarlo:
+
+```bash
+docker compose --profile tools up -d pgadmin
+```
+
+Su contraseña sale de `PGADMIN_DEFAULT_PASSWORD` en tu `.env` (no tiene valor
+por defecto: si falta, el contenedor no arranca).
 
 > Si ya corriste el proyecto antes y solo quieres reiniciarlo sin reconstruir:
 > ```bash
@@ -96,25 +106,170 @@ Copia `.env.example` a `.env` y completa estos valores:
 
 ## 🔑 Usuarios de prueba
 
-La base de datos se inicializa con estos usuarios. Contraseña para todos: **`password123`**
+`init/01_schema.sql` crea estas cuentas con la contraseña **`password123`**.
+Están pensadas solo para desarrollo local: **nunca las uses en producción**
+(por eso `migrations/06_seguridad_credenciales.sql` marca esa contraseña como
+"requiere cambio" y bloquea el login de quien la siga usando).
 
 | Correo | Rol | Login |
 |---|---|---|
-| `dueno@tienda.com` | DUEÑO | Entra directo (sin código) |
-| `armasangel193@gmail.com` | EMPLEADO | **2FA:** pide un código que llega a ese correo |
+| `cumatzemilio6@gmail.com` | DUEÑO | **2FA:** pide un código a ese correo |
+| `armasangel193@gmail.com` | EMPLEADO | **2FA:** pide un código a ese correo |
+| `bodega@tienda.com` | BODEGUERO | Entra directo (sin código) |
+| `sin2fa@tienda.com` | EMPLEADO | Entra directo (eximido de 2FA) |
 
-> Cambia `armasangel193@gmail.com` por el correo real al que quieras que lleguen
-> los códigos en `init/01_schema.sql` (y también actualiza el correo en la BD si
-> ya la tenías corriendo).
+> Cambia los correos por los reales en `init/01_schema.sql` (y actualiza el
+> correo en la base si ya la tenías corriendo).
+
+---
+
+## 🔐 Manejo de credenciales
+
+Resumen de cómo se protegen las cuentas. Todo esto vive en `lib/auth.ts`,
+`lib/sesion.ts`, `lib/login-rate-limit.ts` y `lib/password-policy.ts`.
+
+### Sesiones revocables
+
+Cada JWT lleva un claim `sv` con el valor de `usuario.sesion_version`. En cada
+request se compara contra la base (en `middleware.ts`): si no coinciden, o el
+usuario está deshabilitado, el token deja de servir **de inmediato**.
+
+Subir el contador equivale a "cerrar todas las sesiones", y ocurre al:
+
+- cambiar la contraseña (o restablecerla),
+- cambiar el rol, la bodega, el estado o la exigencia de 2FA de un usuario
+  (`PATCH /api/usuarios`),
+- promover alguien a dueño,
+- usar `POST /api/usuarios/cerrar-sesiones` (el dueño cierra las sesiones de
+  un colaborador).
+
+Un logout normal sólo borra la cookie del navegador; para expulsar a alguien de
+todos sus dispositivos hay que usar "cerrar sesiones".
+
+### Protección contra fuerza bruta
+
+Dos límites independientes, ambos en la tabla `login_intento`:
+
+| Clave | Límite | Ventana |
+|---|---|---|
+| `ip:<dirección>` | 5 intentos | 1 minuto |
+| `acct:<correo>` | 5 intentos | 15 minutos |
+
+El de IP frena la fuerza bruta concentrada; el de cuenta frena el *credential
+stuffing* que reparte los intentos entre muchas direcciones. Al bloquearse una
+cuenta se le avisa por correo **una sola vez** (en el intento que lo activa, no
+en los siguientes). La respuesta de error es idéntica a "credenciales
+incorrectas": nunca confirma que una cuenta exista.
+
+`/api/login/verificar-codigo` y `/api/recuperar/verificar` también tienen límite
+propio, porque el contador por código (5 intentos) se reiniciaba al pedir un
+código nuevo.
+
+### Política de contraseñas (`lib/password-policy.ts`)
+
+- Mínimo **12 caracteres**.
+- Máximo **72 bytes**: bcrypt ignora todo lo que pase del byte 72, así que sin
+  este tope dos contraseñas distintas con el mismo prefijo serían equivalentes.
+- Lista de contraseñas comunes (embedded, sin dependencias).
+- **Sin reglas de composición** (mayúscula + símbolo + número): NIST SP 800-63B
+  recomienda lo contrario, porque empujan a usar `Abcd1234!` en vez de una frase
+  larga.
+
+### Verificación en 2 pasos (2FA por correo)
+
+Pasan por el segundo paso el **dueño (DUEÑO)** y los **colaboradores
+(EMPLEADO)**: después de usuario y contraseña, el sistema genera un código de 6
+dígitos (vigente 5 min, máx. 5 intentos), lo manda por correo, y el login sólo
+se completa con el código correcto. El **bodeguero (BODEGUERO)** queda exento:
+no maneja facturación ni ve datos de otros usuarios.
+
+> El dueño también entra con código. Antes entraba directo, lo que dejaba al
+> usuario con más privilegios como el más expuesto.
+
+El envío usa **Gmail SMTP** (gratis, con contraseña de aplicación). Para configurarlo:
+
+1. Copia `.env.example` a `.env` y completa `GMAIL_USER` y `GMAIL_APP_PASSWORD`.
+2. `GMAIL_APP_PASSWORD` NO es la contraseña de tu cuenta. Se genera así:
+   - Activa la verificación en 2 pasos de Google en tu cuenta.
+   - Entra a https://myaccount.google.com/apppasswords
+   - Crea una contraseña de aplicación para "Correo" y pégala en `.env`.
+3. Reinicia la app para que tome las variables: `docker compose up -d --force-recreate app`
+
+> En desarrollo los códigos se ven en la consola del contenedor (`docker logs -f <app>`)
+> si Gmail aún no está configurado.
+
+### Bitácora de acceso (`lib/audit.ts`)
+
+Todo lo que cambia el acceso a una cuenta queda en la tabla `auditoria`, que
+el dueño consulta desde el panel **Usuarios → Bitácora de acceso**.
+
+| Evento | Cuándo |
+|---|---|
+| `LOGIN_OK` | Entrada correcta (con o sin 2FA) |
+| `LOGIN_FALLIDO` | Contraseña incorrecta, correo inexistente, o cuenta que debe cambiar su contraseña |
+| `CUENTA_BLOQUEADA` | Se alcanzó el máximo de intentos de una cuenta |
+| `LOGOUT` | Cierre de sesión |
+| `PASSWORD_RESET_SOLICITADO` | Alguien pidió "olvidé mi contraseña" |
+| `PASSWORD_CAMBIO` | La contraseña se cambió de verdad |
+| `PASSWORD_CAMBIO_RECHAZADO` | Se intentó cambiar y la contraseña actual no era correcta |
+| `SESIONES_REVOCADAS` | Se cerraron todas las sesiones de una cuenta |
+| `USUARIO_CREADO` / `USUARIO_DESHABILITADO` / `ROL_CAMBIADO` / `PROMOCION_DUENO` | Altas y cambios de permisos |
+
+Cada fila guarda IP, user-agent y un `detalle` en JSONB con el antes/después de
+lo que cambió. Los intentos contra un correo que **no existe** se registran con
+el correo pero sin `id_usuario`: así se puede ver a qué cuenta están atacando
+aunque esa cuenta nunca haya estado creada.
+
+Dos propiedades deliberadas:
+
+- **La bitácora nunca rompe el login.** Si el INSERT falla, el error se traga y
+  se anota en el log de aplicación: se pierde una línea de registro, no la venta.
+- **Nunca guarda contraseñas ni hashes**, sólo qué pasó.
+
+### Mi cuenta (`/mi-cuenta`)
+
+Los tres roles tienen acceso a su propia pantalla de seguridad:
+
+- **Cambiar la contraseña**, exigiendo la actual. Antes esto sólo era posible
+  por "olvidé mi contraseña", es decir que no había manera de rotarla
+  voluntariamente.
+- **Ver el último acceso** (fecha e IP), que es la señal más directa para
+  detectar una sesión ajena.
+- **Cerrar todas las sesiones**, expulsando de inmediato a quien tenga un token
+  vivo sin esperar a que expire.
+
+Cambiar la contraseña o cerrar sesiones invalida también la sesión actual, así
+que ambas acciones devuelven al login. Es a propósito: si el cambio viene de un
+dispositivo comprometido, dejar vivo ese token sería el hueco entero.
+
+### Cuentas con contraseña conocida
+
+`migrations/06_seguridad_credenciales.sql` marca con
+`requiere_cambio_contrasena = TRUE` a las cuentas que siguen usando la
+contraseña de ejemplo publicada en el repositorio. Con el login correcto, esas
+cuentas reciben un 403 que las manda a "olvidé mi contraseña"; el cambio por ese
+flujo (que exige confirmar por correo) es lo que levanta la marca.
+
+### Despliegue: aplicar las migraciones
+
+Sobre una base ya inicializada hay que correr las dos:
+
+```bash
+psql -U <usuario> -d <basedatos> -f migrations/06_seguridad_credenciales.sql
+psql -U <usuario> -d <basedatos> -f migrations/07_auditoria_credenciales.sql
+```
+
+Ambas son idempotentes (se pueden correr más de una vez). Sólo aplican sobre
+bases ya inicializadas: en bases nuevas el esquema de `init/01_schema.sql` ya
+incluye estos cambios.
+
+**Antes de desplegar**, rotá la contraseña de las cuentas que usaban la clave
+publicada en el repo: después de correr la 06 quedan marcadas para cambiar y no
+pueden iniciar sesión hasta que lo hagan.
 
 ---
 
 ## 📧 Verificación en 2 pasos (2FA por correo)
-
-Solo los **colaboradores (EMPLEADO)** pasan por el segundo paso: después de usuario
-y contraseña, el sistema genera un código de 6 dígitos (vigente 5 min, máx. 5 intentos),
-lo manda por correo, y el login solo se completa con el código correcto. El **dueño
-(DUEÑO)** entra directo.
 
 El envío usa **Gmail SMTP** (gratis, con contraseña de aplicación). Para configurarlo:
 
@@ -144,8 +299,10 @@ una página pública en 3 pasos:
    `reset_token` (JWT de propósito propio, expira en 10 min) y marca el código
    como usado.
 3. **Contraseña nueva** → `POST /api/recuperar/cambiar`. Actualiza el hash de la
-   contraseña, invalida los códigos de recuperación y de 2FA pendientes del
-   usuario y limpia el bloqueo por intentos fallidos para que entre de inmediato.
+   contraseña (validando la política de contraseñas), invalida los códigos de
+   recuperación y de 2FA pendientes, limpia el bloqueo por intentos fallidos para
+   que entre de inmediato, **revoca todas las sesiones abiertas** (por si el
+   acceso se perdió por un atacante) y avisa por correo que hubo un cambio.
 
 Protecciones: rate limiting por IP **y** por correo en la solicitud (evita spam de
 correos y enumerar cuentas) y reutiliza el mismo transporte de Gmail del 2FA
@@ -167,7 +324,7 @@ En bases nuevas la tabla `codigo_recuperacion` ya viene en `init/01_schema.sql`.
 |---|---|
 | Frontend + Backend | Next.js 14 (App Router) |
 | Base de datos | PostgreSQL 16 |
-| Autenticación | JWT (jsonwebtoken + bcryptjs) + 2FA por correo |
+| Autenticación | JWT (jsonwebtoken + bcryptjs) + 2FA por correo + revocación de sesiones |
 | ORM / Queries | pg (node-postgres) |
 | Logs | pino (NDJSON) + pino-pretty en desarrollo |
 | Tests | Jest 29 + React Testing Library + MSW |
@@ -410,7 +567,7 @@ El sistema diferencia dos roles con permisos distintos:
 | http://localhost:3001/login | Inicio de sesión |
 | http://localhost:3001/dashboard | Dashboard con KPIs |
 | http://localhost:3001/api/health | Verificar conexión a PostgreSQL |
-| http://localhost:5050 | pgAdmin (admin@dsm.com / admin123) |
+| http://localhost:5050 | pgAdmin (sólo con `--profile tools`; credenciales en `.env`) |
 
 ---
 
@@ -489,11 +646,12 @@ usó para generarlo — sin eso no hay forma de descifrarlo.
 
 ## 🗄️ Conectar pgAdmin a la base de datos
 
-1. Entra a http://localhost:5050
-2. Login: `admin@dsm.com` / `admin123`
-3. Click derecho en "Servers" → Register → Server
-4. En la pestaña **General**: nombre `DSM`
-5. En la pestaña **Connection**:
+1. Levanta pgAdmin con `docker compose --profile tools up -d pgadmin`
+2. Entra a http://localhost:5050
+3. Login: el `PGADMIN_DEFAULT_EMAIL` / `PGADMIN_DEFAULT_PASSWORD` de tu `.env`
+4. Click derecho en "Servers" → Register → Server
+5. En la pestaña **General**: nombre `DSM`
+6. En la pestaña **Connection**:
    - Host: `db`
    - Port: `5432`
    - Database: `deposito_san_miguel`

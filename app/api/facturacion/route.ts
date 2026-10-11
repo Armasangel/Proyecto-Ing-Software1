@@ -37,10 +37,10 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const usuario = getUsuarioFromRequest(req);
-  if (!usuario) {
+  if (!usuario || !isStaffTipo(usuario.tipo_usuario)) {
     return unauthorizedError();
   }
-  // límite de tasa: 10 solicitudes por minuto por usuario
+  // tasa limite: 10 solicitudes por minuto por usuario
   const { allowed, retryAfter } = rateLimit(
     getClientKey(req, `facturacion:post:${usuario.id_usuario}`),
     10,
@@ -69,11 +69,6 @@ export async function POST(req: NextRequest) {
 
     const total = venta.rows[0].total;
 
-    // FIX: el número de factura ahora lo genera Postgres con nextval() de
-    // una secuencia, DENTRO del mismo INSERT — así es atómico (Postgres
-    // garantiza que nextval() nunca repite un valor, aunque dos facturas
-    // se estén creando al mismo tiempo) y queda como correlativo real
-    // (FACT-000001, FACT-000002, ...) en vez de un timestamp.
     const facturaResult = await pool.query(
       `INSERT INTO factura (id_venta, numero_factura, nombre_cliente, nit_cliente, total_factura)
        VALUES ($1, 'FACT-' || LPAD(nextval('factura_numero_seq')::text, 6, '0'), $2, $3, $4)

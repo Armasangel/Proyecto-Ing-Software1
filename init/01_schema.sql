@@ -117,6 +117,19 @@ CREATE TABLE usuario (
     -- DUENO y BODEGUERO nunca pasan por 2FA sin importar este valor (ver
     -- app/api/login/route.ts).
     requiere_2fa      BOOLEAN         NOT NULL DEFAULT TRUE,
+    -- Revocación de sesiones. El JWT lleva este valor como claim `sv` y cada
+    -- request lo compara contra la fila actual: si difiere, el token ya no
+    -- sirve. Subir el contador equivale a "cerrar todas las sesiones" de este
+    -- usuario (cambio de contraseña, cambio de rol, deshabilitación).
+    sesion_version    INT             NOT NULL DEFAULT 1,
+    -- Última señal de acceso, para mostrar "inicio de sesión anterior" en
+    -- /mi-cuenta y detectar accesos sospechosos.
+    ultimo_login_en   TIMESTAMP,
+    ultimo_login_ip   VARCHAR(45),
+    -- Fuerza el cambio de contraseña en el próximo login. Se activa para las
+    -- cuentas que aún usan la contraseña de ejemplo publicada en este repo
+    -- (ver migrations/06_seguridad_credenciales.sql).
+    requiere_cambio_contrasena BOOLEAN NOT NULL DEFAULT FALSE,
     -- Bodega fija asignada (obligatoria solo para BODEGUERO). La FK hacia
     -- bodega(id_bodega) se agrega más abajo con ALTER TABLE porque la tabla
     -- bodega todavía no existe en este punto del script.
@@ -425,12 +438,41 @@ GROUP BY v.id_venta, c.nombre, c.correo, v.fecha_venta, v.fecha_limite_pago, v.t
 HAVING v.total - COALESCE(SUM(p.monto), 0) > 0;
 
 --  TABLA DE RATE-LIMIT DE LOGIN (compartida entre instancias vía Postgres)
+-- La clave es polimórfica a propósito: el login escribe filas "ip:<direccion>"
+-- y "acct:<correo>", de modo que un ataque distribuido desde muchas IP contra
+-- una sola cuenta también se contiene (OWASP ASVS V2.5). Ver
+-- lib/login-rate-limit.ts.
 CREATE TABLE login_intento (
-    ip              VARCHAR(45)     PRIMARY KEY,
-    intentos        INT             NOT NULL DEFAULT 0,
-    bloqueado_hasta TIMESTAMP,
-    ultimo_intento  TIMESTAMP       NOT NULL DEFAULT NOW()
+    clave            VARCHAR(200)    PRIMARY KEY,
+    intentos         INT             NOT NULL DEFAULT 0,
+    bloqueado_hasta  TIMESTAMP,
+    ultimo_intento   TIMESTAMP       NOT NULL DEFAULT NOW()
 );
+
+--  AUDITORIA DE CREDENCIALES (OWASP ASVS V7)
+-- Rastro persistente de los hechos que cambian el acceso a una cuenta:
+-- entradas, cambios de contraseña, bloqueos, cambios de rol, cierres de
+-- sesión. Antes esto sólo vivía en logs de pino, que se rotan y se pueden
+-- borrar; ahora queda consultable desde el panel del dueño.
+-- id_usuario queda NULL si la cuenta se borra, pero `correo` se conserva:
+-- el rastro de qué cuenta se estaba atacando tiene que sobrevivir.
+CREATE TABLE auditoria (
+    id           SERIAL         PRIMARY KEY,
+    id_usuario   INT            REFERENCES usuario(id_usuario) ON DELETE SET NULL,
+    correo       VARCHAR(200),
+    tipo_evento  VARCHAR(50)     NOT NULL,
+    ip           VARCHAR(45),
+    user_agent   TEXT,
+    detalle      JSONB           NOT NULL DEFAULT '{}'::jsonb,
+    creado_en    TIMESTAMP       NOT NULL DEFAULT NOW()
+);
+
+-- Consulta principal del panel: "qué pasó, y en este orden".
+CREATE INDEX idx_auditoria_created ON auditoria (creado_en DESC);
+-- Filtro por cuenta concreta.
+CREATE INDEX idx_auditoria_usuario ON auditoria (id_usuario, creado_en DESC);
+-- Filtro por tipo de evento.
+CREATE INDEX idx_auditoria_tipo ON auditoria (tipo_evento, creado_en DESC);
 
 -- API_RATE_LIMIT (contador genérico de rate limiting, migración 03)
 -- Ventana fija; se usa primero en /api/usuarios y es reutilizable para

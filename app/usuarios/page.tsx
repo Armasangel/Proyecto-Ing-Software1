@@ -3,6 +3,7 @@
 import type { CSSProperties } from "react";
 import { useCallback, useEffect, useState } from "react";
 import { StaffShell } from "@/components/StaffShell";
+import { PanelAuditoria } from "@/components/PanelAuditoria";
 import { useDuenoSession } from "@/hooks/useDuenoSession";
 import { MAX_DUENOS, TIPOS_USUARIO } from "@/lib/roles";
 
@@ -1170,6 +1171,8 @@ export default function UsuariosPage() {
           {toast.msg}
         </div>
       )}
+
+      <PanelAuditoria />
     </StaffShell>
   );
 }

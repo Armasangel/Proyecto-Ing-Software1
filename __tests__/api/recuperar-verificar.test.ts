@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import { NextRequest } from "next/server";
 import { POST } from "@/app/api/recuperar/verificar/route";
+import { checkRateLimit } from "@/lib/api-rate-limit";
 import { testUserDueno } from "@/__tests__/utils/api-test-utils";
 
 jest.mock("bcryptjs");
@@ -9,8 +10,17 @@ jest.mock("@/lib/db", () => ({
   pool: { query: jest.fn() },
 }));
 
+// El rate limit se mockea para no Alterar el orden de las llamadas a
+// pool.query que el resto del test usa con mockResolvedValueOnce. Su
+// comportamiento se prueba aquí mismo, con un caso dedicado.
+jest.mock("@/lib/api-rate-limit", () => ({
+  ...jest.requireActual("@/lib/api-rate-limit"),
+  checkRateLimit: jest.fn(),
+}));
+
 const mockPool = jest.requireMock("@/lib/db").pool as { query: jest.Mock };
 const mockBcrypt = bcrypt as jest.Mocked<typeof bcrypt>;
+const mockCheckRateLimit = checkRateLimit as jest.MockedFunction<typeof checkRateLimit>;
 
 function makeReq(body: unknown) {
   return new NextRequest(new URL("/api/recuperar/verificar", "http://localhost"), {
@@ -29,7 +39,34 @@ const filaVigente = {
 };
 
 describe("POST /api/recuperar/verificar (paso 2)", () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockCheckRateLimit.mockResolvedValue({ limited: false, retryAfterSeconds: 0, restantes: 5 });
+  });
+
+  it("returns 429 and the generic message when the rate limit is exceeded", async () => {
+    mockCheckRateLimit.mockResolvedValue({ limited: true, retryAfterSeconds: 180, restantes: 0 });
+    const res = await POST(makeReq({ correo: testUserDueno.correo, codigo: "123456" }));
+    const data = await res.json();
+
+    expect(res.status).toBe(429);
+    // El mismo texto genérico que el resto de fallos: que el límite se haya
+    // disparado ya sugiere que alguien está probando códigos en serio.
+    expect(String(data.error)).toMatch(/código incorrecto/i);
+  });
+
+  it("el límite se cuenta por correo, no sólo por IP", async () => {
+    mockCheckRateLimit.mockResolvedValue({ limited: false, retryAfterSeconds: 0, restantes: 4 });
+    mockPool.query.mockResolvedValue({ rows: [] });
+
+    await POST(makeReq({ correo: testUserDueno.correo, codigo: "123456" }));
+
+    expect(mockCheckRateLimit).toHaveBeenCalledWith(
+      expect.stringContaining(testUserDueno.correo),
+      expect.any(Number),
+      expect.any(Number)
+    );
+  });
 
   it("returns 400 when fields are missing", async () => {
     const res = await POST(makeReq({}));

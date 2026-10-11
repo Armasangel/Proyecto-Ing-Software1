@@ -4,6 +4,12 @@ import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { isDuenoTipo, TIPOS_USUARIO } from "@/lib/roles";
 import { apiError, unauthorizedError, validationError } from "@/lib/api-error";
 import { checkRateLimit, getClientIp } from "@/lib/api-rate-limit";
+import { validarContrasena } from "@/lib/password-policy";
+import { revocarSesiones } from "@/lib/sesion";
+import { registrarAuditoria, TIPOS_EVENTO } from "@/lib/audit";
+import { getLogger } from "@/lib/logger";
+
+const log = getLogger("api/usuarios");
 
 const TIPOS_VALIDOS = Object.values(TIPOS_USUARIO);
 
@@ -96,7 +102,9 @@ export async function PATCH(req: NextRequest) {
     }
 
     const actual = await pool.query(
-      `SELECT tipo_usuario, id_bodega FROM usuario WHERE id_usuario = $1`,
+      `SELECT tipo_usuario, id_bodega, estado_usuario, requiere_2fa
+         FROM usuario
+        WHERE id_usuario = $1`,
       [idNum]
     );
     if (actual.rowCount === 0) {
@@ -182,6 +190,51 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: "Usuario no encontrado" }, { status: 404 });
     }
 
+    // Rol, bodega, estado o exigencia de 2FA son parte de la identidad con la
+    // que el usuario opera, y eso viaja dentro del JWT. Sin revocar la
+    // sesión, el cambio no surte efecto real hasta que el token viejo expire
+    // (8 h): un empleado degradado a Bodeguero seguiría viendo facturación.
+    const cambiaPermisos =
+      tipo_usuario !== undefined ||
+      estado_usuario !== undefined ||
+      requiere_2fa !== undefined ||
+      id_bodega !== undefined;
+
+    if (cambiaPermisos) {
+      await revocarSesiones(idNum);
+
+      // `detalle` guarda el antes y el después de cada campo tocado: sin eso,
+      // "se cambió un permiso" no dice nada cuando se audite seis meses después.
+      const antes = {
+        tipo_usuario: actual.rows[0].tipo_usuario,
+        id_bodega: actual.rows[0].id_bodega,
+      };
+      const despues = result.rows[0] as Record<string, unknown>;
+      const cambios: Record<string, { antes: unknown; despues: unknown }> = {};
+      for (const campo of ["tipo_usuario", "id_bodega", "estado_usuario", "requiere_2fa"] as const) {
+        if (despues[campo] !== undefined && despues[campo] !== antes[campo as keyof typeof antes]) {
+          cambios[campo] = { antes: antes[campo as keyof typeof antes] ?? null, despues: despues[campo] };
+        }
+      }
+
+      registrarAuditoria({
+        id_usuario: idNum,
+        correo: result.rows[0].correo,
+        tipo_evento:
+          estado_usuario === false
+            ? TIPOS_EVENTO.USUARIO_DESHABILITADO
+            : TIPOS_EVENTO.ROL_CAMBIADO,
+        ip: getClientIp(req),
+        user_agent: req.headers.get("user-agent"),
+        detalle: { ...cambios, modificado_por: usuario.id_usuario, sesiones_revocadas: true },
+      });
+
+      log.info(
+        { id_usuario: idNum, actor: usuario.id_usuario, tipo_usuario, estado_usuario, requiere_2fa, id_bodega },
+        "Datos de acceso modificados; sesiones del usuario revocadas"
+      );
+    }
+
     return NextResponse.json({ usuario: result.rows[0] });
   } catch (error) {
     return apiError("USUARIOS PATCH", error);
@@ -213,8 +266,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (contrasena.length < 6) {
-      return validationError("La contraseña debe tener al menos 6 caracteres");
+    const errorContrasena = validarContrasena(contrasena);
+    if (errorContrasena) {
+      return validationError(errorContrasena);
     }
 
     // Un usuario nuevo nunca se crea directamente como DUENO: ese rol solo
@@ -279,6 +333,24 @@ export async function POST(req: NextRequest) {
        RETURNING id_usuario, nombre, correo, tipo_usuario, estado_usuario, id_bodega, requiere_2fa`,
       [nombre.trim(), correoFinal, telefonoFinal, hash, tipoFinal, idBodegaFinal, requiere2faFinal]
 
+    );
+
+    registrarAuditoria({
+      id_usuario: result.rows[0].id_usuario,
+      correo: result.rows[0].correo,
+      tipo_evento: TIPOS_EVENTO.USUARIO_CREADO,
+      ip: getClientIp(req),
+      user_agent: req.headers.get("user-agent"),
+      detalle: {
+        tipo_usuario: tipoFinal,
+        creado_por: usuario.id_usuario,
+        requiere_2fa: requiere2faFinal,
+      },
+    });
+
+    log.info(
+      { id_usuario: result.rows[0].id_usuario, tipo_usuario: tipoFinal, actor: usuario.id_usuario },
+      "Usuario creado"
     );
 
     return NextResponse.json({ usuario: result.rows[0] }, { status: 201 });

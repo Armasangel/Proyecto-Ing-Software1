@@ -1,12 +1,19 @@
 // app/api/login/verificar-codigo/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
-import { AUTH_COOKIE, signAuthToken } from "@/lib/auth";
+import { AUTH_COOKIE, authCookieOptions, signAuthToken } from "@/lib/auth";
 import { apiError } from "@/lib/api-error";
 import { getLogger } from "@/lib/logger";
+import { checkRateLimit, getClientIp } from "@/lib/api-rate-limit";
 import { compararCodigo, getMaxIntentos, verifyPreToken } from "@/lib/verificacion";
+import { registrarAuditoria, TIPOS_EVENTO } from "@/lib/audit";
 
 const log = getLogger("api/login/verificar-codigo");
+
+// Límite sobre el endpoint de 2FA. El contador de intentos por código
+// (5) no alcanzaba: basta con pedir un código nuevo para volver a cero.
+const LIMITE_2FA_MAX = 5;
+const LIMITE_2FA_VENTANA_MS = 5 * 60_000;
 
 export async function POST(req: NextRequest) {
   try {
@@ -27,6 +34,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { error: "La sesión de verificación expiró. Iniciá sesión de nuevo." },
         { status: 401 }
+      );
+    }
+
+    // Doble límite: por IP y por cuenta. El de IP frena a quien prueba
+    // códigos en serie; el de cuenta frena a quien reparte los intentos entre
+    // varias IP (el código es de 6 dígitos: sólo 10^6 combinaciones).
+    const ip = getClientIp(req);
+    const limites = await Promise.all([
+      checkRateLimit(`login2fa:ip:${ip}`, LIMITE_2FA_MAX, LIMITE_2FA_VENTANA_MS),
+      checkRateLimit(`login2fa:acct:${idUsuario}`, LIMITE_2FA_MAX, LIMITE_2FA_VENTANA_MS),
+    ]);
+
+    if (limites.some((limite) => limite.limited)) {
+      log.warn({ id_usuario: idUsuario, ip }, "Verificación de 2FA bloqueada por rate limit");
+      return NextResponse.json(
+        { error: "Demasiados intentos. Pedí un código nuevo e intentá de nuevo en unos minutos." },
+        { status: 429 }
       );
     }
 
@@ -84,8 +108,11 @@ export async function POST(req: NextRequest) {
       correo: string;
       tipo_usuario: string;
       id_bodega: number | null;
+      sesion_version: number;
     }>(
-      `SELECT id_usuario, nombre, correo, tipo_usuario, id_bodega FROM usuario WHERE id_usuario = $1 AND estado_usuario = TRUE`,
+      `SELECT id_usuario, nombre, correo, tipo_usuario, id_bodega, sesion_version
+         FROM usuario
+        WHERE id_usuario = $1 AND estado_usuario = TRUE`,
       [idUsuario]
     );
 
@@ -95,17 +122,21 @@ export async function POST(req: NextRequest) {
 
     const usuario = usuarioResult.rows[0];
     const token = signAuthToken(usuario);
-    const response = NextResponse.json({ ok: true, token, usuario });
+    // El token viaja SOLO en la cookie httpOnly (ver nota en /api/login).
+    const response = NextResponse.json({ ok: true, usuario });
 
-    response.cookies.set(AUTH_COOKIE, token, {
-      httpOnly: true,
-      path: "/",
-      maxAge: 60 * 60 * 8,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-    });
+    response.cookies.set(AUTH_COOKIE, token, authCookieOptions());
 
     response.cookies.set("session", "", { path: "/", maxAge: 0 });
+
+    await registrarAuditoria({
+      id_usuario: usuario.id_usuario,
+      correo: usuario.correo,
+      tipo_evento: TIPOS_EVENTO.LOGIN_OK,
+      ip: getClientIp(req),
+      user_agent: req.headers.get("user-agent"),
+      detalle: { tipo_usuario: usuario.tipo_usuario, con_2fa: true, etapa: "verificado" },
+    });
 
     log.info({ id_usuario: usuario.id_usuario, tipo_usuario: usuario.tipo_usuario }, "Login exitoso (2FA verificado)");
 

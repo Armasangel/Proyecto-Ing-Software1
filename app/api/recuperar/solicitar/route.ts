@@ -13,6 +13,7 @@ import { apiError, tooManyRequestsError } from "@/lib/api-error";
 import { getLogger } from "@/lib/logger";
 import { checkRateLimit, getClientIp } from "@/lib/api-rate-limit";
 import { enviarCodigoRecuperacion } from "@/lib/mailer";
+import { registrarAuditoria, TIPOS_EVENTO } from "@/lib/audit";
 import {
   fechaExpiracion,
   generarCodigo,
@@ -89,6 +90,18 @@ export async function POST(req: NextRequest) {
       // Es un problema operativo que queda registrado en los logs del server.
       log.error({ err: mailError }, "No se pudo enviar el código de recuperación");
     }
+
+    // Quien recibe un "olvidé mi contraseña" para esta cuenta puede ser el
+    // dueño legítimo o alguien intentando tomar la cuenta. Queda registrado
+    // para poder comparar contra los accesos posteriores.
+    await registrarAuditoria({
+      id_usuario: usuario.id_usuario,
+      correo: usuario.correo,
+      tipo_evento: TIPOS_EVENTO.PASSWORD_RESET_SOLICITADO,
+      ip,
+      user_agent: req.headers.get("user-agent"),
+      detalle: {},
+    });
 
     return NextResponse.json({ ok: true, message: MENSAJE_OK });
   } catch (error) {
