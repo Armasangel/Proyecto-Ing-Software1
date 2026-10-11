@@ -137,6 +137,8 @@ const clienteFormVacio = {
 export default function OrdenesPage() {
   const usuario = useStaffSession();
   const [clientes, setClientes] = useState<Cliente[]>([]);
+  // Los 5 clientes que más órdenes hacen: se sugieren antes de escribir nada.
+  const [clientesFrecuentes, setClientesFrecuentes] = useState<Cliente[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
   const [ordenes, setOrdenes] = useState<OrdenListada[]>([]);
   // Presentaciones de mayoreo por producto, cargadas bajo demanda cuando el
@@ -178,6 +180,16 @@ export default function OrdenesPage() {
     const r = await fetch("/api/clientes", { cache: "no-store" });
     const d = await r.json();
     setClientes(d.clientes || []);
+    // Si falla, el buscador sigue funcionando: solo no hay sugerencias.
+    try {
+      const rf = await fetch("/api/clientes/frecuentes?limit=5", { cache: "no-store" });
+      if (rf.ok) {
+        const df = await rf.json();
+        setClientesFrecuentes(df.clientes || []);
+      }
+    } catch {
+      setClientesFrecuentes([]);
+    }
   }, []);
 
   useEffect(() => {
@@ -455,7 +467,7 @@ export default function OrdenesPage() {
                     onFocus={() => setSugerenciasAbiertas(true)}
                     onBlur={() => setTimeout(() => setSugerenciasAbiertas(false), 150)}
                   />
-                  {sugerenciasAbiertas && busquedaCliente.trim() !== "" && (
+                  {sugerenciasAbiertas && (busquedaCliente.trim() !== "" || clientesFrecuentes.length > 0) && (
                     <div
                       style={{
                         position: "absolute",
@@ -472,12 +484,17 @@ export default function OrdenesPage() {
                         boxShadow: "0 4px 10px rgba(0,0,0,0.12)",
                       }}
                     >
-                      {clientesFiltrados.length === 0 && (
+                      {busquedaCliente.trim() === "" && (
+                        <div style={{ padding: "0.4rem 0.7rem", fontSize: "0.72rem", color: "var(--muted)", fontWeight: 600 }}>
+                          Clientes frecuentes
+                        </div>
+                      )}
+                      {busquedaCliente.trim() !== "" && clientesFiltrados.length === 0 && (
                         <div style={{ padding: "0.5rem 0.7rem", fontSize: "0.85rem", color: "var(--muted)" }}>
                           Sin resultados — prueba &quot;+ Cliente nuevo&quot;.
                         </div>
                       )}
-                      {clientesFiltrados.slice(0, 8).map((c) => (
+                      {(busquedaCliente.trim() === "" ? clientesFrecuentes : clientesFiltrados).slice(0, 8).map((c) => (
                         <div
                           key={c.id_cliente}
                           onMouseDown={() => seleccionarCliente(c)}

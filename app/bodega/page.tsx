@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import { useBodegueroSession } from "@/hooks/useBodegueroSession";
@@ -36,11 +36,25 @@ type Movimiento = {
 
 type TabKey = "pedidos" | "entrada" | "salida" | "traslado";
 
+// USO_INTERNO ya no se puede registrar (la tienda se modela como una bodega y
+// ese movimiento es un traslado), pero se conserva la etiqueta para que los
+// movimientos viejos sigan mostrándose bien en el historial.
 const MOTIVO_LABEL: Record<string, string> = {
   MERMA: "Merma / daño",
   USO_INTERNO: "Uso interno",
   TRASLADO: "Traslado",
 };
+
+// Cantidad de productos sugeridos (los más vendidos/pedidos) al abrir el selector.
+const SUGERIDOS_PRODUCTOS = 8;
+
+// Para buscar sin importar mayúsculas ni acentos ("cafe" encuentra "Café").
+function normalizar(texto: string): string {
+  return texto
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
 
 // ─── Tablero "en vivo" de pedidos (como ordenes en fast food) ─────────────────
 
@@ -89,7 +103,11 @@ export default function BodegaPage() {
   const [idProducto, setIdProducto] = useState("");
   const [idPresentacion, setIdPresentacion] = useState(""); // "" = unidad base
   const [cantidad, setCantidad] = useState("");
-  const [motivo, setMotivo] = useState<"MERMA" | "USO_INTERNO">("MERMA");
+  // Selector de producto con sugerencias: al enfocarlo sin escribir muestra
+  // los más vendidos/pedidos; al escribir filtra la lista completa.
+  const [busquedaProducto, setBusquedaProducto] = useState("");
+  const [sugerenciasProductoAbiertas, setSugerenciasProductoAbiertas] = useState(false);
+  const [productosFrecuentes, setProductosFrecuentes] = useState<Producto[]>([]);
   const [idBodegaDestino, setIdBodegaDestino] = useState("");
   const [descripcion, setDescripcion] = useState("");
 
@@ -165,6 +183,38 @@ export default function BodegaPage() {
     cargarHistorial();
   }, [usuario, cargarHistorial]);
 
+  // Los más vendidos/pedidos de tu bodega. En Salida y Traslado solo cuentan
+  // los que tienen existencias (no se puede sacar lo que no hay).
+  useEffect(() => {
+    if (!usuario || tab === "pedidos") return;
+    const soloConStock = tab === "salida" || tab === "traslado";
+    fetch(`/api/productos/frecuentes?limit=${SUGERIDOS_PRODUCTOS}${soloConStock ? "&con_stock=1" : ""}`)
+      .then((r) => r.json())
+      .then((d) => setProductosFrecuentes(d.productos || []))
+      .catch(() => setProductosFrecuentes([]));
+  }, [usuario, tab]);
+
+  const productosSugeridos = useMemo(() => {
+    const q = normalizar(busquedaProducto.trim());
+    if (q === "") return productosFrecuentes;
+    // Al escribir se busca en todo el catálogo; los más vendidos salen primero.
+    const posicion = new Map(productosFrecuentes.map((p, i) => [p.id_producto, i]));
+    return productos
+      .filter((p) => normalizar(p.nombre_producto).includes(q) || normalizar(p.codigo_producto).includes(q))
+      .sort((a, b) => {
+        const pa = posicion.get(a.id_producto) ?? Infinity;
+        const pb = posicion.get(b.id_producto) ?? Infinity;
+        return pa !== pb ? pa - pb : a.nombre_producto.localeCompare(b.nombre_producto);
+      })
+      .slice(0, 8);
+  }, [busquedaProducto, productos, productosFrecuentes]);
+
+  const seleccionarProducto = (p: Producto) => {
+    setIdProducto(String(p.id_producto));
+    setBusquedaProducto(`${p.nombre_producto} (${p.codigo_producto})`);
+    setSugerenciasProductoAbiertas(false);
+  };
+
   useEffect(() => {
     setIdPresentacion("");
     if (!idProducto) {
@@ -183,7 +233,7 @@ export default function BodegaPage() {
     setCantidad("");
     setDescripcion("");
     setIdBodegaDestino("");
-    setMotivo("MERMA");
+    setBusquedaProducto("");
   };
 
   const handleLogout = async () => {
@@ -199,10 +249,6 @@ export default function BodegaPage() {
     }
     if (tab === "traslado" && !idBodegaDestino) {
       setMensaje({ texto: "Selecciona la bodega destino", tipo: "err" });
-      return;
-    }
-    if (tab === "salida" && motivo === "USO_INTERNO" && !descripcion.trim()) {
-      setMensaje({ texto: "Describe brevemente el uso interno", tipo: "err" });
       return;
     }
 
@@ -226,7 +272,8 @@ export default function BodegaPage() {
         body.descripcion = descripcion || undefined;
       } else if (tab === "salida") {
         url = "/api/inventario/salida";
-        body.motivo = motivo;
+        // Única salida manual posible. Para pasar producto a la tienda se usa Traslado.
+        body.motivo = "MERMA";
         body.descripcion = descripcion || undefined;
       } else {
         url = "/api/gestion-inventario/transferencia";
@@ -369,14 +416,43 @@ export default function BodegaPage() {
         {tab !== "pedidos" && <div style={s.card}>
           <div style={s.field}>
             <label style={s.label}>Producto</label>
-            <select style={s.input} value={idProducto} onChange={(e) => setIdProducto(e.target.value)}>
-              <option value="">Selecciona un producto…</option>
-              {productos.map((p) => (
-                <option key={p.id_producto} value={p.id_producto}>
-                  {p.nombre_producto} ({p.codigo_producto})
-                </option>
-              ))}
-            </select>
+            <div style={{ position: "relative" }}>
+              <input
+                style={s.input}
+                placeholder="Busca por nombre o código…"
+                value={busquedaProducto}
+                autoComplete="off"
+                onChange={(e) => {
+                  setBusquedaProducto(e.target.value);
+                  setIdProducto("");
+                  setSugerenciasProductoAbiertas(true);
+                }}
+                onFocus={() => setSugerenciasProductoAbiertas(true)}
+                onBlur={() => setTimeout(() => setSugerenciasProductoAbiertas(false), 150)}
+              />
+              {sugerenciasProductoAbiertas && (
+                <div style={s.sugerencias}>
+                  {busquedaProducto.trim() === "" && productosSugeridos.length > 0 && (
+                    <div style={s.sugerenciasTitulo}>Más pedidos y vendidos</div>
+                  )}
+                  {productosSugeridos.length === 0 && (
+                    <div style={{ padding: "0.6rem 0.8rem", fontSize: "0.85rem", color: "var(--muted)" }}>
+                      {busquedaProducto.trim() === ""
+                        ? tab === "entrada"
+                          ? "Escribe para buscar un producto"
+                          : "No hay productos con existencias en tu bodega"
+                        : "Sin resultados"}
+                    </div>
+                  )}
+                  {productosSugeridos.map((p) => (
+                    <div key={p.id_producto} onMouseDown={() => seleccionarProducto(p)} style={s.sugerenciaItem}>
+                      {p.nombre_producto}{" "}
+                      <span style={{ color: "var(--muted)", fontSize: "0.78rem" }}>({p.codigo_producto})</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           <div style={s.row}>
@@ -408,23 +484,9 @@ export default function BodegaPage() {
           </div>
 
           {tab === "salida" && (
-            <div style={s.field}>
-              <label style={s.label}>Motivo</label>
-              <div style={{ display: "flex", gap: "0.6rem" }}>
-                {(["MERMA", "USO_INTERNO"] as const).map((m) => (
-                  <label
-                    key={m}
-                    style={{
-                      ...s.radioPill,
-                      borderColor: motivo === m ? "var(--accent2)" : "var(--border)",
-                      background: motivo === m ? "rgba(34,197,94,.12)" : "var(--surface)",
-                    }}
-                  >
-                    <input type="radio" checked={motivo === m} onChange={() => setMotivo(m)} />
-                    {MOTIVO_LABEL[m]}
-                  </label>
-                ))}
-              </div>
+            <div style={{ ...s.field, color: "var(--muted)", fontSize: "0.82rem", lineHeight: 1.5 }}>
+              Motivo: <strong style={{ color: "var(--text)" }}>{MOTIVO_LABEL.MERMA}</strong>. Para pasar producto a
+              la tienda usa la pestaña Traslado.
             </div>
           )}
 
@@ -450,7 +512,7 @@ export default function BodegaPage() {
 
           <div style={s.field}>
             <label style={s.label}>
-              Descripción {tab === "salida" && motivo === "USO_INTERNO" ? "*" : "(opcional)"}
+              Descripción (opcional)
             </label>
             <input
               style={s.input}
@@ -519,6 +581,34 @@ export default function BodegaPage() {
 }
 
 const s: Record<string, CSSProperties> = {
+  sugerencias: {
+    position: "absolute",
+    top: "100%",
+    left: 0,
+    right: 0,
+    marginTop: 2,
+    zIndex: 20,
+    maxHeight: 320,
+    overflowY: "auto",
+    background: "var(--surface)",
+    border: "1px solid var(--border)",
+    borderRadius: 10,
+    boxShadow: "0 4px 10px rgba(0,0,0,0.12)",
+  },
+  sugerenciasTitulo: {
+    padding: "0.5rem 0.8rem 0.3rem",
+    fontSize: "0.72rem",
+    fontWeight: 700,
+    color: "var(--muted)",
+    textTransform: "uppercase",
+    letterSpacing: "0.04em",
+  },
+  sugerenciaItem: {
+    padding: "0.75rem 0.8rem", // objetivo táctil cómodo en tablet
+    cursor: "pointer",
+    fontSize: "0.92rem",
+    borderTop: "1px solid var(--border)",
+  },
   page: { minHeight: "100vh", background: "var(--bg)", fontFamily: "var(--font-body)" },
   pedidosBoard: {
     display: "flex",

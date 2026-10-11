@@ -4,13 +4,15 @@ import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { isBodegueroTipo, isStaffTipo } from "@/lib/roles";
 import { apiError, unauthorizedError, validationError } from "@/lib/api-error";
 
-const MOTIVOS_VALIDOS = ["MERMA", "USO_INTERNO"] as const;
+// El "uso interno" ya no es un motivo de salida: la tienda se modela como una
+// bodega más, así que mover producto a la tienda se registra como traslado.
+const MOTIVOS_VALIDOS = ["MERMA"] as const;
 
 /**
  * POST /api/inventario/salida
  * Registra una salida manual de bodega (no generada por una venta), con un
- * motivo obligatorio: MERMA (daño/vencimiento) o USO_INTERNO. Para traslados
- * entre bodegas se usa /api/gestion-inventario/transferencia.
+ * motivo obligatorio: MERMA (daño/vencimiento). Para traslados (incluido el
+ * paso de producto a la tienda) entre bodegas se usa /api/gestion-inventario/transferencia.
  */
 export async function POST(request: NextRequest) {
   const usuario = getUsuarioFromRequest(request);
@@ -43,10 +45,6 @@ export async function POST(request: NextRequest) {
 
     if (cantidadIngresada <= 0) {
       return validationError("La cantidad debe ser mayor a 0");
-    }
-
-    if (motivo === "USO_INTERNO" && !String(descripcion || "").trim()) {
-      return validationError("La descripción es obligatoria para uso interno");
     }
 
     const client = await pool.connect();
@@ -102,7 +100,7 @@ export async function POST(request: NextRequest) {
           id_bodega,
           id_producto,
           cantidad,
-          descripcion || (motivo === "MERMA" ? "Merma / producto dañado" : "Uso interno"),
+          descripcion || "Merma / producto dañado",
           usuario.id_usuario,
           motivo,
           idPresentacion,
