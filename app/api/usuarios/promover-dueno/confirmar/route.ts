@@ -13,6 +13,7 @@ import { isDuenoTipo, MAX_DUENOS, TIPOS_USUARIO } from "@/lib/roles";
 import { apiError, tooManyRequestsError, unauthorizedError, validationError } from "@/lib/api-error";
 import { checkRateLimit, getClientIp } from "@/lib/api-rate-limit";
 import { compararCodigo, getMaxIntentos, verifyPromocionToken } from "@/lib/verificacion";
+import { registrarAuditoria, TIPOS_EVENTO } from "@/lib/audit";
 import { getLogger } from "@/lib/logger";
 
 const log = getLogger("api/usuarios/promover-dueno/confirmar");
@@ -160,6 +161,19 @@ export async function POST(req: NextRequest) {
     ]);
 
     await client.query("COMMIT");
+
+    registrarAuditoria({
+      id_usuario: fila.id_usuario_objetivo,
+      tipo_evento: TIPOS_EVENTO.PROMOCION_DUENO,
+      ip: getClientIp(req),
+      user_agent: req.headers.get("user-agent"),
+      detalle: {
+        desde: objetivoResult.rows[0].tipo_usuario,
+        hacia: TIPOS_USUARIO.DUENO,
+        solicitado_por: solicitante.id_usuario,
+        sesiones_revocadas: true,
+      },
+    });
 
     log.info(
       { id_usuario_objetivo: fila.id_usuario_objetivo, id_dueno_solicitante: solicitante.id_usuario },

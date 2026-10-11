@@ -64,10 +64,17 @@ describe("POST /api/recuperar/solicitar (paso 1)", () => {
     const res = await POST(makeReq({ correo: "dueno@tienda.com" }));
 
     expect(res.status).toBe(200);
-    expect(mockPool.query.mock.calls.length).toBe(2);
+    // 3 llamadas: SELECT usuario, INSERT del código, INSERT en la bitácora.
+    expect(mockPool.query.mock.calls.length).toBe(3);
     const insertSql = mockPool.query.mock.calls[1][0] as string;
     expect(insertSql).toMatch(/INSERT INTO codigo_recuperacion/);
     expect(enviarCodigoRecuperacion).toHaveBeenCalledWith("dueno@tienda.com", expect.stringMatching(/^\d{6}$/));
+
+    // Pedir la recuperación queda registrado: puede ser el dueño legítimo o
+    // alguien intentando quedarse con la cuenta.
+    const auditoriaSql = mockPool.query.mock.calls[2][0] as string;
+    expect(auditoriaSql).toMatch(/INSERT INTO auditoria/);
+    expect(mockPool.query.mock.calls[2][1][2]).toBe("PASSWORD_RESET_SOLICITADO");
   });
 
   it("returns 429 when the rate limit is exceeded", async () => {

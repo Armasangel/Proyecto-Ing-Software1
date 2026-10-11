@@ -15,6 +15,7 @@ import { claveCuenta, claveIp, clearFailedLogins } from "@/lib/login-rate-limit"
 import { validarContrasena } from "@/lib/password-policy";
 import { enviarAvisoCambioContrasena } from "@/lib/mailer";
 import { revocarSesiones } from "@/lib/sesion";
+import { registrarAuditoria, TIPOS_EVENTO } from "@/lib/audit";
 import { verifyResetToken } from "@/lib/verificacion";
 
 const log = getLogger("api/recuperar/cambiar");
@@ -94,6 +95,17 @@ export async function POST(req: NextRequest) {
     } catch (mailError) {
       log.error({ err: mailError, id_usuario: idUsuario }, "No se pudo enviar el aviso de cambio de contraseña");
     }
+
+    registrarAuditoria({
+      id_usuario: idUsuario,
+      correo: usuarioResult.rows[0].correo,
+      tipo_evento: TIPOS_EVENTO.PASSWORD_CAMBIO,
+      ip,
+      user_agent: req.headers.get("user-agent"),
+      // "recuperacion" = llegó con código por correo (o el dueño la cambió);
+      // nunca se registra la contraseña en claro ni su hash.
+      detalle: { via: "recuperacion", sesiones_revocadas: true },
+    });
 
     log.info({ id_usuario: idUsuario, ip }, "Contraseña restablecida correctamente");
 

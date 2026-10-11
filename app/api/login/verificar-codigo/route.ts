@@ -6,6 +6,7 @@ import { apiError } from "@/lib/api-error";
 import { getLogger } from "@/lib/logger";
 import { checkRateLimit, getClientIp } from "@/lib/api-rate-limit";
 import { compararCodigo, getMaxIntentos, verifyPreToken } from "@/lib/verificacion";
+import { registrarAuditoria, TIPOS_EVENTO } from "@/lib/audit";
 
 const log = getLogger("api/login/verificar-codigo");
 
@@ -127,6 +128,15 @@ export async function POST(req: NextRequest) {
     response.cookies.set(AUTH_COOKIE, token, authCookieOptions());
 
     response.cookies.set("session", "", { path: "/", maxAge: 0 });
+
+    await registrarAuditoria({
+      id_usuario: usuario.id_usuario,
+      correo: usuario.correo,
+      tipo_evento: TIPOS_EVENTO.LOGIN_OK,
+      ip: getClientIp(req),
+      user_agent: req.headers.get("user-agent"),
+      detalle: { tipo_usuario: usuario.tipo_usuario, con_2fa: true, etapa: "verificado" },
+    });
 
     log.info({ id_usuario: usuario.id_usuario, tipo_usuario: usuario.tipo_usuario }, "Login exitoso (2FA verificado)");
 
