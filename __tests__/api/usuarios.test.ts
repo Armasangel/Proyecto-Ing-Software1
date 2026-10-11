@@ -12,6 +12,10 @@ jest.mock("@/lib/api-rate-limit", () => ({
 }));
 
 const mockPool = jest.requireMock("@/lib/db").pool as { query: jest.Mock };
+
+// Cumple lib/password-policy.ts: 12+ caracteres y fuera de la lista de
+// contraseñas comunes.
+const CONTRASENA_VALIDA = "Brindis-GT-2026!";
 const mockCheckRateLimit = checkRateLimit as jest.MockedFunction<typeof checkRateLimit>;
 
 const mockUsuarios = [
@@ -166,11 +170,46 @@ describe("POST /api/usuarios", () => {
     expect(data.error).toMatch(/25/);
   });
 
+  it("rechaza contraseñas que no cumplen la política", async () => {
+    const req = createMockRequest("/api/usuarios", {
+      method: "POST",
+      user: testUserDueno,
+      body: { nombre: "Nuevo", correo: "nuevo@tienda.com", contrasena: "123456", tipo_usuario: "EMPLEADO" },
+    });
+    const res = await POST(req);
+    const data = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(data.error).toMatch(/12 caracteres/i);
+    // No debe llegar a la base: se rechaza antes de hashear ni insertar.
+    expect(mockPool.query).not.toHaveBeenCalled();
+  });
+
+  it("rechaza contraseñas muy comunes", async () => {
+    const req = createMockRequest("/api/usuarios", {
+      method: "POST",
+      user: testUserDueno,
+      body: { nombre: "Nuevo", correo: "nuevo@tienda.com", contrasena: "password123456", tipo_usuario: "EMPLEADO" },
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+  });
+
+  it("rechaza contraseñas de más de 72 bytes", async () => {
+    const req = createMockRequest("/api/usuarios", {
+      method: "POST",
+      user: testUserDueno,
+      body: { nombre: "Nuevo", correo: "nuevo@tienda.com", contrasena: "a".repeat(80), tipo_usuario: "EMPLEADO" },
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+  });
+
   it("rejects creating a new user directly as DUENO", async () => {
     const req = createMockRequest("/api/usuarios", {
       method: "POST",
       user: testUserDueno,
-      body: { nombre: "Nuevo", correo: "nuevo@tienda.com", contrasena: "123456", tipo_usuario: "DUENO" },
+      body: { nombre: "Nuevo", correo: "nuevo@tienda.com", contrasena: CONTRASENA_VALIDA, tipo_usuario: "DUENO" },
     });
     const res = await POST(req);
     expect(res.status).toBe(400);
@@ -187,7 +226,7 @@ describe("POST /api/usuarios", () => {
     const req = createMockRequest("/api/usuarios", {
       method: "POST",
       user: testUserDueno,
-      body: { nombre: "Nuevo", correo: "nuevo@tienda.com", contrasena: "123456", tipo_usuario: "EMPLEADO" },
+      body: { nombre: "Nuevo", correo: "nuevo@tienda.com", contrasena: CONTRASENA_VALIDA, tipo_usuario: "EMPLEADO" },
     });
     const res = await POST(req);
     expect(res.status).toBe(201);

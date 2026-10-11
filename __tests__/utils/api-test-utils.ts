@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { AuthUsuario } from "@/lib/auth";
+import { UsuarioParaFirmar } from "@/lib/auth";
 import { signAuthToken } from "@/lib/auth";
 import { mockUsuarios } from "@/__tests__/mocks/data";
 
@@ -13,7 +13,7 @@ export function createMockRequest(
     body?: unknown;
     cookies?: Record<string, string>;
     headers?: Record<string, string>;
-    user?: AuthUsuario;
+    user?: UsuarioParaFirmar;
   } = {}
 ): NextRequest {
   const { method = "GET", body, cookies = {}, headers = {} } = options;

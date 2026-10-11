@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 import { POST } from "@/app/api/login/verificar-codigo/route";
+import { checkRateLimit } from "@/lib/api-rate-limit";
 import { signPreToken } from "@/lib/verificacion";
 import { testUserDueno } from "@/__tests__/utils/api-test-utils";
 import { NextRequest } from "next/server";
@@ -10,8 +11,17 @@ jest.mock("@/lib/db", () => ({
   pool: { query: jest.fn(), connect: jest.fn() },
 }));
 
+// Mockeado para no alterar el orden de las llamadas a pool.query que el resto
+// del test define con mockResolvedValueOnce. El límite en sí se prueba con
+// un caso dedicado más abajo.
+jest.mock("@/lib/api-rate-limit", () => ({
+  ...jest.requireActual("@/lib/api-rate-limit"),
+  checkRateLimit: jest.fn(),
+}));
+
 const mockPool = jest.requireMock("@/lib/db").pool as { query: jest.Mock };
 const mockBcrypt = bcrypt as jest.Mocked<typeof bcrypt>;
+const mockCheckRateLimit = checkRateLimit as jest.MockedFunction<typeof checkRateLimit>;
 
 function makeReq(body: unknown) {
   return new NextRequest(new URL("/api/login/verificar-codigo", "http://localhost"), {
@@ -30,7 +40,32 @@ const filaVigente = {
 };
 
 describe("POST /api/login/verificar-codigo (paso 2)", () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockCheckRateLimit.mockResolvedValue({ limited: false, retryAfterSeconds: 0, restantes: 5 });
+  });
+
+  it("returns 429 when too many 2FA attempts are made", async () => {
+    // El contador por código (5 intentos) no alcanzaba solo: pidiendo un
+    // código nuevo se reiniciaba. Este límite cierra ese hueco.
+    mockCheckRateLimit.mockResolvedValue({ limited: true, retryAfterSeconds: 200, restantes: 0 });
+    const preToken = signPreToken(testUserDueno.id_usuario);
+    const res = await POST(makeReq({ pre_token: preToken, codigo: "123456" }));
+    expect(res.status).toBe(429);
+    // Ni una consulta al código: el bloqueo corta antes de tocar la base.
+    expect(mockPool.query).not.toHaveBeenCalled();
+  });
+
+  it("aplica el límite tanto por IP como por cuenta", async () => {
+    mockPool.query.mockResolvedValue({ rows: [] });
+    await POST(
+      makeReq({ pre_token: signPreToken(testUserDueno.id_usuario), codigo: "123456" })
+    );
+
+    const claves = mockCheckRateLimit.mock.calls.map((call) => call[0]);
+    expect(claves.some((clave: string) => clave.startsWith("login2fa:ip:"))).toBe(true);
+    expect(claves.some((clave: string) => clave.includes(`login2fa:acct:${testUserDueno.id_usuario}`))).toBe(true);
+  });
 
   it("returns 400 when fields are missing", async () => {
     const res = await POST(makeReq({}));
@@ -105,7 +140,8 @@ describe("POST /api/login/verificar-codigo (paso 2)", () => {
 
     expect(res.status).toBe(200);
     expect(data.ok).toBe(true);
-    expect(typeof data.token).toBe("string");
+    // El token de sesión solo viaja en la cookie httpOnly: nunca en el cuerpo.
+    expect(data.token).toBeUndefined();
 
     const setCookie = res.headers.get("set-cookie");
     expect(setCookie).toContain("auth_token=");
