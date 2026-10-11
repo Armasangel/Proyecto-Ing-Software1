@@ -449,6 +449,31 @@ CREATE TABLE login_intento (
     ultimo_intento   TIMESTAMP       NOT NULL DEFAULT NOW()
 );
 
+--  AUDITORIA DE CREDENCIALES (OWASP ASVS V7)
+-- Rastro persistente de los hechos que cambian el acceso a una cuenta:
+-- entradas, cambios de contraseña, bloqueos, cambios de rol, cierres de
+-- sesión. Antes esto sólo vivía en logs de pino, que se rotan y se pueden
+-- borrar; ahora queda consultable desde el panel del dueño.
+-- id_usuario queda NULL si la cuenta se borra, pero `correo` se conserva:
+-- el rastro de qué cuenta se estaba atacando tiene que sobrevivir.
+CREATE TABLE auditoria (
+    id           SERIAL         PRIMARY KEY,
+    id_usuario   INT            REFERENCES usuario(id_usuario) ON DELETE SET NULL,
+    correo       VARCHAR(200),
+    tipo_evento  VARCHAR(50)     NOT NULL,
+    ip           VARCHAR(45),
+    user_agent   TEXT,
+    detalle      JSONB           NOT NULL DEFAULT '{}'::jsonb,
+    creado_en    TIMESTAMP       NOT NULL DEFAULT NOW()
+);
+
+-- Consulta principal del panel: "qué pasó, y en este orden".
+CREATE INDEX idx_auditoria_created ON auditoria (creado_en DESC);
+-- Filtro por cuenta concreta.
+CREATE INDEX idx_auditoria_usuario ON auditoria (id_usuario, creado_en DESC);
+-- Filtro por tipo de evento.
+CREATE INDEX idx_auditoria_tipo ON auditoria (tipo_evento, creado_en DESC);
+
 -- API_RATE_LIMIT (contador genérico de rate limiting, migración 03)
 -- Ventana fija; se usa primero en /api/usuarios y es reutilizable para
 -- cualquier endpoint futuro (ver lib/api-rate-limit.ts).
