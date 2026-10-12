@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { isBodegueroTipo, isStaffTipo } from "@/lib/roles";
+import type { ProductosListResponse } from "@/lib/api-types";
 import { apiError, unauthorizedError } from "@/lib/api-error";
 
 export async function GET(req: NextRequest) {
@@ -28,7 +29,7 @@ export async function GET(req: NextRequest) {
       JOIN marca     m ON m.id_marca     = p.id_marca
       ORDER BY p.nombre_producto
     `);
-    return NextResponse.json({ productos: result.rows });
+    return NextResponse.json<ProductosListResponse>({ productos: result.rows });
   } catch (error) {
     return apiError("PRODUCTOS GET", error);
   }

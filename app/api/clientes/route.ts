@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { isStaffTipo } from "@/lib/roles";
+import type { ClientesListResponse, CrearClienteResponse } from "@/lib/api-types";
 import { apiError, unauthorizedError, validationError } from "@/lib/api-error";
 
 // Esta ruta se consulta desde Ventas/Pedidos para saber si un cliente está
@@ -29,7 +30,7 @@ export async function GET(req: NextRequest) {
        ${incluirTodos ? "" : "WHERE estado_cliente = TRUE"}
        ORDER BY nombre`
     );
-    return NextResponse.json(
+    return NextResponse.json<ClientesListResponse>(
       { clientes: result.rows },
       { headers: { "Cache-Control": "no-store, must-revalidate" } }
     );
@@ -68,7 +69,7 @@ export async function POST(req: NextRequest) {
        RETURNING id_cliente, nombre, correo, telefono, tipo_cliente, estado_cliente, limite_deuda`,
       [nombre.trim(), correo || null, telefono || null, tipoFinal, limiteNum]
     );
-    return NextResponse.json({ cliente: result.rows[0] }, { status: 201 });
+    return NextResponse.json<CrearClienteResponse>({ cliente: result.rows[0] }, { status: 201 });
   } catch (error: any) {
     if (error?.code === "23505") {
       // uq_cliente_correo

@@ -4,72 +4,43 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { StaffShell } from "@/components/StaffShell";
 import { useStaffSession } from "@/hooks/useStaffSession";
 import { matchesQuery, paginar, PaginationBar, type PageSize } from "@/lib/ui-table";
-
-type ProductoDeuda = {
-  id_producto: number;
-  nombre_producto: string;
-  cantidad: string;
-  precio_unitario: string;
-  subtotal: string;
-};
-
-type PagoDeuda = {
-  id_pago: number;
-  monto: string;
-  fecha_pago: string;
-  metodo_pago: string | null;
-  nota: string | null;
-  registrado_por: string | null;
-};
-
-type Deuda = {
-  id_deuda: number;
-  nombre_deudor: string;
-  telefono_deudor: string | null;
-  fecha_inicio: string;
-  fecha_limite_pago: string | null;
-  monto_total: string;
-  estado_deuda: "PENDIENTE" | "PAGADA";
-  productos: ProductoDeuda[];
-  id_cliente: number | null;
-  limite_deuda: string | null;
-  cliente_puede_comprar: boolean | null;
-  total_pagado: string;
-  saldo_pendiente: string;
-  porcentaje_cubierto: string;
-  pagos: PagoDeuda[];
-};
-
-type Producto = {
-  id_producto: number;
-  nombre_producto: string;
-  precio_unitario: string;
-  unidad_medida: string;
-};
-
-type Cliente = {
-  id_cliente: number;
-  nombre: string;
-  telefono: string | null;
-  correo: string | null;
-  tipo_cliente: string;
-  estado_cliente: boolean;
-  limite_deuda: string | null;
-};
-
-type Alerta = {
-  id_cliente: number;
-  deuda_pendiente: number;
-  limite_deuda: number | null;
-  bloqueado: boolean;
-  cambioEstado: boolean;
-};
+import { formatDate, formatMoney, toISODate } from "@/lib/format";
+import { api, getErrorMessage } from "@/lib/api-client";
+import { useMutation, useQuery } from "@/hooks/useApi";
+import type {
+  ActualizarLimiteBody,
+  ActualizarLimiteResponse,
+  ActualizarNotificacionDeudaBody,
+  AlertaDeuda,
+  CambiarEstadoDeudaResponse,
+  Cliente,
+  ClientesListResponse,
+  CrearClienteBody,
+  CrearClienteResponse,
+  CrearDeudaBody,
+  CrearDeudaResponse,
+  Deuda,
+  DeudasListResponse,
+  EjecutarNotificacionesResponse,
+  MetodoPago,
+  NotificacionDeudaConfigResponse,
+  ProductosListResponse,
+  RegistrarPagoBody,
+  RegistrarPagoResponse,
+} from "@/lib/api-types";
 
 type LineaForm = { id_producto: string; cantidad: string };
 
+const URL_NOTIF = "/api/configuracion/notificaciones-deuda";
+
+// Valores iniciales estables (misma referencia en cada render) mientras llegan las respuestas.
+const DEUDAS_INICIALES: DeudasListResponse = { deudas: [] };
+const PRODUCTOS_INICIALES: ProductosListResponse = { productos: [] };
+const CLIENTES_INICIALES: ClientesListResponse = { clientes: [] };
+
 const formVacio = {
   id_cliente: "",
-  fecha_inicio: new Date().toISOString().slice(0, 10),
+  fecha_inicio: toISODate(),
   fecha_limite_pago: "",
 };
 
@@ -143,7 +114,7 @@ function SaldoCubierto({ d }: { d: Deuda }) {
   return (
     <div>
       <div style={{ fontSize: "0.8rem", marginBottom: 3 }}>
-        <strong>Q{saldo.toFixed(2)}</strong>
+        <strong>{formatMoney(saldo)}</strong>
         <span style={{ color: "var(--muted)" }}> pendiente · {pct}%</span>
       </div>
       <div
@@ -205,7 +176,7 @@ function FormPago({
       }}
     >
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <label style={{ fontSize: "0.75rem", color: "var(--muted)" }}>Monto a abonar (saldo: Q{saldo.toFixed(2)})</label>
+        <label style={{ fontSize: "0.75rem", color: "var(--muted)" }}>Monto a abonar (saldo: {formatMoney(saldo)})</label>
         <input
           type="number"
           min="0.01"
@@ -244,7 +215,7 @@ function FormPago({
       </div>
       <button
         type="button"
-        onClick={() => setMonto(saldo.toFixed(2))}
+        onClick={() => setMonto(saldo.toFixed(2))} /* valor de <input>: sin separador de miles */
         style={{
           padding: "0.4rem 0.7rem",
           borderRadius: 10,
@@ -301,45 +272,32 @@ export default function DeudasPage() {
   const usuario = useStaffSession();
   const [tab, setTab] = useState<"deudas" | "limites" | "notificaciones">("deudas");
   const [vista, setVista] = useState<"acumulado" | "vencimiento">("acumulado");
-  const [deudas, setDeudas] = useState<Deuda[]>([]);
-  const [productos, setProductos] = useState<Producto[]>([]);
-  const [clientes, setClientes] = useState<Cliente[]>([]);
   const [creando, setCreando] = useState(false);
   const [form, setForm] = useState(formVacio);
   const [lineas, setLineas] = useState<LineaForm[]>([{ id_producto: "", cantidad: "1" }]);
-  const [mensaje, setMensaje] = useState("");
-  const [error, setError] = useState("");
   const [alertaBloqueo, setAlertaBloqueo] = useState("");
-  const [cambiandoId, setCambiandoId] = useState<number | null>(null);
   const [expandidos, setExpandidos] = useState<Set<string>>(new Set());
 
   // Registrar pago parcial
   const [pagandoId, setPagandoId] = useState<number | null>(null);
   const [montoPago, setMontoPago] = useState("");
   const [metodoPago, setMetodoPago] = useState("EFECTIVO");
-  const [guardandoPago, setGuardandoPago] = useState(false);
-  const [errorPago, setErrorPago] = useState("");
 
   // Búsqueda/autocompletar cliente en "Nueva deuda"
   const [busquedaCliente, setBusquedaCliente] = useState("");
   const [sugerenciasAbiertas, setSugerenciasAbiertas] = useState(false);
 
-  // Notificaciones automáticas de deuda (pestaña "Notificaciones")
-  const [notifConfig, setNotifConfig] = useState<{ activo: boolean; intervalo_dias: number } | null>(null);
-  const [notifIntervaloInput, setNotifIntervaloInput] = useState("7");
-  const [notifGuardando, setNotifGuardando] = useState(false);
-  const [notifEjecutando, setNotifEjecutando] = useState(false);
-  const [notifMensaje, setNotifMensaje] = useState("");
-  const [notifError, setNotifError] = useState("");
+  // Intervalo que el dueño está tecleando en la pestaña "Notificaciones"
+  // (null = sin editar → se muestra el valor guardado en el servidor).
+  const [notifIntervaloEditado, setNotifIntervaloEditado] = useState<string | null>(null);
 
   // Creación de cliente nuevo inline (desde el form de deuda o desde la pestaña de límites)
   const [creandoCliente, setCreandoCliente] = useState(false);
   const [formCliente, setFormCliente] = useState(clienteFormVacio);
-  const [guardandoCliente, setGuardandoCliente] = useState(false);
 
-  // Edición de límites (pestaña "Límites de deuda")
-  const [limitesEditando, setLimitesEditando] = useState<Record<number, string>>({});
-  const [guardandoLimiteId, setGuardandoLimiteId] = useState<number | null>(null);
+  // Límites que el dueño ha editado en la pestaña "Límites de deuda"
+  // (solo lo tecleado; lo demás se lee del cliente).
+  const [limitesEditados, setLimitesEditados] = useState<Record<number, string>>({});
 
   // Búsqueda/filtros y paginación de las tablas de la página
   const [qDeudas, setQDeudas] = useState("");
@@ -349,98 +307,153 @@ export default function DeudasPage() {
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState<PageSize>(10);
 
-  async function cargarDeudas() {
-    const res = await fetch("/api/deudas");
-    const data = await res.json();
-    setDeudas(data.deudas || []);
-  }
+  // ── Lecturas (GET): data / loading / error los maneja useQuery ──────────────
+  const deudasQ = useQuery<DeudasListResponse>("/api/deudas", {
+    initialData: DEUDAS_INICIALES,
+    errorMessage: "No se pudieron cargar las deudas.",
+  });
+  const productosQ = useQuery<ProductosListResponse>("/api/productos", {
+    initialData: PRODUCTOS_INICIALES,
+    errorMessage: "No se pudieron cargar los productos.",
+  });
+  const clientesQ = useQuery<ClientesListResponse>("/api/clientes?todos=1", {
+    initialData: CLIENTES_INICIALES,
+    errorMessage: "No se pudieron cargar los clientes.",
+  });
+  const notifQ = useQuery<NotificacionDeudaConfigResponse>(URL_NOTIF, {
+    errorMessage: "No se pudo cargar la configuración de notificaciones.",
+  });
 
-  async function cargarProductos() {
-    const res = await fetch("/api/productos");
-    const data = await res.json();
-    setProductos((data.productos || []).filter((p: any) => p.estado_producto));
-  }
+  const deudas = deudasQ.data.deudas;
+  const clientes = clientesQ.data.clientes;
+  const productos = useMemo(
+    () => productosQ.data.productos.filter((p) => p.estado_producto),
+    [productosQ.data]
+  );
+  const notifConfig = notifQ.data?.configuracion ?? null;
+  const notifIntervaloInput = notifIntervaloEditado ?? String(notifConfig?.intervalo_dias ?? 7);
 
-  async function cargarClientes() {
-    const res = await fetch("/api/clientes?todos=1");
-    const data = await res.json();
-    const lista: Cliente[] = data.clientes || [];
-    setClientes(lista);
-    setLimitesEditando((prev) => {
-      const next = { ...prev };
-      for (const c of lista) {
-        if (!(c.id_cliente in next)) next[c.id_cliente] = c.limite_deuda ?? "";
-      }
-      return next;
-    });
-  }
+  // ── Escrituras (POST/PATCH): loading / error / data los maneja useMutation ──
+  const guardarNotifM = useMutation((cambios: ActualizarNotificacionDeudaBody) =>
+    api.patch<NotificacionDeudaConfigResponse>(URL_NOTIF, cambios, {
+      fallbackError: "No se pudo guardar la configuración",
+    })
+  );
+  const ejecutarNotifM = useMutation<void, EjecutarNotificacionesResponse>(() =>
+    api.post<EjecutarNotificacionesResponse>(`${URL_NOTIF}/ejecutar-ahora`, undefined, {
+      fallbackError: "No se pudo ejecutar la corrida",
+    })
+  );
 
-  async function cargarNotifConfig() {
-    const res = await fetch("/api/configuracion/notificaciones-deuda");
-    const data = await res.json();
-    if (data.configuracion) {
-      setNotifConfig(data.configuracion);
-      setNotifIntervaloInput(String(data.configuracion.intervalo_dias));
-    }
-  }
-
-  useEffect(() => {
-    cargarDeudas();
-    cargarProductos();
-    cargarClientes();
-    cargarNotifConfig();
-  }, []);
-
-  async function guardarNotifConfig(cambios: { activo?: boolean; intervalo_dias?: number }) {
-    setNotifGuardando(true);
-    setNotifError("");
-    setNotifMensaje("");
-    try {
-      const res = await fetch("/api/configuracion/notificaciones-deuda", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(cambios),
+  // Crea el cliente y, si se indicó una deuda inicial (ej. un cliente que ya
+  // venía debiendo), la registra de una vez como deuda "de arrastre" sin
+  // productos. Como el cliente ya tiene su límite recién asignado, esto puede
+  // bloquearlo de inmediato si la deuda inicial ya lo supera.
+  const crearClienteM = useMutation(
+    async ({ body, deudaInicial }: { body: CrearClienteBody; deudaInicial: number | null }) => {
+      const { cliente } = await api.post<CrearClienteResponse>("/api/clientes", body, {
+        fallbackError: "No se pudo crear el cliente.",
       });
-      const data = await res.json();
-      if (!res.ok) {
-        setNotifError(data.error || "No se pudo guardar la configuración");
-        // Si falló, deja el input como estaba antes del intento.
-        if (notifConfig) setNotifIntervaloInput(String(notifConfig.intervalo_dias));
-      } else {
-        setNotifConfig(data.configuracion);
-        setNotifIntervaloInput(String(data.configuracion.intervalo_dias));
-        setNotifMensaje("Configuración guardada.");
+      let deuda: CrearDeudaResponse | null = null;
+      let errorDeuda = "";
+      if (deudaInicial !== null) {
+        const bodyDeuda: CrearDeudaBody = {
+          nombre_deudor: cliente.nombre,
+          telefono_deudor: cliente.telefono,
+          fecha_inicio: toISODate(),
+          id_cliente: cliente.id_cliente,
+          monto_libre: deudaInicial,
+        };
+        try {
+          deuda = await api.post<CrearDeudaResponse>("/api/deudas", bodyDeuda, {
+            fallbackError: "error desconocido",
+          });
+        } catch (err) {
+          errorDeuda = getErrorMessage(err, "error desconocido");
+        }
       }
-    } catch {
-      setNotifError("Error de conexión");
-    } finally {
-      setNotifGuardando(false);
+      return { cliente, deuda, errorDeuda };
     }
+  );
+  const guardarLimiteM = useMutation(
+    ({ id_cliente, body }: { id_cliente: number; body: ActualizarLimiteBody }) =>
+      api.patch<ActualizarLimiteResponse>(`/api/clientes/${id_cliente}`, body, {
+        fallbackError: "No se pudo guardar el límite.",
+      })
+  );
+  const crearDeudaM = useMutation((body: CrearDeudaBody) =>
+    api.post<CrearDeudaResponse>("/api/deudas", body, { fallbackError: "Error al crear la deuda." })
+  );
+  const cambiarEstadoM = useMutation((id_deuda: number) =>
+    api.patch<CambiarEstadoDeudaResponse>(`/api/deudas/${id_deuda}`, undefined, {
+      fallbackError: "No se pudo cambiar el estado de la deuda.",
+    })
+  );
+  const registrarPagoM = useMutation(
+    ({ id_deuda, body }: { id_deuda: number; body: RegistrarPagoBody }) =>
+      api.post<RegistrarPagoResponse>(`/api/deudas/${id_deuda}/pagos`, body, {
+        fallbackError: "No se pudo registrar el pago.",
+      })
+  );
+
+  // ── Estado derivado para la UI ──────────────────────────────────────────────
+  const guardandoCliente = crearClienteM.loading;
+  const guardandoPago = registrarPagoM.loading;
+  const errorPago = registrarPagoM.error;
+  const cambiandoId = cambiarEstadoM.variables ?? null; // id de la deuda que se está guardando
+  const guardandoLimiteId = guardarLimiteM.variables?.id_cliente ?? null;
+  const notifGuardando = guardarNotifM.loading;
+  const notifEjecutando = ejecutarNotifM.loading;
+
+  const mensaje = crearDeudaM.data ? "Deuda creada." : "";
+  const avisoDeudaInicial = crearClienteM.data?.errorDeuda
+    ? `Cliente creado, pero no se pudo registrar la deuda inicial: ${crearClienteM.data.errorDeuda}`
+    : "";
+  const error =
+    crearClienteM.error ||
+    crearDeudaM.error ||
+    cambiarEstadoM.error ||
+    guardarLimiteM.error ||
+    avisoDeudaInicial ||
+    deudasQ.error ||
+    clientesQ.error ||
+    productosQ.error;
+
+  const corrida = ejecutarNotifM.data;
+  const notifMensaje = guardarNotifM.data
+    ? "Configuración guardada."
+    : corrida?.activo
+      ? `Corrida terminada: ${corrida.enviados} enviado${corrida.enviados === 1 ? "" : "s"}` +
+        (corrida.fallidos > 0 ? `, ${corrida.fallidos} fallido${corrida.fallidos === 1 ? "" : "s"}` : "") +
+        (corrida.procesados === 0 ? " (nadie tenía un recordatorio pendiente en este momento)." : ".")
+      : "";
+  const notifError =
+    guardarNotifM.error ||
+    ejecutarNotifM.error ||
+    (corrida && !corrida.activo
+      ? "El envío automático está desactivado — actívalo primero para poder enviar."
+      : "") ||
+    notifQ.error;
+
+  // Limpia los mensajes de éxito/error de las acciones de la pestaña "Deudas"/"Límites".
+  function limpiarAvisos() {
+    crearClienteM.reset();
+    crearDeudaM.reset();
+    cambiarEstadoM.reset();
+    guardarLimiteM.reset();
+  }
+
+  async function guardarNotifConfig(cambios: ActualizarNotificacionDeudaBody) {
+    ejecutarNotifM.reset();
+    const res = await guardarNotifM.run(cambios);
+    if (res) notifQ.setData({ configuracion: res.configuracion });
+    // Con éxito o con error, el input vuelve a reflejar la configuración vigente.
+    setNotifIntervaloEditado(null);
   }
 
   async function ejecutarNotifAhora() {
-    setNotifEjecutando(true);
-    setNotifError("");
-    setNotifMensaje("");
-    try {
-      const res = await fetch("/api/configuracion/notificaciones-deuda/ejecutar-ahora", { method: "POST" });
-      const data = await res.json();
-      if (!res.ok) {
-        setNotifError(data.error || "No se pudo ejecutar la corrida");
-      } else if (!data.activo) {
-        setNotifError("El envío automático está desactivado — actívalo primero para poder enviar.");
-      } else {
-        setNotifMensaje(
-          `Corrida terminada: ${data.enviados} enviado${data.enviados === 1 ? "" : "s"}` +
-            (data.fallidos > 0 ? `, ${data.fallidos} fallido${data.fallidos === 1 ? "" : "s"}` : "") +
-            (data.procesados === 0 ? " (nadie tenía un recordatorio pendiente en este momento)." : ".")
-        );
-      }
-    } catch {
-      setNotifError("Error de conexión");
-    } finally {
-      setNotifEjecutando(false);
-    }
+    guardarNotifM.reset();
+    await ejecutarNotifM.run();
   }
 
   useEffect(() => {
@@ -449,19 +462,19 @@ export default function DeudasPage() {
 
   // Muestra el mensaje de alerta cuando una deuda vinculada a un cliente
   // acaba de bloquearlo o desbloquearlo por deuda.
-  function mostrarAlerta(alerta: Alerta | null) {
+  function mostrarAlerta(alerta: AlertaDeuda | null) {
     if (!alerta) return;
     if (alerta.bloqueado) {
       setAlertaBloqueo(
-        `⚠️ Este cliente alcanzó su límite de deuda (Q${alerta.limite_deuda?.toFixed(2)}). ` +
-          `Deuda pendiente: Q${alerta.deuda_pendiente.toFixed(2)}. Ya no puede comprar ni hacer pedidos.`
+        `⚠️ Este cliente alcanzó su límite de deuda (${formatMoney(alerta.limite_deuda)}). ` +
+          `Deuda pendiente: ${formatMoney(alerta.deuda_pendiente)}. Ya no puede comprar ni hacer pedidos.`
       );
     } else if (alerta.cambioEstado) {
       setAlertaBloqueo("✓ El cliente volvió a estar por debajo de su límite y puede comprar de nuevo.");
     } else {
       setAlertaBloqueo("");
     }
-    cargarClientes();
+    void clientesQ.refetch();
   }
 
   const clienteSeleccionado = clientes.find((c) => String(c.id_cliente) === form.id_cliente);
@@ -484,100 +497,59 @@ export default function DeudasPage() {
   }
 
   async function crearCliente(): Promise<Cliente | null> {
+    limpiarAvisos();
     if (!formCliente.nombre.trim()) {
-      setError("El nombre del cliente nuevo es obligatorio");
+      crearClienteM.fail("El nombre del cliente nuevo es obligatorio");
       return null;
     }
     const limiteInicial =
       formCliente.limite_deuda === "" ? null : Number(formCliente.limite_deuda);
     if (limiteInicial !== null && (!Number.isFinite(limiteInicial) || limiteInicial < 0)) {
-      setError("El límite de deuda debe ser un número mayor o igual a 0");
+      crearClienteM.fail("El límite de deuda debe ser un número mayor o igual a 0");
       return null;
     }
     const deudaInicial =
       formCliente.deuda_inicial === "" ? null : Number(formCliente.deuda_inicial);
     if (deudaInicial !== null && (!Number.isFinite(deudaInicial) || deudaInicial <= 0)) {
-      setError("La deuda inicial debe ser un número mayor a 0");
+      crearClienteM.fail("La deuda inicial debe ser un número mayor a 0");
       return null;
     }
 
-    setGuardandoCliente(true);
-    setError("");
-    const res = await fetch("/api/clientes", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    const res = await crearClienteM.run({
+      body: {
         nombre: formCliente.nombre,
         telefono: formCliente.telefono,
         correo: formCliente.correo,
         tipo_cliente: formCliente.tipo_cliente,
         limite_deuda: limiteInicial,
-      }),
+      },
+      deudaInicial,
     });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      setError(data.error || "No se pudo crear el cliente.");
-      setGuardandoCliente(false);
-      return null;
-    }
-    const data = await res.json();
-    const nuevo: Cliente = data.cliente;
+    if (!res) return null;
 
-    // Si se indicó una deuda inicial (ej. un cliente que ya venía debiendo),
-    // se registra de una vez como una deuda "de arrastre" sin productos. Como
-    // el cliente ya tiene su límite recién asignado, esto puede bloquearlo de
-    // inmediato si la deuda inicial ya lo supera.
-    if (deudaInicial !== null) {
-      const resDeuda = await fetch("/api/deudas", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          nombre_deudor: nuevo.nombre,
-          telefono_deudor: nuevo.telefono,
-          fecha_inicio: new Date().toISOString().slice(0, 10),
-          id_cliente: nuevo.id_cliente,
-          monto_libre: deudaInicial,
-        }),
-      });
-      if (resDeuda.ok) {
-        const dataDeuda = await resDeuda.json();
-        mostrarAlerta(dataDeuda.alerta);
-        cargarDeudas();
-      } else {
-        const dataErr = await resDeuda.json().catch(() => ({}));
-        setError(
-          `Cliente creado, pero no se pudo registrar la deuda inicial: ${
-            dataErr.error || "error desconocido"
-          }`
-        );
-      }
+    const nuevo = res.cliente;
+    if (res.deuda) {
+      mostrarAlerta(res.deuda.alerta);
+      void deudasQ.refetch();
     }
 
-    setClientes((prev) => [...prev, nuevo].sort((a, b) => a.nombre.localeCompare(b.nombre)));
-    setLimitesEditando((prev) => ({ ...prev, [nuevo.id_cliente]: nuevo.limite_deuda ?? "" }));
+    clientesQ.setData((prev) => ({
+      clientes: [...prev.clientes, nuevo].sort((a, b) => a.nombre.localeCompare(b.nombre)),
+    }));
     setCreandoCliente(false);
     setFormCliente(clienteFormVacio);
-    setGuardandoCliente(false);
     return nuevo;
   }
 
   async function guardarLimite(id_cliente: number) {
-    setGuardandoLimiteId(id_cliente);
     setAlertaBloqueo("");
-    const valor = limitesEditando[id_cliente] ?? "";
-    const res = await fetch(`/api/clientes/${id_cliente}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ limite_deuda: valor === "" ? null : valor }),
+    const cliente = clientes.find((c) => c.id_cliente === id_cliente);
+    const valor = limitesEditados[id_cliente] ?? cliente?.limite_deuda ?? "";
+    const res = await guardarLimiteM.run({
+      id_cliente,
+      body: { limite_deuda: valor === "" ? null : valor },
     });
-    if (res.ok) {
-      const data = await res.json();
-      mostrarAlerta(data.alerta);
-    } else {
-      const data = await res.json().catch(() => ({}));
-      setError(data.error || "No se pudo guardar el límite.");
-    }
-    setGuardandoLimiteId(null);
+    if (res) mostrarAlerta(res.alerta);
   }
 
   // Agrupa las deudas por cliente (o por nombre_deudor para las viejas que no
@@ -708,11 +680,11 @@ export default function DeudasPage() {
   }
 
   async function crearDeuda() {
-    setError("");
+    limpiarAvisos();
     setAlertaBloqueo("");
 
     if (!clienteSeleccionado) {
-      setError("Selecciona (o crea) el cliente al que se le asigna la deuda.");
+      crearDeudaM.fail("Selecciona (o crea) el cliente al que se le asigna la deuda.");
       return;
     }
 
@@ -720,87 +692,59 @@ export default function DeudasPage() {
       .filter((l) => l.id_producto && Number(l.cantidad) > 0)
       .map((l) => ({ id_producto: Number(l.id_producto), cantidad: Number(l.cantidad) }));
 
-    const res = await fetch("/api/deudas", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        nombre_deudor: clienteSeleccionado.nombre,
-        telefono_deudor: clienteSeleccionado.telefono,
-        fecha_inicio: form.fecha_inicio,
-        fecha_limite_pago: form.fecha_limite_pago || null,
-        id_cliente: clienteSeleccionado.id_cliente,
-        productos: productosPayload,
-      }),
+    const res = await crearDeudaM.run({
+      nombre_deudor: clienteSeleccionado.nombre,
+      telefono_deudor: clienteSeleccionado.telefono,
+      fecha_inicio: form.fecha_inicio,
+      fecha_limite_pago: form.fecha_limite_pago || null,
+      id_cliente: clienteSeleccionado.id_cliente,
+      productos: productosPayload,
     });
+    if (!res) return;
 
-    if (res.ok) {
-      const data = await res.json();
-      setMensaje("Deuda creada.");
-      cerrarFormularioDeuda();
-      mostrarAlerta(data.alerta);
-      cargarDeudas();
-    } else {
-      const data = await res.json().catch(() => ({}));
-      setError(data.error || "Error al crear la deuda.");
-    }
+    cerrarFormularioDeuda();
+    mostrarAlerta(res.alerta);
+    void deudasQ.refetch();
   }
 
   // botonCambioEstado — DEV-81
   async function cambiarEstado(id_deuda: number) {
-    setCambiandoId(id_deuda);
     setAlertaBloqueo("");
-    const res = await fetch(`/api/deudas/${id_deuda}`, { method: "PATCH" });
-    if (res.ok) {
-      const data = await res.json();
-      mostrarAlerta(data.alerta);
-      cargarDeudas();
-    } else {
-      setError("No se pudo cambiar el estado de la deuda.");
-    }
-    setCambiandoId(null);
+    const res = await cambiarEstadoM.run(id_deuda);
+    if (!res) return;
+    mostrarAlerta(res.alerta);
+    void deudasQ.refetch();
   }
 
   function abrirPago(id_deuda: number) {
     setPagandoId(id_deuda);
     setMontoPago("");
     setMetodoPago("EFECTIVO");
-    setErrorPago("");
+    registrarPagoM.reset();
   }
 
   function cerrarPago() {
     setPagandoId(null);
     setMontoPago("");
-    setErrorPago("");
+    registrarPagoM.reset();
   }
 
   async function registrarPago(id_deuda: number) {
     const monto = Number(montoPago);
     if (!Number.isFinite(monto) || monto <= 0) {
-      setErrorPago("Ingresá un monto válido, mayor a 0.");
+      registrarPagoM.fail("Ingresá un monto válido, mayor a 0.");
       return;
     }
-    setGuardandoPago(true);
-    setErrorPago("");
     setAlertaBloqueo("");
-    try {
-      const res = await fetch(`/api/deudas/${id_deuda}/pagos`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ monto, metodo_pago: metodoPago }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setErrorPago(data.error || "No se pudo registrar el pago.");
-        return;
-      }
-      mostrarAlerta(data.alerta);
-      cerrarPago();
-      await cargarDeudas();
-    } catch {
-      setErrorPago("No se pudo conectar con el servidor.");
-    } finally {
-      setGuardandoPago(false);
-    }
+    const res = await registrarPagoM.run({
+      id_deuda,
+      body: { monto, metodo_pago: metodoPago as MetodoPago },
+    });
+    if (!res) return;
+
+    mostrarAlerta(res.alerta);
+    cerrarPago();
+    await deudasQ.refetch();
   }
 
   function toggleExpandido(key: string) {
@@ -978,8 +922,7 @@ export default function DeudasPage() {
             key={t.id}
             onClick={() => {
               setTab(t.id);
-              setError("");
-              setMensaje("");
+              limpiarAvisos();
             }}
             style={{
               padding: "0.6rem 1.1rem",
@@ -1002,8 +945,7 @@ export default function DeudasPage() {
             <button
               onClick={() => {
                 setCreando(true);
-                setMensaje("");
-                setError("");
+                limpiarAvisos();
               }}
               style={{
                 marginBottom: "1.5rem",
@@ -1128,9 +1070,9 @@ export default function DeudasPage() {
                 {clienteSeleccionado && (
                   <p style={{ fontSize: "0.82rem", marginTop: 4 }}>
                     {clienteSeleccionado.telefono && <>Tel: {clienteSeleccionado.telefono} · </>}
-                    Deuda pendiente actual: Q{deudaPendienteDe(clienteSeleccionado.id_cliente).toFixed(2)}
+                    Deuda pendiente actual: {formatMoney(deudaPendienteDe(clienteSeleccionado.id_cliente))}
                     {clienteSeleccionado.limite_deuda && (
-                      <> / límite Q{Number(clienteSeleccionado.limite_deuda).toFixed(2)}</>
+                      <> / límite {formatMoney(clienteSeleccionado.limite_deuda)}</>
                     )}
                   </p>
                 )}
@@ -1174,7 +1116,7 @@ export default function DeudasPage() {
                     <option value="">Seleccionar un producto…</option>
                     {productos.map((p) => (
                       <option key={p.id_producto} value={p.id_producto}>
-                        {p.nombre_producto} (Q{Number(p.precio_unitario).toFixed(2)}/{p.unidad_medida})
+                        {p.nombre_producto} ({formatMoney(p.precio_unitario)}/{p.unidad_medida})
                       </option>
                     ))}
                   </select>
@@ -1219,7 +1161,7 @@ export default function DeudasPage() {
               </button>
 
               <p style={{ fontWeight: 700, marginBottom: "1rem" }}>
-                Total: Q{totalPreview().toFixed(2)}
+                Total: {formatMoney(totalPreview())}
               </p>
 
               <div style={{ display: "flex", gap: 8 }}>
@@ -1347,11 +1289,11 @@ export default function DeudasPage() {
                           )}
                         </td>
                         <td style={{ padding: "0.75rem", fontWeight: 600 }}>
-                          Q{g.totalPendiente.toFixed(2)}
+                          {formatMoney(g.totalPendiente)}
                           {g.limite_deuda !== null && (
                             <span style={{ color: "var(--muted)", fontWeight: 400 }}>
                               {" "}
-                              / límite Q{g.limite_deuda.toFixed(2)}
+                              / límite {formatMoney(g.limite_deuda)}
                             </span>
                           )}
                         </td>
@@ -1391,11 +1333,11 @@ export default function DeudasPage() {
                                   <Fragment key={d.id_deuda}>
                                     <tr style={{ borderTop: "1px solid var(--border)" }}>
                                     <td style={{ padding: "0.4rem" }}>
-                                      {new Date(d.fecha_inicio).toLocaleDateString("es-GT")}
+                                      {formatDate(d.fecha_inicio)}
                                     </td>
                                     <td style={{ padding: "0.4rem" }}>
                                       {d.fecha_limite_pago
-                                        ? new Date(d.fecha_limite_pago).toLocaleDateString("es-GT")
+                                        ? formatDate(d.fecha_limite_pago)
                                         : "—"}
                                     </td>
                                     <td style={{ padding: "0.4rem", color: "var(--muted)" }}>
@@ -1404,7 +1346,7 @@ export default function DeudasPage() {
                                         : "—"}
                                     </td>
                                     <td style={{ padding: "0.4rem", fontWeight: 600 }}>
-                                      Q{Number(d.monto_total).toFixed(2)}
+                                      {formatMoney(d.monto_total)}
                                     </td>
                                     <td style={{ padding: "0.4rem", minWidth: 140 }}>
                                       <SaldoCubierto d={d} />
@@ -1534,14 +1476,14 @@ export default function DeudasPage() {
                             )}
                           </td>
                           <td style={{ padding: "0.75rem", fontWeight: 600 }}>
-                            Q{Number(d.monto_total).toFixed(2)}
+                            {formatMoney(d.monto_total)}
                           </td>
                           <td style={{ padding: "0.75rem", minWidth: 140 }}>
                             <SaldoCubierto d={d} />
                           </td>
                           <td style={{ padding: "0.75rem", color: "var(--muted)" }}>
                             {d.fecha_limite_pago
-                              ? new Date(d.fecha_limite_pago).toLocaleDateString("es-GT")
+                              ? formatDate(d.fecha_limite_pago)
                               : "—"}
                           </td>
                           <td style={{ padding: "0.75rem", color: rest.color, fontWeight: 600 }}>
@@ -1723,7 +1665,7 @@ export default function DeudasPage() {
                         {c.estado_cliente ? "Activo" : "Bloqueado"}
                       </span>
                     </td>
-                    <td style={{ padding: "0.75rem" }}>Q{deudaPendienteDe(c.id_cliente).toFixed(2)}</td>
+                    <td style={{ padding: "0.75rem" }}>{formatMoney(deudaPendienteDe(c.id_cliente))}</td>
                     <td style={{ padding: "0.75rem" }}>
                       <input
                         type="number"
@@ -1731,9 +1673,9 @@ export default function DeudasPage() {
                         step="0.01"
                         placeholder="Sin límite"
                         style={{ ...inputStyle, width: 130 }}
-                        value={limitesEditando[c.id_cliente] ?? ""}
+                        value={limitesEditados[c.id_cliente] ?? c.limite_deuda ?? ""}
                         onChange={(e) =>
-                          setLimitesEditando((prev) => ({ ...prev, [c.id_cliente]: e.target.value }))
+                          setLimitesEditados((prev) => ({ ...prev, [c.id_cliente]: e.target.value }))
                         }
                       />
                     </td>
@@ -1822,7 +1764,7 @@ export default function DeudasPage() {
                     min={1}
                     max={365}
                     value={notifIntervaloInput}
-                    onChange={(e) => setNotifIntervaloInput(e.target.value)}
+                    onChange={(e) => setNotifIntervaloEditado(e.target.value)}
                     style={{
                       width: 100,
                       padding: "0.5rem 0.7rem",

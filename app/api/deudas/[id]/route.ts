@@ -4,7 +4,8 @@ import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { isStaffTipo } from "@/lib/roles";
 import { apiError, unauthorizedError, validationError } from "@/lib/api-error";
 import { recalcularBloqueoCliente } from "@/lib/deuda-alertas";
-import { getLogger } from "@/lib/logger";
+import { getLogger } from "@/lib/logger";import type { CambiarEstadoDeudaResponse } from "@/lib/api-types";
+
 
 const log = getLogger("api/deudas/[id]");
 
@@ -59,7 +60,7 @@ export async function PATCH(
       { id_deuda, de: actual.rows[0].estado_deuda, a: nuevoEstado, usuario: usuario.id_usuario },
       "Estado de deuda cambiado"
     );
-    return NextResponse.json({ deuda: result.rows[0], alerta });
+    return NextResponse.json<CambiarEstadoDeudaResponse>({ deuda: result.rows[0], alerta });
   } catch (error) {
     await client.query("ROLLBACK");
     return apiError("DEUDAS PATCH", error);

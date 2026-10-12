@@ -217,4 +217,63 @@ describe("DeudasPage", () => {
 
     expect(await screen.findByText("El pago es mayor al saldo pendiente.")).toBeInTheDocument();
   });
+
+  it("shows an error banner when the debts list fails to load", async () => {
+    server.use(
+      rest.get("/api/sesion", (_req, res, ctx) => res(ctx.json({ usuario: mockUsuarioDueno }))),
+      rest.get("/api/deudas", (_req, res, ctx) => res(ctx.status(500), ctx.json({ error: "Error interno del servidor" }))),
+      rest.get("/api/productos", (_req, res, ctx) => res(ctx.json({ productos }))),
+      rest.get("/api/clientes", (_req, res, ctx) => res(ctx.json({ clientes }))),
+      rest.get("/api/configuracion/notificaciones-deuda", (_req, res, ctx) =>
+        res(ctx.json({ configuracion: notifConfigPorDefecto }))
+      )
+    );
+    render(<DeudasPage />);
+    expect(await screen.findByText("Error interno del servidor")).toBeInTheDocument();
+  });
+
+  it("shows a connection error when the payment request cannot reach the server", async () => {
+    setupServerDeudas([deudaBase()]);
+    server.use(rest.post("/api/deudas/1/pagos", (_req, res) => res.networkError("sin red")));
+
+    const user = userEvent.setup();
+    render(<DeudasPage />);
+
+    await user.click(await screen.findByRole("button", { name: "Detalle" }));
+    await user.click(await screen.findByRole("button", { name: "Registrar pago" }));
+    await user.type(screen.getByPlaceholderText("0.00"), "10");
+    await user.click(screen.getByRole("button", { name: "Guardar pago" }));
+
+    expect(await screen.findByText("No se pudo conectar con el servidor.")).toBeInTheDocument();
+  });
+
+  it("toggles a debt's status via PATCH and reloads the list", async () => {
+    let gets = 0;
+    let patched = false;
+    server.use(
+      rest.get("/api/sesion", (_req, res, ctx) => res(ctx.json({ usuario: mockUsuarioDueno }))),
+      rest.get("/api/deudas", (_req, res, ctx) => {
+        gets += 1;
+        return res(ctx.json({ deudas: [deudaBase()] }));
+      }),
+      rest.get("/api/productos", (_req, res, ctx) => res(ctx.json({ productos }))),
+      rest.get("/api/clientes", (_req, res, ctx) => res(ctx.json({ clientes }))),
+      rest.get("/api/configuracion/notificaciones-deuda", (_req, res, ctx) =>
+        res(ctx.json({ configuracion: notifConfigPorDefecto }))
+      ),
+      rest.patch("/api/deudas/1", (_req, res, ctx) => {
+        patched = true;
+        return res(ctx.json({ deuda: deudaBase({ estado_deuda: "PAGADA" }), alerta: null }));
+      })
+    );
+
+    const user = userEvent.setup();
+    render(<DeudasPage />);
+
+    await user.click(await screen.findByRole("button", { name: "Detalle" }));
+    await user.click(await screen.findByRole("button", { name: "Marcar pagada" }));
+
+    await waitFor(() => expect(patched).toBe(true));
+    await waitFor(() => expect(gets).toBeGreaterThanOrEqual(2));
+  });
 });

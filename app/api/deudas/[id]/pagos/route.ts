@@ -5,6 +5,8 @@ import { isStaffTipo } from "@/lib/roles";
 import { apiError, unauthorizedError, validationError } from "@/lib/api-error";
 import { recalcularBloqueoCliente } from "@/lib/deuda-alertas";
 import { getLogger } from "@/lib/logger";
+import { formatMoney, roundMoney } from "@/lib/format";import type { RegistrarPagoResponse } from "@/lib/api-types";
+
 
 const log = getLogger("api/deudas/[id]/pagos");
 
@@ -72,7 +74,7 @@ export async function POST(
     if (montoNum > saldoActual + 0.01) {
       await client.query("ROLLBACK");
       return validationError(
-        `El pago (Q${montoNum.toFixed(2)}) es mayor al saldo pendiente (Q${saldoActual.toFixed(2)}).`
+        `El pago (${formatMoney(montoNum)}) es mayor al saldo pendiente (${formatMoney(saldoActual)}).`
       );
     }
 
@@ -80,7 +82,7 @@ export async function POST(
       `INSERT INTO pago_deuda (id_deuda, monto, id_usuario, metodo_pago, nota)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
-      [id_deuda, Number(montoNum.toFixed(2)), usuario!.id_usuario, metodo_pago || null, nota || null]
+      [id_deuda, roundMoney(montoNum), usuario!.id_usuario, metodo_pago || null, nota || null]
     );
 
     const nuevoSaldo = Math.round((saldoActual - montoNum) * 100) / 100;
@@ -97,10 +99,10 @@ export async function POST(
 
     await client.query("COMMIT");
     log.info(
-      { id_pago: pagoRes.rows[0].id_pago, id_deuda, monto: Number(montoNum.toFixed(2)), estado_resultante: nuevoEstado, usuario: usuario!.id_usuario },
+      { id_pago: pagoRes.rows[0].id_pago, id_deuda, monto: roundMoney(montoNum), estado_resultante: nuevoEstado, usuario: usuario!.id_usuario },
       "Pago registrado"
     );
-    return NextResponse.json(
+    return NextResponse.json<RegistrarPagoResponse>(
       {
         pago: pagoRes.rows[0],
         saldo_pendiente: Math.max(nuevoSaldo, 0),

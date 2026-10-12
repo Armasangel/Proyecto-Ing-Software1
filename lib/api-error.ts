@@ -3,6 +3,7 @@
 
 import { NextResponse } from "next/server";
 import { getLogger } from "@/lib/logger";
+import type { ApiErrorBody } from "@/lib/api-types";
 
 const log = getLogger("api-error");
 
@@ -17,7 +18,7 @@ export function apiError(
   // El detalle completo solo va al servidor (logs, `docker compose logs`)
   log.error({ err: error }, context);
  
-  return NextResponse.json(
+  return NextResponse.json<ApiErrorBody>(
     { error: "Error interno del servidor" },
     { status }
   );
@@ -26,16 +27,16 @@ export function apiError(
 //Respuesta de error de validación (400) — estos SÍ se muestran al cliente 
 // porque son errores del usuario, no del servidor.
 export function validationError(message: string): NextResponse {
-  return NextResponse.json({ error: message }, { status: 400 });
+  return NextResponse.json<ApiErrorBody>({ error: message }, { status: 400 });
 }
  
  // Respuesta de no autorizado (403)
 export function unauthorizedError(): NextResponse {
-  return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+  return NextResponse.json<ApiErrorBody>({ error: "No autorizado" }, { status: 403 });
 }
 //exportar el tooManyRequestsError para usarlo en rateLimit.ts
 export function tooManyRequestsError(retryAfter: number): NextResponse {
-  return NextResponse.json(
+  return NextResponse.json<ApiErrorBody>(
     { error: "Demasiadas solicitudes, intente nuevamente más tarde" },
     {
       status: 429,

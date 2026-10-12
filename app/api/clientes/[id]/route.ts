@@ -4,6 +4,7 @@ import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { TIPOS_USUARIO } from "@/lib/roles";
 import { apiError, unauthorizedError, validationError } from "@/lib/api-error";
 import { recalcularBloqueoCliente } from "@/lib/deuda-alertas";
+import type { ActualizarLimiteResponse } from "@/lib/api-types";
 
 // PATCH /api/clientes/:id — el dueño define el límite de deuda individual
 // del cliente (limite_deuda: number | null, null = sin límite).
@@ -54,7 +55,7 @@ export async function PATCH(
     const alerta = await recalcularBloqueoCliente(client, id_cliente);
 
     await client.query("COMMIT");
-    return NextResponse.json({ alerta });
+    return NextResponse.json<ActualizarLimiteResponse>({ alerta });
   } catch (error) {
     await client.query("ROLLBACK");
     return apiError("CLIENTES PATCH", error);

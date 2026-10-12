@@ -12,6 +12,8 @@
 // el modelo.
 
 import { PoolClient } from "pg";
+import { formatMoney } from "@/lib/format";
+import type { AlertaDeuda } from "@/lib/api-types";
 
 export type ResultadoVerificacionLimite = {
   permitido: boolean;
@@ -65,9 +67,7 @@ export async function verificarLimiteAntesDeDeuda(
   if (limite !== null && limite > 0 && deudaPendienteActual + montoNuevo >= limite) {
     return {
       permitido: false,
-      motivo: `Esta deuda (Q${montoNuevo.toFixed(2)}) haría que ${nombre} alcance o supere su límite de deuda (Q${limite.toFixed(
-        2
-      )}). Deuda pendiente actual: Q${deudaPendienteActual.toFixed(2)}.`,
+      motivo: `Esta deuda (${formatMoney(montoNuevo)}) haría que ${nombre} alcance o supere su límite de deuda (${formatMoney(limite)}). Deuda pendiente actual: ${formatMoney(deudaPendienteActual)}.`,
       deuda_pendiente_actual: deudaPendienteActual,
       limite_deuda: limite,
     };
@@ -81,13 +81,8 @@ export async function verificarLimiteAntesDeDeuda(
   };
 }
 
-export type ResultadoAlertaDeuda = {
-  id_cliente: number;
-  deuda_pendiente: number;
-  limite_deuda: number | null;
-  bloqueado: boolean;
-  cambioEstado: boolean; // true si esta llamada cambió estado_cliente
-};
+// La forma de la alerta vive en `lib/api-types.ts` porque también la consume el frontend.
+export type ResultadoAlertaDeuda = AlertaDeuda;
 
 export async function recalcularBloqueoCliente(
   client: PoolClient,
