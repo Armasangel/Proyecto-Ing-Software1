@@ -37,6 +37,32 @@
   --sidebar-hover:   rgba(76, 154, 42, 0.14);
   --sidebar-active:  rgba(76, 154, 42, 0.22);
   --sidebar-border:  rgba(181, 172, 154, 0.16);
+
+  /* ── Estados (DEV-192) — antes estaban hardcodeados como hex sueltos en
+     deudas / historial-ventas / InventarioView. Se centralizan aquí con el
+     mismo valor que tenían, para no cambiar la apariencia. ── */
+  --success:        #52b788;  /* "pagado" / cubierto */
+  --success-strong: #2d6a4f;  /* acento verde oscuro (botones, código) */
+  --success-light:  #b7e4c7;  /* texto sobre fondo verde */
+  --danger:         #e63946;  /* texto de error en formularios */
+  --danger-strong:  #dc2626;  /* acciones destructivas */
+  --info:           #91a7ff;  /* enlaces secundarios, estado pendiente */
+  --info-bg:        #eff5ff;  /* fondo informativo suave */
+
+  /* Variantes semitransparentes de estado (badges / chips activos) */
+  --success-bg:     rgba(82, 183, 136, 0.20); /* fondo badge "pagado" */
+  --success-border: rgba(82, 183, 136, 0.40);
+  --success-soft:   rgba(45, 106, 79, 0.35);  /* chip de periodo activo */
+  --info-chip:      rgba(145, 167, 255, 0.15);/* fondo badge "pendiente" */
+  --info-border:    rgba(145, 167, 255, 0.35);
+
+  /* Canales RGB para estados con opacidad variable (badges, alertas y toast
+     de inventario). Se exponen como canales para que Tailwind pueda aplicar
+     la opacidad (bg-ok/[.12], border-err/[.30], etc.) sin hardcodear rgba. */
+  --feedback-ok:    63 185 80;   /* verde */
+  --feedback-err:   248 81 73;   /* rojo */
+  --feedback-warn:  232 160 69;  /* ámbar */
+  --feedback-info:  88 166 255;  /* azul */
 }
 
 body {
