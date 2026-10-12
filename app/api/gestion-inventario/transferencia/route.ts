@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { isBodegueroTipo, isDuenoTipo } from "@/lib/roles";
+import { getLogger } from "@/lib/logger";
+
+const log = getLogger("api/gestion-inventario/transferencia");
 
 type Body = {
   id_bodega_origen: unknown;
@@ -194,8 +197,9 @@ export async function POST(req: NextRequest) {
       client.release();
     }
   } catch (error) {
+    log.error({ err: error }, "Fallo en la ruta");
     return NextResponse.json(
-      { error: "Error al transferir inventario", detalle: String(error) },
+      { error: "Error interno del servidor" },
       { status: 500 }
     );
   }
