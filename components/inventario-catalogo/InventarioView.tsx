@@ -1,4 +1,3 @@
-import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Icon } from "@/components/Icon";
 import { matchesQuery, paginar, PaginationBar, PAGE_SIZES_COMPACT, type PageSize } from "@/lib/ui-table";
@@ -444,33 +443,33 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
   const productoSeleccionado = productos.find(p => p.id_producto === Number(entradaForm.id_producto));
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+    <div className="flex flex-col gap-4">
       {/* Búsqueda + filtros en fila (stock y kardex) */}
-      <div style={s.card}>
+      <div className={`${cls.card} p-4`}>
         {(tab === "stock" || tab === "kardex") && (
-          <div style={s.filterBlock}>
-            <div style={s.toolbar}>
+          <div className={cls.filterBlock}>
+            <div className={cls.toolbar}>
               <input
                 type="search"
                 value={tab === "stock" ? qStock : qKardex}
                 onChange={(e) => (tab === "stock" ? setQStock(e.target.value) : setQKardex(e.target.value))}
                 placeholder={tab === "stock" ? "Buscar producto, código, bodega…" : "Buscar movimiento, producto, bodega…"}
                 aria-label={tab === "stock" ? "Buscar en stock" : "Buscar en kardex"}
-                style={s.searchInput}
+                className={`${cls.searchInput} flex-[1_1_240px] min-w-[200px]`}
               />
-              <select value={filtroBodega} onChange={e => setFiltroBodega(e.target.value)} style={s.selectInline} aria-label="Filtrar por bodega">
+              <select value={filtroBodega} onChange={e => setFiltroBodega(e.target.value)} className={`${cls.selectInline} min-w-[180px]`} aria-label="Filtrar por bodega">
                 <option value="">Todas las bodegas</option>
                 {bodegasSimple.map(b => <option key={b.id_bodega} value={b.id_bodega}>{b.nombre_bodega}</option>)}
               </select>
-              <select value={filtroProducto} onChange={e => setFiltroProducto(e.target.value)} style={{ ...s.selectInline, minWidth: 220 }} aria-label="Filtrar por producto">
+              <select value={filtroProducto} onChange={e => setFiltroProducto(e.target.value)} className={`${cls.selectInline} min-w-[220px]`} aria-label="Filtrar por producto">
                 <option value="">Todos los productos</option>
                 {productos.map(p => <option key={p.id_producto} value={p.id_producto}>[{p.codigo_producto}] {p.nombre_producto}{!p.estado_producto ? " (inactivo)" : ""}</option>)}
               </select>
             </div>
             {tab === "stock" && (
-              <div style={s.checkRow}>
-                <label style={s.check}><input type="checkbox" checked={soloBajoMinimo} onChange={e => setSoloBajoMinimo(e.target.checked)} style={{ accentColor: "var(--accent)" }} /> Solo bajo mínimo</label>
-                <label style={s.check}><input type="checkbox" checked={incluirInactivos} onChange={e => setIncluirInactivos(e.target.checked)} style={{ accentColor: "var(--accent)" }} /> Incluir inactivos</label>
+              <div className={cls.checkRow}>
+                <label className={cls.check}><input type="checkbox" checked={soloBajoMinimo} onChange={e => setSoloBajoMinimo(e.target.checked)} className="accent-market" /> Solo bajo mínimo</label>
+                <label className={cls.check}><input type="checkbox" checked={incluirInactivos} onChange={e => setIncluirInactivos(e.target.checked)} className="accent-market" /> Incluir inactivos</label>
               </div>
             )}
           </div>
@@ -481,44 +480,44 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
           TAB: STOCK
       ══════════════════════════════════════════════════════════════════ */}
       {tab === "stock" && (
-        <div style={{ ...s.card, padding: 0, overflow: "hidden" }}>
-          <div style={{ overflow: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 980 }}>
+        <div className={`${cls.card} p-0 overflow-hidden`}>
+          <div className="overflow-auto">
+            <table className="w-full border-collapse min-w-[980px]">
               <thead>
-                <tr style={{ background: "var(--surface2)" }}>
-                  <th style={s.th}>Bodega</th>
-                  <th style={s.th}>Producto</th>
-                  <th style={{ ...s.th, textAlign: "right" }}>Stock</th>
-                  <th style={{ ...s.th, textAlign: "right" }}>Mínimo</th>
-                  <th style={s.th}>Alerta</th>
-                  <th style={s.th}>Última act.</th>
-                  <th style={s.th}>Guardar mínimo</th>
+                <tr className="bg-surface-soft">
+                  <th className={cls.th}>Bodega</th>
+                  <th className={cls.th}>Producto</th>
+                  <th className={`${cls.th} text-right`}>Stock</th>
+                  <th className={`${cls.th} text-right`}>Mínimo</th>
+                  <th className={cls.th}>Alerta</th>
+                  <th className={cls.th}>Última act.</th>
+                  <th className={cls.th}>Guardar mínimo</th>
                 </tr>
               </thead>
               <tbody>
                 {stockPage.slice.length === 0 ? (
-                  <tr><td colSpan={7} style={{ ...s.td, textAlign: "center", padding: "2rem", color: "var(--muted)" }}>{qStock.trim() ? "Ningún resultado para esa búsqueda." : "No hay filas para estos filtros."}</td></tr>
+                  <tr><td colSpan={7} className="text-center p-8 text-ink-muted">{qStock.trim() ? "Ningún resultado para esa búsqueda." : "No hay filas para estos filtros."}</td></tr>
                 ) : stockPage.slice.map(r => {
                   const key = `${r.id_bodega}:${r.id_producto}`;
                   const minVal = minEdits[key] ?? String(r.stock_minimo);
                   return (
-                    <tr key={key} style={{ borderTop: "1px solid var(--border)" }}>
-                      <td style={s.td}>
-                        <div style={{ fontWeight: 600 }}>{r.nombre_bodega}</div>
-                        <div style={{ fontSize: "0.78rem", color: "var(--muted)" }}>{r.ubicacion || "—"}</div>
+                    <tr key={key} className="border-t border-line">
+                      <td className={cls.td}>
+                        <div className="font-semibold">{r.nombre_bodega}</div>
+                        <div className="text-[0.78rem] text-ink-muted">{r.ubicacion || "—"}</div>
                       </td>
-                      <td style={s.td}>
-                        <div style={{ fontWeight: 600 }}><code style={s.code}>{r.codigo_producto}</code> {r.nombre_producto}</div>
-                        <div style={{ fontSize: "0.78rem", color: "var(--muted)" }}>{r.nombre_categoria} · {r.nombre_marca} · {r.unidad_medida}{!r.estado_producto ? " · inactivo" : ""}</div>
+                      <td className={cls.td}>
+                        <div className="font-semibold"><code className={cls.code}>{r.codigo_producto}</code> {r.nombre_producto}</div>
+                        <div className="text-[0.78rem] text-ink-muted">{r.nombre_categoria} · {r.nombre_marca} · {r.unidad_medida}{!r.estado_producto ? " · inactivo" : ""}</div>
                       </td>
-                      <td style={{ ...s.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{Number(r.cantidad_disponible).toFixed(3)}</td>
-                      <td style={{ ...s.td, textAlign: "right" }}>
-                        <input value={minVal} onChange={e => setMinEdits(m => ({ ...m, [key]: e.target.value }))} style={{ ...s.select, padding: "0.45rem 0.55rem", maxWidth: 120, textAlign: "right" }} />
+                      <td className={`${cls.td} text-right tabular-nums`}>{Number(r.cantidad_disponible).toFixed(3)}</td>
+                      <td className={`${cls.td} text-right`}>
+                        <input value={minVal} onChange={e => setMinEdits(m => ({ ...m, [key]: e.target.value }))} className="bg-surface-soft border border-line rounded-[10px] px-[0.55rem] py-[0.45rem] text-ink text-[0.9rem] outline-none w-full max-w-[120px] text-right" />
                       </td>
-                      <td style={s.td}>{r.bajo_minimo ? <span style={s.badgeWarn}>Bajo mínimo</span> : <span style={s.badgeOk}>OK</span>}</td>
-                      <td style={{ ...s.td, fontSize: "0.82rem", color: "var(--muted)" }}>{new Date(r.ultima_actualizacion).toLocaleString("es-GT")}</td>
-                      <td style={s.td}>
-                        <button type="button" style={{ ...s.btnPrimary, color: "#000000" }} onClick={() => void patchMinimo(r.id_bodega, r.id_producto)}>Guardar</button>
+                      <td className={cls.td}>{r.bajo_minimo ? <span className={cls.badgeWarn}>Bajo mínimo</span> : <span className={cls.badgeOk}>OK</span>}</td>
+                      <td className={`${cls.td} text-[0.82rem] text-ink-muted`}>{new Date(r.ultima_actualizacion).toLocaleString("es-GT")}</td>
+                      <td className={cls.td}>
+                        <button type="button" className={`${cls.btnPrimary} bg-market text-black`} onClick={() => void patchMinimo(r.id_bodega, r.id_producto)}>Guardar</button>
                       </td>
                     </tr>
                   );
@@ -543,31 +542,31 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
           TAB: OPERACIONES
       ══════════════════════════════════════════════════════════════════ */}
       {tab === "operaciones" && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "1rem" }}>
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(300px,1fr))] gap-4">
 
           {/* Entrada de stock */}
-          <div style={s.card}>
-            <h3 style={s.h3}><Icon name ="box" variant="dark" size={24}/> Entrada de stock</h3>
-            <p style={s.help}>Registra el ingreso de mercancía. Queda trazado en kardex.</p>
-            <div style={s.field}>
-              <label style={s.label}>Bodega *</label>
-              <select value={entradaForm.id_bodega} onChange={e => { setEntradaForm(f => ({ ...f, id_bodega: e.target.value })); setEntradaError(null); setEntradaResultado(null); }} style={s.select}>
+          <div className={`${cls.card} p-4`}>
+            <h3 className={cls.h3}><Icon name ="box" variant="dark" size={24}/> Entrada de stock</h3>
+            <p className={cls.help}>Registra el ingreso de mercancía. Queda trazado en kardex.</p>
+            <div className={cls.field}>
+              <label className={cls.label}>Bodega *</label>
+              <select value={entradaForm.id_bodega} onChange={e => { setEntradaForm(f => ({ ...f, id_bodega: e.target.value })); setEntradaError(null); setEntradaResultado(null); }} className={cls.select}>
                 <option value="">— Selecciona —</option>
                 {bodegasSimple.map(b => <option key={b.id_bodega} value={b.id_bodega}>{b.nombre_bodega}</option>)}
               </select>
             </div>
-            <div style={s.field}>
-              <label style={s.label}>Producto *</label>
-              <select value={entradaForm.id_producto} onChange={e => { setEntradaForm(f => ({ ...f, id_producto: e.target.value })); setEntradaError(null); setEntradaResultado(null); }} style={s.select}>
+            <div className={cls.field}>
+              <label className={cls.label}>Producto *</label>
+              <select value={entradaForm.id_producto} onChange={e => { setEntradaForm(f => ({ ...f, id_producto: e.target.value })); setEntradaError(null); setEntradaResultado(null); }} className={cls.select}>
                 <option value="">— Selecciona —</option>
                 {productos.map(p => <option key={p.id_producto} value={p.id_producto}>[{p.codigo_producto}] {p.nombre_producto}</option>)}
               </select>
-              {productoSeleccionado && <span style={{ fontSize: "0.78rem", color: "var(--muted)" }}>Unidad: <strong style={{ color: "var(--text)" }}>{productoSeleccionado.unidad_medida}</strong></span>}
+              {productoSeleccionado && <span className="text-[0.78rem] text-ink-muted">Unidad: <strong className="text-ink">{productoSeleccionado.unidad_medida}</strong></span>}
             </div>
-            <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
-              <div style={{ ...s.field, flex: "1 1 160px" }}>
-                <label style={s.label}>Se ingresa en *</label>
-                <select value={entradaForm.id_presentacion} onChange={e => setEntradaForm(f => ({ ...f, id_presentacion: e.target.value }))} style={s.select}>
+            <div className="flex gap-3 flex-wrap">
+              <div className={`${cls.field} flex-[1_1_160px]`}>
+                <label className={cls.label}>Se ingresa en *</label>
+                <select value={entradaForm.id_presentacion} onChange={e => setEntradaForm(f => ({ ...f, id_presentacion: e.target.value }))} className={cls.select}>
                   <option value="">{productoSeleccionado ? `Unidad base (${productoSeleccionado.unidad_medida})` : "Unidad base"}</option>
                   {entradaPresentaciones.map(p => (
                     <option key={p.id_presentacion} value={p.id_presentacion}>
@@ -576,100 +575,100 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
                   ))}
                 </select>
               </div>
-              <div style={{ ...s.field, flex: "1 1 120px" }}>
-                <label style={s.label}>Cantidad *</label>
-                <input type="number" min="0.001" step="1" value={entradaForm.cantidad} onChange={e => setEntradaForm(f => ({ ...f, cantidad: e.target.value }))} style={s.select} />
+              <div className={`${cls.field} flex-[1_1_120px]`}>
+                <label className={cls.label}>Cantidad *</label>
+                <input type="number" min="0.001" step="1" value={entradaForm.cantidad} onChange={e => setEntradaForm(f => ({ ...f, cantidad: e.target.value }))} className={cls.select} />
                 {entradaForm.id_presentacion && entradaForm.cantidad && (
-                  <span style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                  <span className="text-[0.75rem] text-ink-muted">
                     = {(Number(entradaForm.cantidad) * Number(entradaPresentaciones.find(p => p.id_presentacion === Number(entradaForm.id_presentacion))?.factor_conversion || 1)).toLocaleString("es-GT")} {productoSeleccionado?.unidad_medida || "unidades"} en total
                   </span>
                 )}
               </div>
             </div>
-            <div style={s.field}>
-              <label style={s.label}>Descripción (opcional)</label>
-              <textarea value={entradaForm.descripcion} onChange={e => setEntradaForm(f => ({ ...f, descripcion: e.target.value }))} rows={2} placeholder="Ej: Compra a proveedor XYZ…" style={{ ...s.select, resize: "vertical" }} />
+            <div className={cls.field}>
+              <label className={cls.label}>Descripción (opcional)</label>
+              <textarea value={entradaForm.descripcion} onChange={e => setEntradaForm(f => ({ ...f, descripcion: e.target.value }))} rows={2} placeholder="Ej: Compra a proveedor XYZ…" className={`${cls.select} resize-y`} />
             </div>
-            <button type="button" onClick={registrarEntrada} disabled={entradaLoading || !entradaForm.id_bodega || !entradaForm.id_producto || !entradaForm.cantidad} style={{ ...s.btnPrimary, opacity: (!entradaForm.id_bodega || !entradaForm.id_producto || !entradaForm.cantidad) ? 0.5 : 1 }}>
+            <button type="button" onClick={registrarEntrada} disabled={entradaLoading || !entradaForm.id_bodega || !entradaForm.id_producto || !entradaForm.cantidad} className={`${cls.btnPrimary} bg-market text-[var(--info-bg)] ${(!entradaForm.id_bodega || !entradaForm.id_producto || !entradaForm.cantidad) ? "opacity-50" : ""}`}>
               {entradaLoading ? "Registrando…" : "Registrar entrada"}
             </button>
-            {entradaError && <div style={s.alertErr}>{entradaError}</div>}
+            {entradaError && <div className={cls.alertErr}>{entradaError}</div>}
             {entradaResultado && (
-              <div style={s.alertOk}>
-                <strong style={{ color: "var(--text)" }}>Entrada registrada</strong>
-                <div style={{ fontSize: "0.82rem", marginTop: "0.35rem", color: "var(--muted)" }}>
+              <div className={cls.alertOk}>
+                <strong className="text-ink">Entrada registrada</strong>
+                <div className="text-[0.82rem] mt-[0.35rem] text-ink-muted">
                   {entradaResultado.nombre_producto} · {entradaResultado.nombre_bodega}<br />
-                  Stock actual: <strong style={{ color: "var(--text)" }}>{Number(entradaResultado.cantidad_disponible).toFixed(2)} {entradaResultado.unidad_medida}</strong>
+                  Stock actual: <strong className="text-ink">{Number(entradaResultado.cantidad_disponible).toFixed(2)} {entradaResultado.unidad_medida}</strong>
                 </div>
               </div>
             )}
           </div>
 
           {/* Transferencia */}
-          <div style={s.card}>
-            <h3 style={s.h3}><Icon name ="transfer" variant="dark" size={24}/>Transferencia entre bodegas</h3>
-            <p style={s.help}>Descuenta en origen, suma en destino y genera 2 movimientos en kardex.</p>
-            <div style={s.field}>
-              <label style={s.label}>Bodega origen</label>
-              <select value={xfer.id_bodega_origen} onChange={e => setXfer(x => ({ ...x, id_bodega_origen: e.target.value }))} style={s.select}>
+          <div className={`${cls.card} p-4`}>
+            <h3 className={cls.h3}><Icon name ="transfer" variant="dark" size={24}/>Transferencia entre bodegas</h3>
+            <p className={cls.help}>Descuenta en origen, suma en destino y genera 2 movimientos en kardex.</p>
+            <div className={cls.field}>
+              <label className={cls.label}>Bodega origen</label>
+              <select value={xfer.id_bodega_origen} onChange={e => setXfer(x => ({ ...x, id_bodega_origen: e.target.value }))} className={cls.select}>
                 <option value="">— Selecciona —</option>
                 {bodegasSimple.map(b => <option key={b.id_bodega} value={b.id_bodega}>{b.nombre_bodega}</option>)}
               </select>
             </div>
-            <div style={s.field}>
-              <label style={s.label}>Bodega destino</label>
-              <select value={xfer.id_bodega_destino} onChange={e => setXfer(x => ({ ...x, id_bodega_destino: e.target.value }))} style={s.select}>
+            <div className={cls.field}>
+              <label className={cls.label}>Bodega destino</label>
+              <select value={xfer.id_bodega_destino} onChange={e => setXfer(x => ({ ...x, id_bodega_destino: e.target.value }))} className={cls.select}>
                 <option value="">— Selecciona —</option>
                 {bodegasSimple.map(b => <option key={b.id_bodega} value={b.id_bodega}>{b.nombre_bodega}</option>)}
               </select>
             </div>
-            <div style={s.field}>
-              <label style={s.label}>Producto</label>
-              <select value={xfer.id_producto} onChange={e => setXfer(x => ({ ...x, id_producto: e.target.value }))} style={s.select}>
+            <div className={cls.field}>
+              <label className={cls.label}>Producto</label>
+              <select value={xfer.id_producto} onChange={e => setXfer(x => ({ ...x, id_producto: e.target.value }))} className={cls.select}>
                 <option value="">— Selecciona —</option>
                 {productos.map(p => <option key={p.id_producto} value={p.id_producto}>[{p.codigo_producto}] {p.nombre_producto}</option>)}
               </select>
             </div>
-            <div style={s.field}>
-              <label style={s.label}>Cantidad</label>
-              <input type="number" min="0.001" step="1" value={xfer.cantidad} onChange={e => setXfer(x => ({ ...x, cantidad: e.target.value }))} style={s.select} inputMode="decimal" />
+            <div className={cls.field}>
+              <label className={cls.label}>Cantidad</label>
+              <input type="number" min="0.001" step="1" value={xfer.cantidad} onChange={e => setXfer(x => ({ ...x, cantidad: e.target.value }))} className={cls.select} inputMode="decimal" />
             </div>
-            <div style={s.field}>
-              <label style={s.label}>Descripción (opcional)</label>
-              <input value={xfer.descripcion} onChange={e => setXfer(x => ({ ...x, descripcion: e.target.value }))} style={s.select} placeholder="Ej: Reubicación por temporada" />
+            <div className={cls.field}>
+              <label className={cls.label}>Descripción (opcional)</label>
+              <input value={xfer.descripcion} onChange={e => setXfer(x => ({ ...x, descripcion: e.target.value }))} className={cls.select} placeholder="Ej: Reubicación por temporada" />
             </div>
-            <button type="button" style={s.btnPrimary} onClick={() => void registrarTransferencia()} disabled={!xfer.id_bodega_origen || !xfer.id_bodega_destino || !xfer.id_producto || !xfer.cantidad}>
+            <button type="button" className={`${cls.btnPrimary} bg-market text-[var(--info-bg)]`} onClick={() => void registrarTransferencia()} disabled={!xfer.id_bodega_origen || !xfer.id_bodega_destino || !xfer.id_producto || !xfer.cantidad}>
               Registrar transferencia
             </button>
           </div>
 
           {/* Ajuste */}
-          <div style={s.card}>
-            <h3 style={s.h3}><Icon name ="setting" variant="dark" size={24}/> Ajuste de inventario</h3>
-            <p style={s.help}>Define el <strong>stock real</strong> en una bodega. El delta se registra como <code style={s.code}>AJUSTE</code> en kardex.</p>
-            <div style={s.field}>
-              <label style={s.label}>Bodega</label>
-              <select value={adj.id_bodega} onChange={e => setAdj(a => ({ ...a, id_bodega: e.target.value }))} style={s.select}>
+          <div className={`${cls.card} p-4`}>
+            <h3 className={cls.h3}><Icon name ="setting" variant="dark" size={24}/> Ajuste de inventario</h3>
+            <p className={cls.help}>Define el <strong>stock real</strong> en una bodega. El delta se registra como <code className={cls.code}>AJUSTE</code> en kardex.</p>
+            <div className={cls.field}>
+              <label className={cls.label}>Bodega</label>
+              <select value={adj.id_bodega} onChange={e => setAdj(a => ({ ...a, id_bodega: e.target.value }))} className={cls.select}>
                 <option value="">— Selecciona —</option>
                 {bodegasSimple.map(b => <option key={b.id_bodega} value={b.id_bodega}>{b.nombre_bodega}</option>)}
               </select>
             </div>
-            <div style={s.field}>
-              <label style={s.label}>Producto</label>
-              <select value={adj.id_producto} onChange={e => setAdj(a => ({ ...a, id_producto: e.target.value }))} style={s.select}>
+            <div className={cls.field}>
+              <label className={cls.label}>Producto</label>
+              <select value={adj.id_producto} onChange={e => setAdj(a => ({ ...a, id_producto: e.target.value }))} className={cls.select}>
                 <option value="">— Selecciona —</option>
                 {productos.map(p => <option key={p.id_producto} value={p.id_producto}>[{p.codigo_producto}] {p.nombre_producto}</option>)}
               </select>
             </div>
-            <div style={s.field}>
-              <label style={s.label}>Nueva cantidad (stock físico)</label>
-              <input type="number" min="0" step="1" value={adj.nueva_cantidad} onChange={e => setAdj(a => ({ ...a, nueva_cantidad: e.target.value }))} style={s.select} inputMode="decimal" />
+            <div className={cls.field}>
+              <label className={cls.label}>Nueva cantidad (stock físico)</label>
+              <input type="number" min="0" step="1" value={adj.nueva_cantidad} onChange={e => setAdj(a => ({ ...a, nueva_cantidad: e.target.value }))} className={cls.select} inputMode="decimal" />
             </div>
-            <div style={s.field}>
-              <label style={s.label}>Motivo / nota (opcional)</label>
-              <input value={adj.descripcion} onChange={e => setAdj(a => ({ ...a, descripcion: e.target.value }))} style={s.select} placeholder="Ej: Conteo físico, merma…" />
+            <div className={cls.field}>
+              <label className={cls.label}>Motivo / nota (opcional)</label>
+              <input value={adj.descripcion} onChange={e => setAdj(a => ({ ...a, descripcion: e.target.value }))} className={cls.select} placeholder="Ej: Conteo físico, merma…" />
             </div>
-            <button type="button" style={s.btnPrimary} onClick={() => void registrarAjuste()} disabled={!adj.id_bodega || !adj.id_producto || !adj.nueva_cantidad}>
+            <button type="button" className={`${cls.btnPrimary} bg-market text-[var(--info-bg)]`} onClick={() => void registrarAjuste()} disabled={!adj.id_bodega || !adj.id_producto || !adj.nueva_cantidad}>
               Aplicar ajuste
             </button>
           </div>
@@ -681,30 +680,30 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
           TAB: KARDEX
       ══════════════════════════════════════════════════════════════════ */}
       {tab === "kardex" && (
-        <div style={{ ...s.card, padding: 0, overflow: "hidden" }}>
-          <div style={{ overflow: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 900 }}>
+        <div className={`${cls.card} p-0 overflow-hidden`}>
+          <div className="overflow-auto">
+            <table className="w-full border-collapse min-w-[900px]">
               <thead>
-                <tr style={{ background: "var(--surface2)" }}>
-                  <th style={s.th}>Fecha</th>
-                  <th style={s.th}>Tipo</th>
-                  <th style={s.th}>Bodega</th>
-                  <th style={s.th}>Producto</th>
-                  <th style={{ ...s.th, textAlign: "right" }}>Cantidad</th>
-                  <th style={s.th}>Descripción</th>
+                <tr className="bg-surface-soft">
+                  <th className={cls.th}>Fecha</th>
+                  <th className={cls.th}>Tipo</th>
+                  <th className={cls.th}>Bodega</th>
+                  <th className={cls.th}>Producto</th>
+                  <th className={`${cls.th} text-right`}>Cantidad</th>
+                  <th className={cls.th}>Descripción</th>
                 </tr>
               </thead>
               <tbody>
                 {kardexPage.slice.length === 0 ? (
-                  <tr><td colSpan={6} style={{ ...s.td, textAlign: "center", padding: "2rem", color: "var(--muted)" }}>{qKardex.trim() ? "Ningún resultado para esa búsqueda." : "No hay movimientos para estos filtros."}</td></tr>
+                  <tr><td colSpan={6} className="text-center p-8 text-ink-muted">{qKardex.trim() ? "Ningún resultado para esa búsqueda." : "No hay movimientos para estos filtros."}</td></tr>
                 ) : kardexPage.slice.map(m => (
-                  <tr key={m.id_kardex} style={{ borderTop: "1px solid var(--border)" }}>
-                    <td style={{ ...s.td, fontSize: "0.82rem", color: "var(--muted)", whiteSpace: "nowrap" }}>{new Date(m.fecha_movimiento).toLocaleString("es-GT")}</td>
-                    <td style={s.td}><span style={tipoBadge(m.tipo_movimiento)}>{m.tipo_movimiento}</span></td>
-                    <td style={s.td}><div style={{ fontWeight: 600 }}>{m.nombre_bodega}</div></td>
-                    <td style={s.td}><div style={{ fontWeight: 600 }}><code style={s.code}>{m.codigo_producto}</code> {m.nombre_producto}</div><div style={{ fontSize: "0.78rem", color: "var(--muted)" }}>{m.unidad_medida}</div></td>
-                    <td style={{ ...s.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{Number(m.cantidad).toFixed(3)}</td>
-                    <td style={{ ...s.td, color: "var(--muted)", fontSize: "0.88rem" }}>{m.descripcion || "—"}</td>
+                  <tr key={m.id_kardex} className="border-t border-line">
+                    <td className={`${cls.td} text-[0.82rem] text-ink-muted whitespace-nowrap`}>{new Date(m.fecha_movimiento).toLocaleString("es-GT")}</td>
+                    <td className={cls.td}><span className={tipoBadgeClass(m.tipo_movimiento)}>{m.tipo_movimiento}</span></td>
+                    <td className={cls.td}><div className="font-semibold">{m.nombre_bodega}</div></td>
+                    <td className={cls.td}><div className="font-semibold"><code className={cls.code}>{m.codigo_producto}</code> {m.nombre_producto}</div><div className="text-[0.78rem] text-ink-muted">{m.unidad_medida}</div></td>
+                    <td className={`${cls.td} text-right tabular-nums`}>{Number(m.cantidad).toFixed(3)}</td>
+                    <td className={`${cls.td} text-ink-muted text-[0.88rem]`}>{m.descripcion || "—"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -728,44 +727,44 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
       ══════════════════════════════════════════════════════════════════ */}
       {tab === "bodegas" && (
         <>
-          <div style={{ ...s.toolbar, marginTop: 0 }}>
+          <div className={`${cls.toolbar} mt-0`}>
             <input
               type="search"
               value={qBodegas}
               onChange={(e) => setQBodegas(e.target.value)}
               placeholder="Buscar bodega o ubicación…"
               aria-label="Buscar bodegas"
-              style={s.searchInput}
+              className={`${cls.searchInput} flex-[1_1_240px] min-w-[200px]`}
             />
-            <button type="button" onClick={abrirCrearBodega} style={s.btnPrimary}>+ Nueva bodega</button>
+            <button type="button" onClick={abrirCrearBodega} className={`${cls.btnPrimary} bg-market text-[var(--info-bg)]`}>+ Nueva bodega</button>
           </div>
-          <div style={{ ...s.card, padding: 0, overflow: "hidden" }}>
-            <div style={{ overflow: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <div className={`${cls.card} p-0 overflow-hidden`}>
+            <div className="overflow-auto">
+              <table className="w-full border-collapse">
                 <thead>
-                  <tr style={{ background: "var(--surface2)" }}>
-                    <th style={s.th}>ID</th>
-                    <th style={s.th}>Nombre</th>
-                    <th style={s.th}>Ubicación</th>
-                    <th style={{ ...s.th, textAlign: "right" }}>Productos</th>
-                    <th style={{ ...s.th, textAlign: "right" }}>Stock total</th>
-                    <th style={{ ...s.th, textAlign: "center" }}>Acciones</th>
+                  <tr className="bg-surface-soft">
+                    <th className={cls.th}>ID</th>
+                    <th className={cls.th}>Nombre</th>
+                    <th className={cls.th}>Ubicación</th>
+                    <th className={`${cls.th} text-right`}>Productos</th>
+                    <th className={`${cls.th} text-right`}>Stock total</th>
+                    <th className={`${cls.th} text-center`}>Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
                   {bodegasPage.slice.length === 0 ? (
-                    <tr><td colSpan={6} style={{ ...s.td, textAlign: "center", padding: "2rem", color: "var(--muted)" }}>{qBodegas.trim() ? "Ningún resultado para esa búsqueda." : "No hay bodegas registradas."}</td></tr>
+                    <tr><td colSpan={6} className="text-center p-8 text-ink-muted">{qBodegas.trim() ? "Ningún resultado para esa búsqueda." : "No hay bodegas registradas."}</td></tr>
                   ) : bodegasPage.slice.map((b, i) => (
-                    <tr key={b.id_bodega} style={{ background: i % 2 === 0 ? "var(--surface2)" : "var(--surface)" }}>
-                      <td style={{ ...s.td, color: "var(--muted)", fontFamily: "monospace" }}>#{b.id_bodega}</td>
-                      <td style={{ ...s.td, fontWeight: 600 }}>{b.nombre_bodega}</td>
-                      <td style={{ ...s.td, color: "var(--muted)" }}>{b.ubicacion || "—"}</td>
-                      <td style={{ ...s.td, textAlign: "right" }}>{b.total_productos}</td>
-                      <td style={{ ...s.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{Number(b.stock_total).toLocaleString("es-GT", { maximumFractionDigits: 3 })}</td>
-                      <td style={{ ...s.td, textAlign: "center" }}>
-                        <div style={{ display: "flex", gap: "0.4rem", justifyContent: "center" }}>
-                          <button type="button" onClick={() => abrirEditarBodega(b)} style={s.btnEdit} title="Editar">✏️</button>
-                          <button type="button" onClick={() => setConfirmDeleteBodega(b.id_bodega)} style={s.btnDel} title="Eliminar">🗑️</button>
+                    <tr key={b.id_bodega} className={i % 2 === 0 ? "bg-surface-soft" : "bg-surface"}>
+                      <td className={`${cls.td} text-ink-muted font-mono`}>#{b.id_bodega}</td>
+                      <td className={`${cls.td} font-semibold`}>{b.nombre_bodega}</td>
+                      <td className={`${cls.td} text-ink-muted`}>{b.ubicacion || "—"}</td>
+                      <td className={`${cls.td} text-right`}>{b.total_productos}</td>
+                      <td className={`${cls.td} text-right tabular-nums`}>{Number(b.stock_total).toLocaleString("es-GT", { maximumFractionDigits: 3 })}</td>
+                      <td className={`${cls.td} text-center`}>
+                        <div className="flex gap-[0.4rem] justify-center">
+                          <button type="button" onClick={() => abrirEditarBodega(b)} className={cls.btnEdit} title="Editar">✏️</button>
+                          <button type="button" onClick={() => setConfirmDeleteBodega(b.id_bodega)} className={cls.btnDel} title="Eliminar">🗑️</button>
                         </div>
                       </td>
                     </tr>
@@ -789,10 +788,10 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
 
       {tab === "presentaciones" && (
         <>
-          <div style={{ ...s.toolbar, marginTop: 0 }}>
-            <div style={{ position: "relative", minWidth: 280 }}>
+          <div className={`${cls.toolbar} mt-0`}>
+            <div className="relative min-w-[280px]">
               <input
-                style={s.selectInline}
+                className={`${cls.selectInline} min-w-[180px]`}
                 placeholder="Buscar producto por código o nombre…"
                 value={presProductoQuery}
                 onChange={(e) => {
@@ -805,24 +804,9 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
                 aria-label="Buscar producto para configurar presentaciones"
               />
               {presSugerenciasAbiertas && presProductoQuery.trim() !== "" && !presProductoId && (
-                <div
-                  style={{
-                    position: "absolute",
-                    top: "100%",
-                    left: 0,
-                    right: 0,
-                    background: "var(--surface)",
-                    border: "1px solid var(--border)",
-                    borderRadius: 6,
-                    marginTop: 2,
-                    zIndex: 20,
-                    maxHeight: 220,
-                    overflowY: "auto",
-                    boxShadow: "0 4px 10px rgba(0,0,0,0.12)",
-                  }}
-                >
+                <div className="absolute top-full left-0 right-0 bg-surface border border-line rounded-md mt-0.5 z-20 max-h-[220px] overflow-y-auto shadow-[0_4px_10px_rgba(0,0,0,0.12)]">
                   {presProductosFiltrados.length === 0 ? (
-                    <div style={{ padding: "0.5rem 0.7rem", fontSize: "0.85rem", color: "var(--muted)" }}>
+                    <div className="px-[0.7rem] py-2 text-[0.85rem] text-ink-muted">
                       Sin resultados para esa búsqueda.
                     </div>
                   ) : (
@@ -834,14 +818,9 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
                           setPresProductoQuery(`[${p.codigo_producto}] ${p.nombre_producto}`);
                           setPresSugerenciasAbiertas(false);
                         }}
-                        style={{
-                          padding: "0.45rem 0.7rem",
-                          cursor: "pointer",
-                          fontSize: "0.85rem",
-                          borderBottom: "1px solid var(--border)",
-                        }}
+                        className="px-[0.7rem] py-[0.45rem] cursor-pointer text-[0.85rem] border-b border-line"
                       >
-                        <code style={s.code}>{p.codigo_producto}</code> {p.nombre_producto}
+                        <code className={cls.code}>{p.codigo_producto}</code> {p.nombre_producto}
                       </div>
                     ))
                   )}
@@ -851,29 +830,29 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
           </div>
 
           {presProductoId && (
-            <div style={{ ...s.card, display: "flex", flexDirection: "column", gap: "0.85rem" }}>
-              <div style={{ fontSize: "0.85rem", color: "var(--muted)" }}>
+            <div className={`${cls.card} p-4 flex flex-col gap-[0.85rem]`}>
+              <div className="text-[0.85rem] text-ink-muted">
                 Presentaciones que el bodeguero puede usar al registrar entradas/salidas de este producto
                 (ej. &quot;Caja de 24&quot; = 24 unidades base).
               </div>
 
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <table className="w-full border-collapse">
                 <thead>
-                  <tr style={{ background: "var(--surface2)" }}>
-                    <th style={s.th}>Presentación</th>
-                    <th style={{ ...s.th, textAlign: "right" }}>Equivale a (unidad base)</th>
-                    <th style={{ ...s.th, textAlign: "center" }}>Acciones</th>
+                  <tr className="bg-surface-soft">
+                    <th className={cls.th}>Presentación</th>
+                    <th className={`${cls.th} text-right`}>Equivale a (unidad base)</th>
+                    <th className={`${cls.th} text-center`}>Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
                   {presLista.length === 0 ? (
-                    <tr><td colSpan={3} style={{ ...s.td, textAlign: "center", padding: "1.25rem", color: "var(--muted)" }}>Este producto no tiene presentaciones configuradas.</td></tr>
+                    <tr><td colSpan={3} className="text-center p-5 text-ink-muted">Este producto no tiene presentaciones configuradas.</td></tr>
                   ) : presLista.map((pr) => (
                     <tr key={pr.id_presentacion}>
-                      <td style={{ ...s.td, fontWeight: 600 }}>{pr.nombre_presentacion}</td>
-                      <td style={{ ...s.td, textAlign: "right" }}>{Number(pr.factor_conversion).toLocaleString("es-GT")}</td>
-                      <td style={{ ...s.td, textAlign: "center" }}>
-                        <button type="button" onClick={() => eliminarPresentacion(pr.id_presentacion)} style={s.btnDel} title="Eliminar">
+                      <td className={`${cls.td} font-semibold`}>{pr.nombre_presentacion}</td>
+                      <td className={`${cls.td} text-right`}>{Number(pr.factor_conversion).toLocaleString("es-GT")}</td>
+                      <td className={`${cls.td} text-center`}>
+                        <button type="button" onClick={() => eliminarPresentacion(pr.id_presentacion)} className={cls.btnDel} title="Eliminar">
                           <Icon name="trash" size={14} />
                         </button>
                       </td>
@@ -882,20 +861,20 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
                 </tbody>
               </table>
 
-              <div style={{ display: "flex", gap: "0.6rem", alignItems: "flex-end", flexWrap: "wrap" }}>
-                <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem", flex: "1 1 220px", minWidth: 180 }}>
-                  <label style={{ fontSize: "0.75rem", color: "var(--muted)" }}>Nombre (ej. Caja de 24)</label>
-                  <input value={presNombre} onChange={(e) => setPresNombre(e.target.value)} style={{ ...s.searchInput, flex: "0 0 auto", width: "100%" }} />
+              <div className="flex gap-[0.6rem] items-end flex-wrap">
+                <div className="flex flex-col gap-[0.3rem] flex-[1_1_220px] min-w-[180px]">
+                  <label className="text-[0.75rem] text-ink-muted">Nombre (ej. Caja de 24)</label>
+                  <input value={presNombre} onChange={(e) => setPresNombre(e.target.value)} className={`${cls.searchInput} flex-[0_0_auto] w-full`} />
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem", flex: "0 0 120px" }}>
-                  <label style={{ fontSize: "0.75rem", color: "var(--muted)" }}>Factor (unidades base)</label>
-                  <input type="number" min="0" step="1" value={presFactor} onChange={(e) => setPresFactor(e.target.value)} style={{ ...s.searchInput, flex: "0 0 auto", width: "100%" }} />
+                <div className="flex flex-col gap-[0.3rem] flex-[0_0_120px]">
+                  <label className="text-[0.75rem] text-ink-muted">Factor (unidades base)</label>
+                  <input type="number" min="0" step="1" value={presFactor} onChange={(e) => setPresFactor(e.target.value)} className={`${cls.searchInput} flex-[0_0_auto] w-full`} />
                 </div>
-                <button type="button" onClick={crearPresentacion} disabled={presGuardando} style={s.btnPrimary}>
+                <button type="button" onClick={crearPresentacion} disabled={presGuardando} className={`${cls.btnPrimary} bg-market text-[var(--info-bg)]`}>
                   {presGuardando ? "Guardando…" : "+ Agregar presentación"}
                 </button>
               </div>
-              {presError && <div style={{ color: "var(--red)", fontSize: "0.85rem" }}>{presError}</div>}
+              {presError && <div className="text-achiote text-[0.85rem]">{presError}</div>}
             </div>
           )}
         </>
@@ -904,94 +883,57 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
       {/* ── Modal Bodega ── */}
       {modalBodegaOpen && (
         <div
-          style={{
-            ...s.overlay,
-            position: "fixed",
-            top: 0,
-            left: 0,
-            width: "100vw",
-            height: "100vh",
-            backgroundColor: "rgba(0, 0, 0, 0.5)", // Oscurece el fondo
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 101,
-          }}
+          className="fixed inset-0 w-screen h-screen bg-black/50 backdrop-blur-[4px] flex items-center justify-center z-[101] p-4"
           onClick={e => { if (e.target === e.currentTarget) cerrarModalBodega(); }}
         >
-          <div
-            style={{
-              ...s.modal,
-              maxWidth: 480,
-              width: "90%",
-              backgroundColor: "#ffffff", // Fondo blanco opaco
-              color: "#1a1a1a",           // Texto oscuro
-              borderRadius: "12px",
-              boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.3)",
-              display: "flex",
-              flexDirection: "column",
-              overflow: "hidden",
-            }}
-          >
-            <div style={{ ...s.modalHeader, padding: "1.25rem 1.5rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <h2 style={{ ...s.modalTitle, margin: 0, color: "#1a1a1a" }}>
+          <div className="bg-surface text-ink border border-line rounded-[12px] max-w-[480px] w-[90%] shadow-[0_20px_25px_-5px_rgba(0,0,0,0.3)] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-line">
+              <h2 className="font-head text-[1.1rem] font-bold text-ink m-0">
                 {editandoBodega ? "Editar bodega" : "Nueva bodega"}
               </h2>
-              <button 
-                type="button" 
-                onClick={cerrarModalBodega} 
-                style={{ ...s.closeBtn, color: "#1a1a1a", background: "transparent", border: "none", cursor: "pointer" }}
+              <button
+                type="button"
+                onClick={cerrarModalBodega}
+                className="bg-transparent border-none text-ink text-base cursor-pointer px-[0.4rem] py-[0.2rem]"
               >
                 ✕
               </button>
             </div>
-            <div style={{ ...s.modalBody, padding: "0 1.5rem 1.5rem" }}>
-              <div style={{ ...s.field, marginBottom: "1rem" }}>
-                <label style={{ ...s.label, color: "#1a1a1a", fontWeight: 600, display: "block", marginBottom: "0.25rem" }}>
+            <div className="px-6 pb-6 pt-0 flex flex-col gap-4">
+              <div className="flex flex-col gap-[0.35rem] mb-4">
+                <label className="text-[0.82rem] font-semibold text-ink block mb-1">
                   Nombre *
                 </label>
                 <input
-                  style={{
-                    ...s.inputModal,
-                    backgroundColor: "#f4f4f5",
-                    color: "#1a1a1a",
-                    border: "1px solid #e4e4e7",
-                    width: "100%",
-                  }}
+                  className="bg-surface-soft text-ink border border-line rounded-lg px-[0.85rem] py-[0.65rem] text-[0.92rem] outline-none w-full"
                   value={bodegaForm.nombre_bodega}
                   onChange={e => setBodegaForm(f => ({ ...f, nombre_bodega: e.target.value }))}
                   placeholder="Bodega Principal"
                   autoFocus
                 />
               </div>
-              <div style={{ ...s.field, marginBottom: "1rem" }}>
-                <label style={{ ...s.label, color: "#1a1a1a", fontWeight: 600, display: "block", marginBottom: "0.25rem" }}>
+              <div className="flex flex-col gap-[0.35rem] mb-4">
+                <label className="text-[0.82rem] font-semibold text-ink block mb-1">
                   Ubicación
                 </label>
                 <input
-                  style={{
-                    ...s.inputModal,
-                    backgroundColor: "#f4f4f5",
-                    color: "#1a1a1a",
-                    border: "1px solid #e4e4e7",
-                    width: "100%",
-                  }}
+                  className="bg-surface-soft text-ink border border-line rounded-lg px-[0.85rem] py-[0.65rem] text-[0.92rem] outline-none w-full"
                   value={bodegaForm.ubicacion}
                   onChange={e => setBodegaForm(f => ({ ...f, ubicacion: e.target.value }))}
                   placeholder="Zona 1, Guatemala"
                 />
               </div>
               {bodegaFormError && (
-                <p style={{ color: "#dc2626", fontSize: "0.85rem", margin: 0 }}>
+                <p className="text-danger-strong text-[0.85rem] m-0">
                   {bodegaFormError}
                 </p>
               )}
             </div>
-            <div style={{ ...s.modalFooter, padding: "1rem 1.5rem", display: "flex", justifyContent: "flex-end", gap: "0.75rem", borderTop: "1px solid #e4e4e7" }}>
-              <button type="button" onClick={cerrarModalBodega} style={s.btnSecondary} disabled={savingBodega}>
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-line">
+              <button type="button" onClick={cerrarModalBodega} className={cls.btnSecondary} disabled={savingBodega}>
                 Cancelar
               </button>
-              <button type="button" onClick={handleGuardarBodega} style={s.btnSecondary} disabled={savingBodega}>
+              <button type="button" onClick={handleGuardarBodega} className={cls.btnSecondary} disabled={savingBodega}>
                 {savingBodega ? "Guardando…" : editandoBodega ? "Guardar cambios" : "Crear bodega"}
               </button>
             </div>
@@ -1001,15 +943,15 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
 
       {/* ── Confirm delete bodega ── */}
       {confirmDeleteBodega !== null && (
-        <div style={s.overlay}>
-          <div style={{ ...s.modal, maxWidth: 420 }}>
-            <div style={s.modalHeader}><h2 style={s.modalTitle}>¿Eliminar bodega?</h2></div>
-            <div style={s.modalBody}>
-              <p style={{ color: "var(--muted)", lineHeight: 1.6 }}>Solo se puede eliminar si la bodega <strong style={{ color: "var(--text)" }}>no tiene stock activo</strong>. Si tiene productos, transfiere o ajusta el inventario primero.</p>
+        <div className={cls.overlay}>
+          <div className={`${cls.modal} max-w-[420px]`}>
+            <div className={cls.modalHeader}><h2 className={cls.modalTitle}>¿Eliminar bodega?</h2></div>
+            <div className={cls.modalBody}>
+              <p className="text-ink-muted leading-[1.6]">Solo se puede eliminar si la bodega <strong className="text-ink">no tiene stock activo</strong>. Si tiene productos, transfiere o ajusta el inventario primero.</p>
             </div>
-            <div style={s.modalFooter}>
-              <button type="button" onClick={() => setConfirmDeleteBodega(null)} style={s.btnSecondary} disabled={deletingBodega}>Cancelar</button>
-              <button type="button" onClick={() => handleEliminarBodega(confirmDeleteBodega)} style={{ ...s.btnPrimary, background: "var(--red)" }} disabled={deletingBodega}>{deletingBodega ? "Eliminando…" : "Sí, eliminar"}</button>
+            <div className={cls.modalFooter}>
+              <button type="button" onClick={() => setConfirmDeleteBodega(null)} className={cls.btnSecondary} disabled={deletingBodega}>Cancelar</button>
+              <button type="button" onClick={() => handleEliminarBodega(confirmDeleteBodega)} className={`${cls.btnPrimary} bg-achiote text-[var(--info-bg)]`} disabled={deletingBodega}>{deletingBodega ? "Eliminando…" : "Sí, eliminar"}</button>
             </div>
           </div>
         </div>
@@ -1017,7 +959,7 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
 
       {/* ── Toast ── */}
       {toast && (
-        <div style={{ ...s.toast, background: toast.tipo === "ok" ? "rgba(63,185,80,.15)" : "rgba(248,81,73,.15)", borderColor: toast.tipo === "ok" ? "rgba(63,185,80,.4)" : "rgba(248,81,73,.4)", color: toast.tipo === "ok" ? "var(--green)" : "var(--red)" }}>
+        <div className={`${cls.toast} ${toast.tipo === "ok" ? "bg-ok/[.15] border-ok/[.40] text-market" : "bg-err/[.15] border-err/[.40] text-achiote"}`}>
           {toast.msg}
         </div>
       )}
@@ -1025,47 +967,48 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
   );
 }
 
-function tipoBadge(tipo: KardexRow["tipo_movimiento"]): CSSProperties {
-  if (tipo === "ENTRADA") return { ...pill, background: "rgba(63,185,80,.12)", borderColor: "rgba(63,185,80,.35)", color: "var(--green)" };
-  if (tipo === "SALIDA")  return { ...pill, background: "rgba(248,81,73,.10)", borderColor: "rgba(248,81,73,.30)", color: "var(--red)" };
-  return { ...pill, background: "rgba(88,166,255,.12)", borderColor: "rgba(88,166,255,.30)", color: "var(--blue)" };
+/** Clases del badge de tipo de movimiento. Antes era tipoBadge() con rgba/hex. */
+function tipoBadgeClass(tipo: KardexRow["tipo_movimiento"]): string {
+  if (tipo === "ENTRADA") return `${cls.pill} bg-ok/[.12] border-ok/[.35] text-market`;
+  if (tipo === "SALIDA") return `${cls.pill} bg-err/[.10] border-err/[.30] text-achiote`;
+  return `${cls.pill} bg-feedback-info/[.12] border-feedback-info/[.30] text-[var(--blue)]`;
 }
 
-const pill: CSSProperties = { display: "inline-block", padding: "0.15rem 0.55rem", borderRadius: 999, border: "1px solid var(--border)", fontSize: "0.78rem", fontWeight: 800, letterSpacing: "0.04em" };
+// ── Clases Tailwind reutilizables (DEV-192) ────────────────────────────────────
+// Reemplazan al antiguo objeto `s: Record<string, CSSProperties>` y a los inline
+// styles. Los colores salen de los tokens del tema (surface, line, ink, market,
+// achiote, ok, err, warn…), que mapean a las variables CSS de globals.css.
 
-// ── Estilos ───────────────────────────────────────────────────────────────────
-
-const s: Record<string, CSSProperties> = {
-  card: { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "1rem" },
-  select: { background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "0.55rem 0.75rem", color: "var(--text)", fontSize: "0.9rem", outline: "none", width: "100%" },
-  selectInline: { background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "0.55rem 0.75rem", color: "var(--text)", fontSize: "0.9rem", outline: "none", minWidth: 180, maxWidth: 280, flex: "0 1 auto" },
-  filterBlock: { display: "flex", flexDirection: "column", gap: "0.65rem", marginTop: "1rem" },
-  toolbar: { display: "flex", flexDirection: "row", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" },
-  checkRow: { display: "flex", flexDirection: "row", alignItems: "center", gap: "1.25rem", flexWrap: "nowrap" },
-  searchInput: { flex: "1 1 240px", minWidth: 200, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "0.55rem 0.75rem", color: "var(--text)", fontSize: "0.9rem", outline: "none" },
-  check: { display: "flex", alignItems: "center", gap: "0.45rem", color: "var(--muted)", fontSize: "0.85rem", userSelect: "none", cursor: "pointer", whiteSpace: "nowrap" } as CSSProperties,
-  btnPrimary: { background: "var(--accent)", color: "#eff5ff", border: "none", borderRadius: 10, padding: "0.65rem 0.9rem", fontWeight: 700, cursor: "pointer", fontSize: "0.88rem", whiteSpace: "nowrap" } as CSSProperties,
-  btnSecondary: { background: "transparent", color: "var(--muted)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "0.6rem 1.2rem", fontSize: "0.88rem", cursor: "pointer" },
-  btnEdit: { background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "0.3rem 0.5rem", cursor: "pointer", fontSize: "0.85rem" },
-  btnDel: { background: "rgba(248,81,73,.1)", border: "1px solid rgba(248,81,73,.25)", borderRadius: 6, padding: "0.3rem 0.5rem", cursor: "pointer", fontSize: "0.85rem" },
-  th: { textAlign: "left", padding: "0.75rem 0.85rem", fontSize: "0.72rem", letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--muted)", borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" } as CSSProperties,
-  td: { padding: "0.75rem 0.85rem", verticalAlign: "top" },
-  code: { fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: "0.78rem", padding: "0.1rem 0.35rem", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--accent)" },
-  badgeOk: { display: "inline-block", padding: "0.15rem 0.55rem", borderRadius: 999, border: "1px solid rgba(63,185,80,.35)", background: "rgba(63,185,80,.10)", color: "var(--green)", fontSize: "0.78rem", fontWeight: 700 },
-  badgeWarn: { display: "inline-block", padding: "0.15rem 0.55rem", borderRadius: 999, border: "1px solid rgba(232,160,69,.35)", background: "rgba(232,160,69,.10)", color: "var(--accent)", fontSize: "0.78rem", fontWeight: 700 },
-  h3: { margin: "0 0 0.35rem", fontFamily: "var(--font-head)", fontSize: "1.05rem" },
-  help: { margin: "0 0 1rem", color: "var(--muted)", fontSize: "0.88rem", lineHeight: 1.55 },
-  field: { display: "flex", flexDirection: "column", gap: "0.35rem", marginBottom: "0.85rem" },
-  label: { fontSize: "0.82rem", fontWeight: 700, color: "var(--muted)" },
-  alertErr: { marginTop: "0.75rem", background: "rgba(248,81,73,.12)", border: "1px solid rgba(248,81,73,.3)", borderRadius: 8, padding: "0.65rem 0.85rem", color: "var(--red)", fontSize: "0.85rem" },
-  alertOk: { marginTop: "0.75rem", background: "rgba(63,185,80,.12)", border: "1px solid rgba(63,185,80,.35)", borderRadius: 8, padding: "0.75rem 0.85rem", color: "var(--green)", fontSize: "0.85rem" },
-  overlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,.65)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: "1rem" } as CSSProperties,
-  modal: { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, width: "100%", maxWidth: 480, boxShadow: "var(--shadow)", overflow: "hidden" },
-  modalHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "1.25rem 1.5rem", borderBottom: "1px solid var(--border)" },
-  modalTitle: { fontFamily: "var(--font-head)", fontSize: "1.1rem", fontWeight: 700, color: "var(--text)", margin: 0 },
-  closeBtn: { background: "transparent", border: "none", color: "var(--muted)", fontSize: "1rem", cursor: "pointer", padding: "0.2rem 0.4rem" },
-  modalBody: { padding: "1.5rem", display: "flex", flexDirection: "column", gap: "1rem" } as CSSProperties,
-  modalFooter: { display: "flex", justifyContent: "flex-end", gap: "0.75rem", padding: "1rem 1.5rem", borderTop: "1px solid var(--border)" },
-  inputModal: { background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "0.65rem 0.85rem", color: "var(--text)", fontSize: "0.92rem", outline: "none", width: "100%" },
-  toast: { position: "fixed", bottom: "2rem", right: "2rem", padding: "0.85rem 1.25rem", borderRadius: "var(--radius)", border: "1px solid", fontSize: "0.88rem", fontWeight: 500, zIndex: 300, backdropFilter: "blur(8px)", boxShadow: "var(--shadow)" } as CSSProperties,
+const cls = {
+  card: "bg-surface border border-line rounded-control",
+  select: "bg-surface-soft border border-line rounded-[10px] px-3 py-[0.55rem] text-ink text-[0.9rem] outline-none w-full",
+  selectInline: "bg-surface-soft border border-line rounded-[10px] px-3 py-[0.55rem] text-ink text-[0.9rem] outline-none max-w-[280px] flex-[0_1_auto]",
+  filterBlock: "flex flex-col gap-[0.65rem] mt-4",
+  toolbar: "flex flex-row items-center gap-3 flex-wrap",
+  checkRow: "flex flex-row items-center gap-5 flex-nowrap",
+  searchInput: "bg-surface-soft border border-line rounded-[10px] px-3 py-[0.55rem] text-ink text-[0.9rem] outline-none",
+  check: "flex items-center gap-[0.45rem] text-ink-muted text-[0.85rem] select-none cursor-pointer whitespace-nowrap",
+  btnPrimary: "border-none rounded-[10px] px-[0.9rem] py-[0.65rem] font-bold cursor-pointer text-[0.88rem] whitespace-nowrap",
+  btnSecondary: "bg-transparent text-ink-muted border border-line rounded-control px-[1.2rem] py-[0.6rem] text-[0.88rem] cursor-pointer",
+  btnEdit: "bg-surface-soft border border-line rounded-md px-[0.5rem] py-[0.3rem] cursor-pointer text-[0.85rem]",
+  btnDel: "bg-err/[.10] border border-err/[.25] rounded-md px-[0.5rem] py-[0.3rem] cursor-pointer text-[0.85rem]",
+  th: "text-left px-[0.85rem] py-3 text-[0.72rem] tracking-[0.06em] uppercase text-ink-muted border-b border-line whitespace-nowrap",
+  td: "px-[0.85rem] py-3 align-top",
+  code: "font-mono text-[0.78rem] px-[0.35rem] py-[0.1rem] rounded-md border border-line bg-surface-soft text-market",
+  badgeOk: "inline-block px-[0.55rem] py-[0.15rem] rounded-full border border-ok/[.35] bg-ok/[.10] text-market text-[0.78rem] font-bold",
+  badgeWarn: "inline-block px-[0.55rem] py-[0.15rem] rounded-full border border-warn/[.35] bg-warn/[.10] text-market text-[0.78rem] font-bold",
+  h3: "m-0 mb-[0.35rem] font-head text-[1.05rem]",
+  help: "m-0 mb-4 text-ink-muted text-[0.88rem] leading-[1.55]",
+  field: "flex flex-col gap-[0.35rem] mb-[0.85rem]",
+  label: "text-[0.82rem] font-bold text-ink-muted",
+  alertErr: "mt-3 bg-err/[.12] border border-err/[.30] rounded-lg px-[0.85rem] py-[0.65rem] text-achiote text-[0.85rem]",
+  alertOk: "mt-3 bg-ok/[.12] border border-ok/[.35] rounded-lg px-[0.85rem] py-3 text-market text-[0.85rem]",
+  overlay: "fixed inset-0 bg-black/65 backdrop-blur-[4px] flex items-center justify-center z-[200] p-4",
+  modal: "bg-surface border border-line rounded-[14px] w-full shadow-warm overflow-hidden",
+  modalHeader: "flex items-center justify-between px-6 py-5 border-b border-line",
+  modalTitle: "font-head text-[1.1rem] font-bold text-ink m-0",
+  modalBody: "p-6 flex flex-col gap-4",
+  modalFooter: "flex justify-end gap-3 px-6 py-4 border-t border-line",
+  toast: "fixed bottom-8 right-8 px-5 py-[0.85rem] rounded-control border text-[0.88rem] font-medium z-[300] backdrop-blur-[8px] shadow-warm",
+  pill: "inline-block px-[0.55rem] py-[0.15rem] rounded-full border text-[0.78rem] font-extrabold tracking-[0.04em]",
 };
