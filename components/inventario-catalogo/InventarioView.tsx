@@ -764,8 +764,8 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
                       <td style={{ ...s.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{Number(b.stock_total).toLocaleString("es-GT", { maximumFractionDigits: 3 })}</td>
                       <td style={{ ...s.td, textAlign: "center" }}>
                         <div style={{ display: "flex", gap: "0.4rem", justifyContent: "center" }}>
-                          <button type="button" onClick={() => abrirEditarBodega(b)} style={s.btnEdit} title="Editar">✏️</button>
-                          <button type="button" onClick={() => setConfirmDeleteBodega(b.id_bodega)} style={s.btnDel} title="Eliminar">🗑️</button>
+                          <button type="button" onClick={() => abrirEditarBodega(b)} style={s.btnEdit} title="Editar"><Icon name="pencil" /></button>
+                          <button type="button" onClick={() => setConfirmDeleteBodega(b.id_bodega)} style={s.btnDel} title="Eliminar"><Icon name="trash" /></button>
                         </div>
                       </td>
                     </tr>
