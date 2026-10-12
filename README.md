@@ -322,7 +322,7 @@ En bases nuevas la tabla `codigo_recuperacion` ya viene en `init/01_schema.sql`.
 
 | Capa | Tecnología |
 |---|---|
-| Frontend + Backend | Next.js 14 (App Router) |
+| Frontend + Backend | Next.js 15.5 (App Router) |
 | Base de datos | PostgreSQL 16 |
 | Autenticación | JWT (jsonwebtoken + bcryptjs) + 2FA por correo + revocación de sesiones |
 | ORM / Queries | pg (node-postgres) |
@@ -455,22 +455,32 @@ HTTP de páginas protegidas y rutas `/api/*`; los handlers loguean el desenlace
 
 ## 👥 Roles y módulos
 
-El sistema diferencia dos roles con permisos distintos:
+El sistema diferencia **tres** roles con permisos distintos:
 
-| Módulo | Ruta | Dueño | Colaborador |
-|---|---|---|---|
-| Dashboard (KPIs) | `/dashboard` | ✅ | ✅ |
-| Ventas | `/ventas` | — | ✅ |
-| Inventario / bodegas / kardex | `/inventario` | ✅ | — |
-| Catálogo de productos | `/catalogo` | ✅ | — |
-| Productos (maestro) | `/productos` | ✅ | — |
-| Facturación | `/facturacion` | ✅ | ✅ |
-| Reportes / Estadísticas | `/reportes` | ✅ | ✅ |
-| Órdenes de compra | `/ordenes` | ✅ | ✅ |
-| Historial de ventas | `/historial-ventas` | ✅ | — |
-| Deudas | `/deudas` | ✅ | — |
-| Proveedores | `/proveedores` | ✅ | — |
-| Usuarios | `/usuarios` | ✅ | — |
+| Módulo | Ruta | Dueño | Colaborador | Bodeguero |
+|---|---|:---:|:---:|:---:|
+| Dashboard (KPIs) | `/dashboard` | ✅ | ✅ | — |
+| Ventas | `/ventas` | ✅ | ✅ | — |
+| Inventario / bodegas / kardex | `/inventario` | ✅ | — | — |
+| Pedidos y movimientos de su bodega | `/bodega` | ✅ | — | ✅ |
+| Catálogo de productos | `/catalogo` | ✅ | — | — |
+| Productos (maestro) | `/productos` | ✅ | — | — |
+| Facturación | `/facturacion` | ✅ | ✅ | — |
+| Reportes / Estadísticas | `/reportes` | ✅ | ✅ | — |
+| Órdenes de compra | `/ordenes` | ✅ | ✅ | — |
+| Historial de ventas | `/historial-ventas` | ✅ | — | — |
+| Deudas | `/deudas` | ✅ | — | — |
+| Proveedores | `/proveedores` | ✅ | — | — |
+| Usuarios | `/usuarios` | ✅ | — | — |
+| Bitácora de acceso | `/usuarios` (panel) | ✅ | — | — |
+| Mi cuenta (cambiar contraseña, sesiones) | `/mi-cuenta` | ✅ | ✅ | ✅ |
+
+> **Nota sobre `/ventas`:** el menú lateral muestra el enlace de ventas al
+> colaborador; el dueño accede a la vista desde el dashboard. El RNF 8.3 pide
+> restringir el **acceso financiero** (facturación, deudas, reportes) al dueño:
+> esa restricción hoy se aplica en la interfaz, pero la API todavía acepta un
+> token de colaborador en varias de esas rutas. Es el pendiente de seguridad
+> más abierto del proyecto.
 
 ---
 
@@ -480,7 +490,7 @@ El sistema diferencia dos roles con permisos distintos:
 - [x] Login con JWT y sesión persistente en cookie HttpOnly
 - [x] **2FA** por código de correo para colaboradores
 - [x] Rate-limit de intentos de login (tabla compartida en Postgres)
-- [x] Middleware Edge con verificación de firma del token (Web Crypto API)
+- [x] Middleware en runtime Node.js con verificación de firma del token (`jsonwebtoken`) y revalidación de sesión contra la BD
 
 ### Inventario y catálogo
 - [x] Productos: alta, edición, baja y precios (unitario / mayoreo)
@@ -832,7 +842,7 @@ Se puede correr a mano desde la pestaña **Actions → Monitoreo de Disponibilid
 - Las contraseñas en `init/01_schema.sql` son hashes bcrypt solo para desarrollo
 - El `JWT_SECRET` en `.env` debe cambiarse en producción
 - El `middleware` corre en **Node.js runtime** (Next.js ≥ 15.5). Si algún día se
-  baja de versión, habría que volver a Web Crypto / Edge.
+  baja de versión, habría que revisar la validación de sesión de `lib/sesion.ts`.
 - El schema está consolidado en un **solo archivo** (`init/01_schema.sql`): tablas,
   secuencias, vista, índices y datos de prueba. Para desplegar a un servidor nuevo
   basta con ejecutarlo una sola vez sobre una base vacía.
