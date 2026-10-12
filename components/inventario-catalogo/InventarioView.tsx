@@ -924,8 +924,8 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
               ...s.modal,
               maxWidth: 480,
               width: "90%",
-              backgroundColor: "#ffffff", // Fondo blanco opaco
-              color: "#1a1a1a",           // Texto oscuro
+              backgroundColor: "var(--surface)", // Fondo blanco opaco
+              color: "var(--text)",           // Texto oscuro
               borderRadius: "12px",
               boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.3)",
               display: "flex",
@@ -934,28 +934,28 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
             }}
           >
             <div style={{ ...s.modalHeader, padding: "1.25rem 1.5rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <h2 style={{ ...s.modalTitle, margin: 0, color: "#1a1a1a" }}>
+              <h2 style={{ ...s.modalTitle, margin: 0, color: "var(--text)" }}>
                 {editandoBodega ? "Editar bodega" : "Nueva bodega"}
               </h2>
               <button 
                 type="button" 
                 onClick={cerrarModalBodega} 
-                style={{ ...s.closeBtn, color: "#1a1a1a", background: "transparent", border: "none", cursor: "pointer" }}
+                style={{ ...s.closeBtn, color: "var(--text)", background: "transparent", border: "none", cursor: "pointer" }}
               >
                 ✕
               </button>
             </div>
             <div style={{ ...s.modalBody, padding: "0 1.5rem 1.5rem" }}>
               <div style={{ ...s.field, marginBottom: "1rem" }}>
-                <label style={{ ...s.label, color: "#1a1a1a", fontWeight: 600, display: "block", marginBottom: "0.25rem" }}>
+                <label style={{ ...s.label, color: "var(--text)", fontWeight: 600, display: "block", marginBottom: "0.25rem" }}>
                   Nombre *
                 </label>
                 <input
                   style={{
                     ...s.inputModal,
-                    backgroundColor: "#f4f4f5",
-                    color: "#1a1a1a",
-                    border: "1px solid #e4e4e7",
+                    backgroundColor: "var(--surface2)",
+                    color: "var(--text)",
+                    border: "1px solid var(--border)",
                     width: "100%",
                   }}
                   value={bodegaForm.nombre_bodega}
@@ -965,15 +965,15 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
                 />
               </div>
               <div style={{ ...s.field, marginBottom: "1rem" }}>
-                <label style={{ ...s.label, color: "#1a1a1a", fontWeight: 600, display: "block", marginBottom: "0.25rem" }}>
+                <label style={{ ...s.label, color: "var(--text)", fontWeight: 600, display: "block", marginBottom: "0.25rem" }}>
                   Ubicación
                 </label>
                 <input
                   style={{
                     ...s.inputModal,
-                    backgroundColor: "#f4f4f5",
-                    color: "#1a1a1a",
-                    border: "1px solid #e4e4e7",
+                    backgroundColor: "var(--surface2)",
+                    color: "var(--text)",
+                    border: "1px solid var(--border)",
                     width: "100%",
                   }}
                   value={bodegaForm.ubicacion}
@@ -987,7 +987,7 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
                 </p>
               )}
             </div>
-            <div style={{ ...s.modalFooter, padding: "1rem 1.5rem", display: "flex", justifyContent: "flex-end", gap: "0.75rem", borderTop: "1px solid #e4e4e7" }}>
+            <div style={{ ...s.modalFooter, padding: "1rem 1.5rem", display: "flex", justifyContent: "flex-end", gap: "0.75rem", borderTop: "1px solid var(--border)" }}>
               <button type="button" onClick={cerrarModalBodega} style={s.btnSecondary} disabled={savingBodega}>
                 Cancelar
               </button>
@@ -1044,7 +1044,7 @@ const s: Record<string, CSSProperties> = {
   checkRow: { display: "flex", flexDirection: "row", alignItems: "center", gap: "1.25rem", flexWrap: "nowrap" },
   searchInput: { flex: "1 1 240px", minWidth: 200, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "0.55rem 0.75rem", color: "var(--text)", fontSize: "0.9rem", outline: "none" },
   check: { display: "flex", alignItems: "center", gap: "0.45rem", color: "var(--muted)", fontSize: "0.85rem", userSelect: "none", cursor: "pointer", whiteSpace: "nowrap" } as CSSProperties,
-  btnPrimary: { background: "var(--accent)", color: "#eff5ff", border: "none", borderRadius: 10, padding: "0.65rem 0.9rem", fontWeight: 700, cursor: "pointer", fontSize: "0.88rem", whiteSpace: "nowrap" } as CSSProperties,
+  btnPrimary: { background: "var(--accent)", color: "var(--info-bg)", border: "none", borderRadius: 10, padding: "0.65rem 0.9rem", fontWeight: 700, cursor: "pointer", fontSize: "0.88rem", whiteSpace: "nowrap" } as CSSProperties,
   btnSecondary: { background: "transparent", color: "var(--muted)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "0.6rem 1.2rem", fontSize: "0.88rem", cursor: "pointer" },
   btnEdit: { background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "0.3rem 0.5rem", cursor: "pointer", fontSize: "0.85rem" },
   btnDel: { background: "rgba(248,81,73,.1)", border: "1px solid rgba(248,81,73,.25)", borderRadius: 6, padding: "0.3rem 0.5rem", cursor: "pointer", fontSize: "0.85rem" },

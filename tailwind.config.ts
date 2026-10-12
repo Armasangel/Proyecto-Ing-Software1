@@ -55,6 +55,36 @@ const config: Config = {
           active: "rgba(76, 154, 42, 0.22)",
           border: "rgba(181, 172, 154, 0.16)",
         },
+        // Superficie y borde — mapean a las variables CSS que ya usaban los
+        // estilos en línea (var(--surface), var(--surface2), var(--border)),
+        // para poder escribirlos como clases (bg-surface, bg-surface-soft,
+        // border-line) sin cambiar el color.
+        surface: {
+          DEFAULT: "var(--surface)",
+          soft: "var(--surface2)",
+        },
+        line: "var(--border)",
+        // Estados (DEV-192) — centralizan los hex que estaban hardcodeados.
+        success: {
+          DEFAULT: "var(--success)",
+          strong: "var(--success-strong)",
+          light: "var(--success-light)",
+        },
+        danger: {
+          DEFAULT: "var(--danger)",
+          strong: "var(--danger-strong)",
+        },
+        info: {
+          DEFAULT: "var(--info)",
+          soft: "var(--info-bg)",
+        },
+        // Estados con opacidad variable (badges/alertas/toast de inventario).
+        // Definidos como canales RGB para soportar el modificador de opacidad
+        // de Tailwind (bg-ok/[.12], border-err/[.30], text-warn, …).
+        ok: "rgb(var(--feedback-ok) / <alpha-value>)",
+        err: "rgb(var(--feedback-err) / <alpha-value>)",
+        warn: "rgb(var(--feedback-warn) / <alpha-value>)",
+        "feedback-info": "rgb(var(--feedback-info) / <alpha-value>)",
       },
       fontFamily: {
         head: ["Syne", "sans-serif"],
