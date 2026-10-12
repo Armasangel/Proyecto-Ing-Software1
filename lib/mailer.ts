@@ -49,7 +49,7 @@ async function enviarOMostrar(
   if (codigo) {
     log.warn(
       { destinatario, proposito, codigo },
-      "CÓDIGO DE DESARROLLO (Gmail no configurado o envío fallido): usá este valor en la pantalla"
+      "CÓDIGO DE DESARROLLO (correo no configurado o envío fallido): usa este valor en la pantalla"
     );
   }
 
@@ -190,13 +190,13 @@ export async function enviarCodigoRecuperacion(destinatario: string, codigo: str
     from: `"Tienda San Miguel" <${remitente}>`,
     to: destinatario,
     subject: "Código para recuperar tu contraseña",
-    text: `Tu código para recuperar la contraseña es: ${codigo}\n\nExpira en 5 minutos. Si no lo pediste vos, ignorá este correo.`,
+    text: `Tu código para recuperar la contraseña es: ${codigo}\n\nExpira en 5 minutos. Si no lo pediste tú, ignora este correo.`,
     html: `
       <div style="font-family: sans-serif; max-width: 420px; margin: auto;">
         <h2 style="margin-bottom: 0.5rem;">Tienda San Miguel</h2>
         <p>Tu código para recuperar la contraseña es:</p>
         <p style="font-size: 2rem; font-weight: 700; letter-spacing: 0.3em; margin: 1rem 0;">${codigo}</p>
-        <p style="color: #666; font-size: 0.85rem;">Expira en 5 minutos. Si no lo pediste vos, ignorá este correo.</p>
+        <p style="color: #666; font-size: 0.85rem;">Expira en 5 minutos. Si no lo pediste tú, ignora este correo.</p>
       </div>
     `,
     });
@@ -223,9 +223,9 @@ export async function enviarAvisoBloqueoCuenta(
       `quedó bloqueada de forma temporal.\n\n` +
       `Dirección desde la que se intentó: ${ip}\n\n` +
       `Si fuiste vos, esperá a que expire el bloqueo e intentá de nuevo. ` +
-      `Si no fuiste vos, cambiá tu contraseña desde "¿Olvidaste tu contraseña?" ` +
+      `Si no fuiste tú, cambia tu contraseña desde "¿Olvidaste tu contraseña?" ` +
       `en cuanto recuperes el acceso.\n\n` +
-      `Si no reconocés ningún acceso, avisanos por teléfono a la tienda.`,
+      `Si no reconoces ningún acceso, avísanos por teléfono a la tienda.`,
     html: `
       <div style="font-family: sans-serif; max-width: 480px; margin: auto;">
         <h2 style="margin-bottom: 0.5rem;">Tienda San Miguel</h2>
@@ -234,8 +234,8 @@ export async function enviarAvisoBloqueoCuenta(
         cuenta, así que quedó bloqueada de forma temporal.</p>
         <p>Dirección desde la que se intentó: <code>${ip}</code></p>
         <p>Si fuiste vos, esperá a que expire el bloqueo e intentá de nuevo. Si no fuiste vos,
-        cambiá tu contraseña desde <em>¿Olvidaste tu contraseña?</em> en cuanto recuperes el acceso.</p>
-        <p style="color:#666; font-size: 0.85rem;">Si no reconocés ningún acceso, avisanos por teléfono a la tienda.</p>
+        cambia tu contraseña desde <em>¿Olvidaste tu contraseña?</em> en cuanto recuperes el acceso.</p>
+        <p style="color:#666; font-size: 0.85rem;">Si no reconoces ningún acceso, avísanos por teléfono a la tienda.</p>
       </div>
     `,
     });

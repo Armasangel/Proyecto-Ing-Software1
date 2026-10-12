@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
     // sesiones del propio dueño está el endpoint de /mi-cuenta.
     if (idObjetivo === usuario.id_usuario) {
       return validationError(
-        "Para cerrar tus propias sesiones usá tu página de cuenta (/mi-cuenta)"
+        "Para cerrar tus propias sesiones usa tu página de cuenta (/mi-cuenta)"
       );
     }
 

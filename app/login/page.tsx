@@ -176,7 +176,7 @@ export default function LoginPage() {
 
           <div className="mb-8">
             <h2 className="font-head text-[1.8rem] font-bold text-ink mb-1.5">
-              {paso === "credenciales" ? "Bienvenido de vuelta" : "Verificá tu identidad"}
+              {paso === "credenciales" ? "Bienvenido de vuelta" : "Verifica tu identidad"}
             </h2>
             <p className="text-ink-muted text-[0.9rem] m-0">
               {paso === "credenciales"
