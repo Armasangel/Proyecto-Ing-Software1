@@ -32,7 +32,7 @@ const NAV: NavItem[] = [
   { href: "/reportes",         label: "Reportes",        icon: "report"        },
   { href: "/proveedores",      label: "Proveedores",     icon: "hand-truck"    },
   { href: "/historial-ventas", label: "Historial ventas",icon: "distribution"  },
-  { href: "/deudas",           label: "Deudas",          icon: "debt"     },
+  { href: "/cuentas-por-cobrar",           label: "Cuentas por cobrar",          icon: "debt"     },
   { href: "/usuarios",         label: "Usuarios",        icon: "owner"         },
 ];
 
@@ -87,7 +87,7 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
   const navVisible = NAV.filter((item) => {
     if (item.href === "/ventas") return isColaboradorTipo(usuario.tipo_usuario);
     if (
-      ["/inventario", "/historial-ventas", "/proveedores", "/deudas", "/usuarios"].includes(
+      ["/inventario", "/historial-ventas", "/proveedores", "/cuentas-por-cobrar", "/usuarios"].includes(
         item.href
       )
     ) {

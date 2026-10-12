@@ -9,7 +9,7 @@ jest.mock("next/navigation", () => ({
 }));
 
 import { useRouter, usePathname } from "next/navigation";
-import DeudasPage from "@/app/deudas/page";
+import CuentasPorCobrarPage from "@/app/cuentas-por-cobrar/page";
 
 const server = setupServer();
 
@@ -65,16 +65,16 @@ function setupServerDeudas(deudas: unknown[]) {
   );
 }
 
-describe("DeudasPage", () => {
+describe("CuentasPorCobrarPage", () => {
   beforeEach(() => {
     (useRouter as jest.Mock).mockReturnValue({ replace: mockReplace });
-    (usePathname as jest.Mock).mockReturnValue("/deudas");
+    (usePathname as jest.Mock).mockReturnValue("/cuentas-por-cobrar");
   });
 
   it("shows the percentage of the debt covered as a number + progress bar", async () => {
     setupServerDeudas([deudaBase()]);
     const user = userEvent.setup();
-    render(<DeudasPage />);
+    render(<CuentasPorCobrarPage />);
 
     // Navegación principal en la vista por defecto (Acumulado por cliente).
     await user.click(await screen.findByRole("button", { name: "Detalle" }));
@@ -88,7 +88,7 @@ describe("DeudasPage", () => {
   it("shows 'Cubierto al 100%' for a fully paid debt", async () => {
     setupServerDeudas([deudaBase({ estado_deuda: "PAGADA", total_pagado: "100.00", saldo_pendiente: "0.00", porcentaje_cubierto: "100" })]);
     const user = userEvent.setup();
-    render(<DeudasPage />);
+    render(<CuentasPorCobrarPage />);
 
     await user.click(await screen.findByRole("button", { name: "Detalle" }));
     expect(await screen.findByText("Cubierto al 100%")).toBeInTheDocument();
@@ -97,7 +97,7 @@ describe("DeudasPage", () => {
   it("opens the payment form and cancels without registering anything", async () => {
     setupServerDeudas([deudaBase()]);
     const user = userEvent.setup();
-    render(<DeudasPage />);
+    render(<CuentasPorCobrarPage />);
 
     await user.click(await screen.findByRole("button", { name: "Detalle" }));
     await user.click(await screen.findByRole("button", { name: "Registrar pago" }));
@@ -134,7 +134,7 @@ describe("DeudasPage", () => {
     );
 
     const user = userEvent.setup();
-    render(<DeudasPage />);
+    render(<CuentasPorCobrarPage />);
 
     await user.click(await screen.findByRole("button", { name: "Detalle" }));
     await user.click(await screen.findByRole("button", { name: "Registrar pago" }));
@@ -169,7 +169,7 @@ describe("DeudasPage", () => {
     );
 
     const user = userEvent.setup();
-    render(<DeudasPage />);
+    render(<CuentasPorCobrarPage />);
 
     await user.click(await screen.findByRole("button", { name: "Notificaciones" }));
     expect(await screen.findByText(/Envío automático desactivado/)).toBeInTheDocument();
@@ -207,7 +207,7 @@ describe("DeudasPage", () => {
     );
 
     const user = userEvent.setup();
-    render(<DeudasPage />);
+    render(<CuentasPorCobrarPage />);
 
     await user.click(await screen.findByRole("button", { name: "Detalle" }));
     await user.click(await screen.findByRole("button", { name: "Registrar pago" }));
@@ -216,5 +216,78 @@ describe("DeudasPage", () => {
     await user.click(screen.getByRole("button", { name: "Guardar pago" }));
 
     expect(await screen.findByText("El pago es mayor al saldo pendiente.")).toBeInTheDocument();
+  });
+});
+
+describe("CuentasPorCobrarPage — crédito desde Ventas", () => {
+  beforeEach(() => {
+    (useRouter as jest.Mock).mockReturnValue({ replace: mockReplace });
+    (usePathname as jest.Mock).mockReturnValue("/cuentas-por-cobrar");
+  });
+
+  const deudaCredito = () =>
+    deudaBase({
+      id_venta: 12,
+      numero_factura: "FACT-000042",
+      plazo_dias: 30,
+      numero_cuotas: 2,
+      fecha_limite_pago: "2026-11-10",
+      total_pagado: "70.00",
+      saldo_pendiente: "30.00",
+      porcentaje_cubierto: "70",
+      cuotas: [
+        { numero: 1, fecha_vencimiento: "2026-10-26", monto: 50, pagado: 50, saldo: 0, estado: "PAGADA" },
+        { numero: 2, fecha_vencimiento: "2026-11-10", monto: 50, pagado: 20, saldo: 30, estado: "PARCIAL" },
+      ],
+    });
+
+  it("is named Cuentas por cobrar and points to Ventas to register credit sales", async () => {
+    setupServerDeudas([]);
+    render(<CuentasPorCobrarPage />);
+    expect(await screen.findByRole("link", { name: "Registrar venta a crédito" })).toHaveAttribute("href", "/ventas");
+    expect(screen.getAllByText("Cuentas por cobrar").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Límites de crédito" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "+ Saldo anterior (sin venta)" })).toBeInTheDocument();
+  });
+
+  it("shows the invoice, the plazo and the payment plan with the state of each cuota", async () => {
+    setupServerDeudas([deudaCredito()]);
+    const user = userEvent.setup();
+    render(<CuentasPorCobrarPage />);
+
+    await user.click(await screen.findByRole("button", { name: "Detalle" }));
+    expect(await screen.findByText(/Factura FACT-000042 · Crédito a 30 días · 2 pagos/)).toBeInTheDocument();
+
+    const plan = screen.getByRole("table", { name: "Plan de pagos de la cuenta 1" });
+    expect(plan).toHaveTextContent("26/10/2026");
+    expect(plan).toHaveTextContent("10/11/2026");
+    expect(plan).toHaveTextContent("Pagada");
+    expect(plan).toHaveTextContent("Pago parcial");
+  });
+
+  it("marks overdue cuotas and does not show a plan for accounts without sale", async () => {
+    setupServerDeudas([
+      deudaBase({
+        id_deuda: 2,
+        id_venta: 13,
+        plazo_dias: 30,
+        numero_cuotas: 1,
+        cuotas: [{ numero: 1, fecha_vencimiento: "2026-01-10", monto: 100, pagado: 0, saldo: 100, estado: "VENCIDA" }],
+      }),
+    ]);
+    const user = userEvent.setup();
+    render(<CuentasPorCobrarPage />);
+    await user.click(await screen.findByRole("button", { name: "Detalle" }));
+    expect(await screen.findByText("Vencida")).toBeInTheDocument();
+    expect(screen.getByText(/Crédito a 30 días · pago único/)).toBeInTheDocument();
+  });
+
+  it("accounts without a plan (saldo anterior) show no plan table", async () => {
+    setupServerDeudas([deudaBase()]);
+    const user = userEvent.setup();
+    render(<CuentasPorCobrarPage />);
+    await user.click(await screen.findByRole("button", { name: "Detalle" }));
+    await screen.findByText("pendiente · 25%");
+    expect(screen.queryByRole("table", { name: /Plan de pagos/ })).not.toBeInTheDocument();
   });
 });

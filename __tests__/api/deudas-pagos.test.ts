@@ -119,7 +119,7 @@ describe("POST /api/deudas/:id/pagos", () => {
     expect(res.status).toBe(400);
   });
 
-  it("returns 400 when the deuda does not exist", async () => {
+  it("returns 400 when the cuenta por cobrar does not exist", async () => {
     const client = makeClient();
     client.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // BEGIN
     client.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // SELECT deuda
@@ -132,7 +132,7 @@ describe("POST /api/deudas/:id/pagos", () => {
     expect(client.release).toHaveBeenCalled();
   });
 
-  it("returns 400 when the deuda is already PAGADA", async () => {
+  it("returns 400 when the cuenta por cobrar is already PAGADA", async () => {
     const client = makeClient();
     client.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // BEGIN
     client.query.mockResolvedValueOnce({
@@ -175,7 +175,7 @@ describe("POST /api/deudas/:id/pagos", () => {
     expect(res.status).toBe(201);
   });
 
-  it("marks the deuda as PAGADA when the payment covers the full balance", async () => {
+  it("marks the cuenta por cobrar as PAGADA when the payment covers the full balance", async () => {
     const client = makeClient();
     client.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // BEGIN
     client.query.mockResolvedValueOnce({ rows: [deudaPendiente], rowCount: 1 });
@@ -224,7 +224,7 @@ describe("POST /api/deudas/:id/pagos", () => {
     });
   });
 
-  it("does not recalculate anything when the deuda has no linked cliente", async () => {
+  it("does not recalculate anything when the cuenta por cobrar has no linked cliente", async () => {
     const client = makeClient();
     client.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // BEGIN
     client.query.mockResolvedValueOnce({

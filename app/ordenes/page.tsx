@@ -269,7 +269,7 @@ export default function OrdenesPage() {
     const limiteInicial =
       formCliente.limite_deuda.trim() === "" ? null : Number(formCliente.limite_deuda);
     if (limiteInicial !== null && (!Number.isFinite(limiteInicial) || limiteInicial < 0)) {
-      setError("El límite de deuda debe ser un número mayor o igual a 0");
+      setError("El límite de crédito debe ser un número mayor o igual a 0");
       return null;
     }
 
@@ -573,7 +573,7 @@ export default function OrdenesPage() {
                     </select>
                   </div>
                   <div style={{ ...field, marginBottom: "0.5rem", maxWidth: 220 }}>
-                    <label style={label}>Limite de deuda</label>
+                    <label style={label}>Límite de crédito</label>
                     <input
                       type="number"
                       min={0}
@@ -585,7 +585,7 @@ export default function OrdenesPage() {
                     />
                   </div>
                   <p style={{ fontSize: "0.75rem", color: "var(--muted)", marginTop: -4, marginBottom: "0.5rem" }}>
-                    Por defecto queda con un limite de Q{LIMITE_DEUDA_DEFECTO} — puedes cambiarlo aqui o despues desde Deudas.
+                    Por defecto queda con un limite de Q{LIMITE_DEUDA_DEFECTO} — puedes cambiarlo aqui o despues desde Cuentas por cobrar.
                   </p>
                   <div style={{ display: "flex", gap: 8 }}>
                     <button

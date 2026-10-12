@@ -160,7 +160,7 @@ export async function POST(request: NextRequest) {
       if (existeCliente.rows[0].estado_cliente !== true) {
         await client.query("ROLLBACK");
         return NextResponse.json(
-          { error: "Este cliente está bloqueado (superó su límite de deuda) y no puede hacer pedidos" },
+          { error: "Este cliente está bloqueado (superó su límite de crédito) y no puede hacer pedidos" },
           { status: 400 }
         );
       }

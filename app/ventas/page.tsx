@@ -7,6 +7,8 @@ import { useStaffSession } from "@/hooks/useStaffSession";
 import { TIPOS_USUARIO } from "@/lib/roles";
 import { Icon } from "@/components/Icon";
 import { ProductoAutocompletar } from "@/components/ProductoAutocompletar";
+import Link from "next/link";
+import { CUOTAS_MAXIMAS, PLAZO_MAXIMO_DIAS, generarCuotas, sumarDias, validarCondicionesCredito } from "@/lib/credito";
 
 type Cliente = {
   id_cliente: number;
@@ -65,18 +67,30 @@ type VentaListada = {
   direccion_entrega: string | null;
   total: string;
   fecha_limite_pago: string | null;
+  condicion_pago?: string;
   nombre_cliente: string;
   correo_cliente: string;
   nombre_colaborador: string | null;
   productos: ProductoVentaRow[];
 };
 
-const ESTADOS = [
-  { value: "PAGADO", label: "Pagado" },
-  { value: "PENDIENTE", label: "Pendiente" },
-  { value: "CONFIRMADO", label: "Confirmado" },
-  { value: "ENTREGADO", label: "Entregado" },
-] as const;
+// Forma de pago de la venta: de contado se paga completa en el momento; a
+// crédito se genera la factura y una cuenta por cobrar con su plan de pagos.
+type CondicionPago = "CONTADO" | "CREDITO";
+
+const OPCIONES_PAGOS = [1, 2, 3, 4, 6, 12] as const;
+const PLAZOS_RAPIDOS = [15, 30, 45, 60] as const;
+
+// Fecha local (no UTC) en formato AAAA-MM-DD, para no adelantar el día de noche.
+function hoyLocalISO(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function formatoFecha(iso: string): string {
+  const [y, m, d] = iso.split("-");
+  return `${d}/${m}/${y}`;
+}
 
 const inputCls =
   "w-full px-3 py-2.5 rounded-control border border-[var(--border)] bg-cream/60 text-ink text-[0.95rem] outline-none focus:ring-2 focus:ring-market/40 transition-shadow";
@@ -137,7 +151,13 @@ export default function VentasPage() {
   const [errorCliente, setErrorCliente] = useState<string | null>(null);
   // Confirmación visible bajo el buscador (okMsg solo se muestra tras una venta).
   const [avisoCliente, setAvisoCliente] = useState<string | null>(null);
-  const [estadoPago, setEstadoPago] = useState<string>("PAGADO");
+  const [condicionPago, setCondicionPago] = useState<CondicionPago>("CONTADO");
+  // Crédito: la factura lleva por defecto la fecha de hoy; se puede forzar otra.
+  const [otraFechaFactura, setOtraFechaFactura] = useState(false);
+  const [fechaFactura, setFechaFactura] = useState("");
+  const [plazoDias, setPlazoDias] = useState("30");
+  const [numeroCuotas, setNumeroCuotas] = useState("1");
+  const [creditoGenerado, setCreditoGenerado] = useState<{ numero_factura: string; fecha_limite_pago: string; bloqueado: boolean } | null>(null);
   const [tipoVenta, setTipoVenta] = useState<string>("MINORISTA");
   // El tipo de venta ya no lo escoge el colaborador a mano: se detecta solo
   // según el tipo_cliente que ya tiene guardado el cliente elegido. Este
@@ -146,7 +166,6 @@ export default function VentasPage() {
   const [forzarTipoVenta, setForzarTipoVenta] = useState(false);
   const [tipoEntrega, setTipoEntrega] = useState<string>("EN_TIENDA");
   const [direccionEntrega, setDireccionEntrega] = useState("");
-  const [fechaLimitePago, setFechaLimitePago] = useState("");
   const [lineas, setLineas] = useState<LineaVenta[]>([nuevaLinea()]);
 
   const cargarVentas = useCallback(async () => {
@@ -267,6 +286,22 @@ export default function VentasPage() {
     return Math.round(t * 100) / 100;
   }, [lineas]);
 
+  // ── Crédito: fecha efectiva de la factura y vista previa del plan de pagos ──
+  const fechaFacturaEfectiva = otraFechaFactura && fechaFactura ? fechaFactura : hoyLocalISO();
+  const errorCredito = useMemo(() => {
+    if (condicionPago !== "CREDITO") return null;
+    if (otraFechaFactura && !fechaFactura) return "Elige la fecha de la factura";
+    return validarCondicionesCredito(Number(plazoDias), Number(numeroCuotas));
+  }, [condicionPago, otraFechaFactura, fechaFactura, plazoDias, numeroCuotas]);
+  const planCuotas = useMemo(() => {
+    if (condicionPago !== "CREDITO" || errorCredito || totalBorrador <= 0) return [];
+    try {
+      return generarCuotas(fechaFacturaEfectiva, Number(plazoDias), Number(numeroCuotas), totalBorrador);
+    } catch {
+      return [];
+    }
+  }, [condicionPago, errorCredito, totalBorrador, fechaFacturaEfectiva, plazoDias, numeroCuotas]);
+
   if (!usuario) return <p className="p-8 text-ink-muted">Cargando…</p>;
   if (usuario.tipo_usuario !== TIPOS_USUARIO.EMPLEADO) return <p className="p-8 text-ink-muted">Redirigiendo…</p>;
 
@@ -337,7 +372,7 @@ export default function VentasPage() {
     }
     const limite = formCliente.limite_deuda.trim() === "" ? null : Number(formCliente.limite_deuda);
     if (limite !== null && (!Number.isFinite(limite) || limite < 0)) {
-      setErrorCliente("El límite de deuda debe ser un número mayor o igual a 0");
+      setErrorCliente("El límite de crédito debe ser un número mayor o igual a 0");
       return;
     }
 
@@ -410,15 +445,34 @@ export default function VentasPage() {
         .map((ln) => ({ id_producto: Number(ln.id_producto), id_bodega: Number(ln.id_bodega), cantidad: Number(ln.cantidad), precio_unitario_venta: Number(ln.precio_unitario_venta) }));
       const res = await fetch("/api/ventas", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id_cliente: Number(idCliente), estado_pago: estadoPago, tipo_venta: tipoVenta, forzar_tipo_venta: forzarTipoVenta, tipo_entrega: tipoEntrega, direccion_entrega: tipoEntrega === "DOMICILIO" ? direccionEntrega.trim() : undefined, fecha_limite_pago: fechaLimitePago || undefined, lineas: lineasPayload }),
+        body: JSON.stringify({
+          id_cliente: Number(idCliente),
+          condicion_pago: condicionPago,
+          credito: condicionPago === "CREDITO"
+            ? { fecha_factura: fechaFacturaEfectiva, plazo_dias: Number(plazoDias), numero_cuotas: Number(numeroCuotas) }
+            : undefined,
+          tipo_venta: tipoVenta, forzar_tipo_venta: forzarTipoVenta, tipo_entrega: tipoEntrega,
+          direccion_entrega: tipoEntrega === "DOMICILIO" ? direccionEntrega.trim() : undefined,
+          lineas: lineasPayload,
+        }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error || "No se pudo registrar la venta"); return; }
-      setOkMsg(`Venta #${data.id_venta} registrada. Total: Q${Number(data.total).toFixed(2)}`);
+      if (data.credito) {
+        setOkMsg(`Venta #${data.id_venta} a crédito registrada. Total: Q${Number(data.total).toFixed(2)} · Factura ${data.credito.numero_factura}`);
+        setCreditoGenerado({
+          numero_factura: data.credito.numero_factura,
+          fecha_limite_pago: data.credito.fecha_limite_pago,
+          bloqueado: !!data.credito.alerta?.bloqueado,
+        });
+      } else {
+        setOkMsg(`Venta #${data.id_venta} registrada. Total: Q${Number(data.total).toFixed(2)}`);
+        setCreditoGenerado(null);
+      }
       setVentaDeshacer({ id: data.id_venta, total: Number(data.total) });
       setSegundosRestantes(VENTANA_DESHACER_SEGUNDOS);
-      setIdCliente(""); setBusquedaCliente(""); setEstadoPago("PAGADO"); setTipoVenta("MINORISTA"); setForzarTipoVenta(false); setTipoEntrega("EN_TIENDA");
-      setDireccionEntrega(""); setFechaLimitePago(""); setLineas([nuevaLinea()]);
+      setIdCliente(""); setBusquedaCliente(""); setCondicionPago("CONTADO"); setOtraFechaFactura(false); setFechaFactura(""); setPlazoDias("30"); setNumeroCuotas("1"); setTipoVenta("MINORISTA"); setForzarTipoVenta(false); setTipoEntrega("EN_TIENDA");
+      setDireccionEntrega(""); setLineas([nuevaLinea()]);
       await cargarVentas();
     } catch { setError("No se pudo conectar con el servidor"); }
     finally { setLoadingSubmit(false); setConfirmando(false); }
@@ -439,7 +493,7 @@ export default function VentasPage() {
     finally { setDeshaciendo(false); }
   }
 
-  const puedeEnviar = idCliente && lineas.some((ln) => ln.id_producto && ln.id_bodega && ln.cantidad && Number(ln.cantidad) > 0) && (tipoEntrega === "EN_TIENDA" || direccionEntrega.trim().length > 0);
+  const puedeEnviar = idCliente && lineas.some((ln) => ln.id_producto && ln.id_bodega && ln.cantidad && Number(ln.cantidad) > 0) && (tipoEntrega === "EN_TIENDA" || direccionEntrega.trim().length > 0) && (condicionPago === "CONTADO" || (!errorCredito && totalBorrador > 0));
 
   return (
     <StaffShell usuario={usuario} title="Ventas" subtitle="Registro de ventas y control de transacciones (colaborador)">
@@ -582,7 +636,7 @@ export default function VentasPage() {
                     </div>
                   </div>
                   <div className="flex flex-col gap-1.5">
-                    <label className={labelCls}>Límite de deuda (opcional)</label>
+                    <label className={labelCls}>Límite de crédito (opcional)</label>
                     <input
                       type="number"
                       min={0}
@@ -623,11 +677,32 @@ export default function VentasPage() {
 
             <div className="flex gap-4 flex-wrap">
               <div className="flex-1 min-w-[200px] flex flex-col gap-1.5">
-                <label className={labelCls}>Estado de pago *</label>
-                <select value={estadoPago} onChange={(e) => { setEstadoPago(e.target.value); setError(null); }} className={inputCls}>
-                  {ESTADOS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
-                <span className="text-[0.78rem] text-ink-muted">En base de datos: <code>estado_venta</code></span>
+                <label className={labelCls}>Forma de pago *</label>
+                <div className="flex gap-2" role="group" aria-label="Forma de pago">
+                  {([
+                    { v: "CONTADO", t: "Contado" },
+                    { v: "CREDITO", t: "Crédito" },
+                  ] as const).map((o) => (
+                    <button
+                      key={o.v}
+                      type="button"
+                      aria-pressed={condicionPago === o.v}
+                      onClick={() => { setCondicionPago(o.v); setError(null); }}
+                      className={`flex-1 px-3 py-2.5 rounded-control border text-[0.95rem] font-semibold transition-colors ${
+                        condicionPago === o.v
+                          ? "bg-market text-white border-market"
+                          : "bg-transparent text-ink-muted border-[var(--border)] hover:bg-cream"
+                      }`}
+                    >
+                      {o.t}
+                    </button>
+                  ))}
+                </div>
+                <span className="text-[0.78rem] text-ink-muted">
+                  {condicionPago === "CONTADO"
+                    ? "El cliente paga el total en este momento."
+                    : "Se genera la factura y una cuenta por cobrar."}
+                </span>
               </div>
               <div className="flex-1 min-w-[200px] flex flex-col gap-1.5">
                 <label className={labelCls}>Tipo de venta</label>
@@ -672,10 +747,93 @@ export default function VentasPage() {
               </div>
             )}
 
-            <div className="flex flex-col gap-1.5">
-              <label className={labelCls}>Fecha límite de pago (opcional)</label>
-              <input type="date" value={fechaLimitePago} onChange={(e) => setFechaLimitePago(e.target.value)} className={inputCls} />
-            </div>
+            {condicionPago === "CREDITO" && (
+              <div className="flex flex-col gap-3 p-4 border border-market/40 bg-market-50/50 rounded-control">
+                <div className="font-semibold text-[0.9rem] text-market-600">Condiciones del crédito</div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className={labelCls}>Fecha de la factura</label>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    {otraFechaFactura ? (
+                      <input
+                        type="date"
+                        value={fechaFactura}
+                        max={hoyLocalISO()}
+                        min={sumarDias(hoyLocalISO(), -365)}
+                        onChange={(e) => setFechaFactura(e.target.value)}
+                        className={`${inputCls} max-w-[200px]`}
+                        aria-label="Fecha de la factura"
+                      />
+                    ) : (
+                      <span className="text-[0.95rem] text-ink">Hoy, {formatoFecha(hoyLocalISO())}</span>
+                    )}
+                    <label className="flex items-center gap-2 text-[0.85rem] text-ink-muted">
+                      <input
+                        type="checkbox"
+                        checked={otraFechaFactura}
+                        onChange={(e) => { setOtraFechaFactura(e.target.checked); if (!e.target.checked) setFechaFactura(""); }}
+                      />
+                      Elegir otra fecha
+                    </label>
+                  </div>
+                </div>
+
+                <div className="flex gap-4 flex-wrap">
+                  <div className="flex-1 min-w-[200px] flex flex-col gap-1.5">
+                    <label className={labelCls}>Plazo para pagar (días)</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={PLAZO_MAXIMO_DIAS}
+                      value={plazoDias}
+                      onChange={(e) => setPlazoDias(e.target.value)}
+                      className={inputCls}
+                      aria-label="Plazo en días"
+                    />
+                    <div className="flex gap-1.5 flex-wrap">
+                      {PLAZOS_RAPIDOS.map((d) => (
+                        <button
+                          key={d}
+                          type="button"
+                          onClick={() => setPlazoDias(String(d))}
+                          className={`px-2.5 py-1 rounded-control border text-[0.78rem] font-semibold ${
+                            Number(plazoDias) === d ? "bg-market text-white border-market" : "border-[var(--border)] text-ink-muted hover:bg-cream"
+                          }`}
+                        >
+                          {d} días
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex-1 min-w-[200px] flex flex-col gap-1.5">
+                    <label className={labelCls}>Forma de pago del crédito</label>
+                    <select value={numeroCuotas} onChange={(e) => setNumeroCuotas(e.target.value)} className={inputCls} aria-label="Número de pagos">
+                      {OPCIONES_PAGOS.filter((n) => n <= CUOTAS_MAXIMAS).map((n) => (
+                        <option key={n} value={n}>{n === 1 ? "Pago único" : `${n} pagos`}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {errorCredito ? (
+                  <div className="text-[0.85rem] text-achiote-600 font-medium">{errorCredito}</div>
+                ) : planCuotas.length > 0 ? (
+                  <div className="flex flex-col gap-1" aria-label="Plan de pagos">
+                    <div className="text-[0.82rem] font-semibold text-ink-muted">Plan de pagos</div>
+                    {planCuotas.map((c) => (
+                      <div key={c.numero} className="flex justify-between text-[0.9rem] text-ink">
+                        <span>
+                          {planCuotas.length === 1 ? "Pago único" : `Pago ${c.numero}`} · vence {formatoFecha(c.fecha_vencimiento)}
+                        </span>
+                        <span className="font-semibold">Q{c.monto.toFixed(2)}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-[0.85rem] text-ink-muted">Agrega productos para ver el plan de pagos.</div>
+                )}
+              </div>
+            )}
 
             <div className="mt-2">
               <div className="font-semibold text-[0.9rem] mb-3 text-ink">Productos</div>
@@ -760,7 +918,20 @@ export default function VentasPage() {
           {okMsg && ventaDeshacer && (
             <div key={okMsg} className="mt-4 bg-market-50 border border-market/35 rounded-control px-4 py-3 text-market-600 font-medium flex items-center gap-3 flex-wrap animate-stamp">
               <span className="inline-flex w-5 h-5 rounded-full bg-market text-white items-center justify-center text-xs shrink-0">✓</span>
-              <span className="flex-1">{okMsg}</span>
+              <span className="flex-1">
+                {okMsg}
+                {creditoGenerado && (
+                  <>
+                    {" "}· vence {formatoFecha(creditoGenerado.fecha_limite_pago)}.{" "}
+                    <Link href="/cuentas-por-cobrar" className="underline font-semibold">Ver cuenta por cobrar</Link>
+                    {creditoGenerado.bloqueado && (
+                      <span className="block text-achiote-600 font-semibold mt-1">
+                        ⚠️ Este cliente alcanzó su límite de crédito y quedó bloqueado para nuevas compras.
+                      </span>
+                    )}
+                  </>
+                )}
+              </span>
               <button
                 type="button"
                 onClick={handleDeshacer}
@@ -788,6 +959,14 @@ export default function VentasPage() {
                 {clientes.find((c) => String(c.id_cliente) === idCliente)?.nombre ?? "Cliente"} ·{" "}
                 {lineas.filter((l) => l.id_producto).length} producto(s) · Total: Q{totalBorrador.toFixed(2)}
               </p>
+              {condicionPago === "CREDITO" ? (
+                <p className="text-ink text-[0.88rem] mb-4 bg-market-50 border border-market/30 rounded-control px-3 py-2">
+                  <strong>A crédito</strong> · factura del {formatoFecha(fechaFacturaEfectiva)} · plazo de {plazoDias} días ·{" "}
+                  {Number(numeroCuotas) === 1 ? "pago único" : `${numeroCuotas} pagos`}. Se generará la factura y una cuenta por cobrar.
+                </p>
+              ) : (
+                <p className="text-ink-muted text-[0.88rem] mb-4">De contado: el cliente paga el total ahora.</p>
+              )}
               <div className="flex gap-2 justify-end">
                 <button
                   type="button"
@@ -838,7 +1017,7 @@ export default function VentasPage() {
                         <div className="text-[0.78rem] text-ink-muted">{v.correo_cliente}</div>
                       </td>
                       <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">{v.nombre_colaborador ?? "—"}</td>
-                      <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">{v.estado_venta}</td>
+                      <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">{v.condicion_pago === "CREDITO" ? `Crédito · ${v.estado_venta}` : v.estado_venta}</td>
                       <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">{v.tipo_venta}</td>
                       <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)] text-right font-semibold">Q{Number(v.total).toFixed(2)}</td>
                       <td className="px-3.5 py-2.5 text-[0.82rem] border-b border-[var(--border)] max-w-[320px]">

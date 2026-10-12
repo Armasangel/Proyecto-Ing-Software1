@@ -4,6 +4,7 @@ import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { isStaffTipo, TIPOS_USUARIO } from "@/lib/roles";
 import { apiError, unauthorizedError, validationError } from "@/lib/api-error";
 import { recalcularBloqueoCliente, verificarLimiteAntesDeDeuda } from "@/lib/deuda-alertas";
+import { asignarPagosACuotas } from "@/lib/credito";
 import { getLogger } from "@/lib/logger";
 
 const log = getLogger("api/deudas");
@@ -36,6 +37,10 @@ export async function GET(req: NextRequest) {
         d.estado_deuda,
         d.fecha_creacion,
         d.id_cliente,
+        d.id_venta,
+        d.plazo_dias,
+        d.numero_cuotas,
+        fa.numero_factura,
         c.limite_deuda,
         c.estado_cliente AS cliente_puede_comprar,
         COALESCE(pg.total_pagado, 0) AS total_pagado,
@@ -56,8 +61,18 @@ export async function GET(req: NextRequest) {
           ) FILTER (WHERE dp.id_producto IS NOT NULL),
           '[]'
         ) AS productos,
-        COALESCE(pg.pagos, '[]') AS pagos
+        COALESCE(pg.pagos, '[]') AS pagos,
+        COALESCE((
+          SELECT json_agg(json_build_object(
+                   'numero', cc.numero,
+                   'fecha_vencimiento', TO_CHAR(cc.fecha_vencimiento, 'YYYY-MM-DD'),
+                   'monto', cc.monto
+                 ) ORDER BY cc.numero)
+            FROM cuota_credito cc WHERE cc.id_deuda = d.id_deuda
+        ), '[]') AS cuotas_plan,
+        TO_CHAR(CURRENT_DATE, 'YYYY-MM-DD') AS hoy
       FROM deuda d
+      LEFT JOIN factura fa ON fa.id_venta = d.id_venta
       LEFT JOIN deuda_producto dp ON dp.id_deuda = d.id_deuda
       LEFT JOIN producto p ON p.id_producto = dp.id_producto
       LEFT JOIN cliente c ON c.id_cliente = d.id_cliente
@@ -79,10 +94,16 @@ export async function GET(req: NextRequest) {
         LEFT JOIN usuario u ON u.id_usuario = pd.id_usuario
         GROUP BY pd.id_deuda
       ) pg ON pg.id_deuda = d.id_deuda
-      GROUP BY d.id_deuda, c.limite_deuda, c.estado_cliente, pg.total_pagado, pg.pagos
+      GROUP BY d.id_deuda, fa.numero_factura, c.limite_deuda, c.estado_cliente, pg.total_pagado, pg.pagos
       ORDER BY d.estado_deuda ASC, d.fecha_inicio DESC, d.id_deuda DESC
     `);
-    return NextResponse.json({ deudas: result.rows });
+    // Cada abono se aplica en orden a las cuotas del plan (si la deuda tiene
+    // plan, es decir, nació de una venta a crédito).
+    const deudas = result.rows.map(({ cuotas_plan, hoy, ...deuda }) => ({
+      ...deuda,
+      cuotas: asignarPagosACuotas(cuotas_plan ?? [], deuda.total_pagado ?? 0, hoy ?? new Date().toISOString().slice(0, 10)),
+    }));
+    return NextResponse.json({ deudas });
   } catch (error) {
     return apiError("DEUDAS GET", error);
   }
@@ -123,10 +144,10 @@ export async function POST(req: NextRequest) {
       : Number(monto_libre);
 
   if (!tieneProductos && montoLibreNum === null) {
-    return validationError("Agregá al menos un producto o un monto inicial de deuda");
+    return validationError("Agrega al menos un producto o un saldo inicial");
   }
   if (montoLibreNum !== null && (!Number.isFinite(montoLibreNum) || montoLibreNum <= 0)) {
-    return validationError("El monto inicial de deuda debe ser mayor a 0");
+    return validationError("El saldo inicial debe ser mayor a 0");
   }
   if (tieneProductos) {
     for (const linea of productos as ProductoLinea[]) {
@@ -191,9 +212,9 @@ export async function POST(req: NextRequest) {
         await client.query("ROLLBACK");
         log.warn(
           { id_cliente: idClienteNum, monto_total: montoTotal, motivo: verificacion.motivo },
-          "Deuda rechazada por límite de crédito del cliente"
+          "Cuenta por cobrar rechazada por límite de crédito del cliente"
         );
-        return validationError(verificacion.motivo || "No se puede registrar esta deuda.");
+        return validationError(verificacion.motivo || "No se puede registrar esta cuenta por cobrar.");
       }
     }
 
@@ -231,7 +252,7 @@ export async function POST(req: NextRequest) {
     await client.query("COMMIT");
     log.info(
       { id_deuda: deuda.id_deuda, monto_total: Number(montoTotal.toFixed(2)), id_cliente: idClienteNum, usuario: usuario!.id_usuario },
-      "Deuda registrada"
+      "Cuenta por cobrar registrada"
     );
     return NextResponse.json({ deuda, alerta }, { status: 201 });
   } catch (error) {

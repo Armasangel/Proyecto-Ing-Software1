@@ -25,7 +25,7 @@ export async function POST(
   const { id } = await params;
   const id_deuda = Number(id);
   if (!Number.isInteger(id_deuda)) {
-    return validationError("Id de deuda inválido");
+    return validationError("Id de cuenta por cobrar inválido");
   }
 
   const { monto, metodo_pago, nota } = await req.json();
@@ -45,19 +45,19 @@ export async function POST(
     await client.query("BEGIN");
 
     const deudaRes = await client.query(
-      `SELECT id_deuda, monto_total, estado_deuda, id_cliente
+      `SELECT id_deuda, monto_total, estado_deuda, id_cliente, id_venta
        FROM deuda WHERE id_deuda = $1 FOR UPDATE`,
       [id_deuda]
     );
     if (deudaRes.rowCount === 0) {
       await client.query("ROLLBACK");
-      return validationError("La deuda no existe");
+      return validationError("La cuenta por cobrar no existe");
     }
     const deuda = deudaRes.rows[0];
 
     if (deuda.estado_deuda === "PAGADA") {
       await client.query("ROLLBACK");
-      return validationError("Esta deuda ya está marcada como pagada");
+      return validationError("Esta cuenta por cobrar ya está marcada como pagada");
     }
 
     const pagadoRes = await client.query(
@@ -88,6 +88,12 @@ export async function POST(
     if (nuevoSaldo <= 0.01) {
       nuevoEstado = "PAGADA";
       await client.query(`UPDATE deuda SET estado_deuda = 'PAGADA' WHERE id_deuda = $1`, [id_deuda]);
+      // Si la cuenta nació de una venta a crédito, al saldarla la venta queda pagada.
+      if (deuda.id_venta) {
+        await client.query(`UPDATE venta SET estado_venta = 'PAGADO' WHERE id_venta = $1 AND estado_venta <> 'CANCELADO'`, [
+          deuda.id_venta,
+        ]);
+      }
     }
 
     let alerta: Awaited<ReturnType<typeof recalcularBloqueoCliente>> | null = null;

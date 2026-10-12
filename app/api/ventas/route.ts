@@ -9,12 +9,27 @@ import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { isStaffTipo } from "@/lib/roles";
 import { getLogger } from "@/lib/logger";
+import { recalcularBloqueoCliente, verificarLimiteAntesDeDeuda } from "@/lib/deuda-alertas";
+import {
+  diferenciaDias,
+  esFechaISO,
+  generarCuotas,
+  validarCondicionesCredito,
+  type Cuota,
+} from "@/lib/credito";
 
 const log = getLogger("api/ventas");
 
 const ESTADOS_VENTA = ["PENDIENTE", "CONFIRMADO", "ENTREGADO", "PAGADO"] as const;
 const TIPOS_VENTA = ["MINORISTA", "MAYORISTA"] as const;
 const TIPOS_ENTREGA = ["EN_TIENDA", "DOMICILIO"] as const;
+const CONDICIONES_PAGO = ["CONTADO", "CREDITO"] as const;
+
+// La fecha de factura de una venta a crédito puede ser anterior (se registra
+// tarde) pero no más de un año atrás, ni futura. Se tolera 1 día hacia adelante
+// porque el servidor puede estar en otra zona horaria que quien vende.
+const MAX_DIAS_ATRAS_FACTURA = 365;
+const MAX_DIAS_ADELANTE_FACTURA = 1;
 
 type EstadoVenta = (typeof ESTADOS_VENTA)[number];
 type TipoVenta = (typeof TIPOS_VENTA)[number];
@@ -61,6 +76,7 @@ export async function GET(req: NextRequest) {
         v.direccion_entrega,
         v.total,
         v.fecha_limite_pago,
+        v.condicion_pago,
         uc.nombre AS nombre_cliente,
         uc.correo AS correo_cliente,
         ue.nombre AS nombre_colaborador,
@@ -87,7 +103,7 @@ export async function GET(req: NextRequest) {
       GROUP BY
         v.id_venta, v.id_cliente, v.id_empleado, v.fecha_venta,
         v.estado_venta, v.tipo_venta, v.tipo_entrega, v.direccion_entrega,
-        v.total, v.fecha_limite_pago, uc.nombre, uc.correo, ue.nombre
+        v.total, v.fecha_limite_pago, v.condicion_pago, uc.nombre, uc.correo, ue.nombre
       ORDER BY v.fecha_venta DESC
       LIMIT $1 OFFSET $2
     `, [limit, offset]);
@@ -135,9 +151,39 @@ export async function POST(request: NextRequest) {
       direccion_entrega,
       fecha_limite_pago,
       lineas,
+      condicion_pago,
+      credito,
     } = body;
 
-    const estadoRaw = estado_pago ?? estadoVentaBody;
+    // condicion_pago es opcional por compatibilidad: sin ella la venta se
+    // comporta como siempre (usa estado_pago). Con "CONTADO" la venta queda
+    // pagada en el acto; con "CREDITO" se genera la factura y la cuenta por
+    // cobrar con su plan de cuotas.
+    if (condicion_pago !== undefined && !(CONDICIONES_PAGO as readonly unknown[]).includes(condicion_pago)) {
+      return NextResponse.json({ error: "condicion_pago debe ser CONTADO o CREDITO" }, { status: 400 });
+    }
+    const esCredito = condicion_pago === "CREDITO";
+
+    let plazoDias = 0;
+    let numeroCuotas = 0;
+    let fechaFacturaBody: string | null = null;
+    if (esCredito) {
+      const c = (credito ?? {}) as Record<string, unknown>;
+      const errorCredito = validarCondicionesCredito(c.plazo_dias, c.numero_cuotas);
+      if (errorCredito) {
+        return NextResponse.json({ error: errorCredito }, { status: 400 });
+      }
+      plazoDias = c.plazo_dias as number;
+      numeroCuotas = c.numero_cuotas as number;
+      if (c.fecha_factura !== undefined && c.fecha_factura !== null && c.fecha_factura !== "") {
+        if (!esFechaISO(c.fecha_factura)) {
+          return NextResponse.json({ error: "La fecha de factura debe tener formato AAAA-MM-DD" }, { status: 400 });
+        }
+        fechaFacturaBody = c.fecha_factura;
+      }
+    }
+
+    const estadoRaw = esCredito ? "CONFIRMADO" : condicion_pago === "CONTADO" ? "PAGADO" : estado_pago ?? estadoVentaBody;
     if (typeof estadoRaw !== "string" || !isEstadoVenta(estadoRaw)) {
       return NextResponse.json(
         { error: "estado_pago / estado_venta inválido. Use: PENDIENTE, CONFIRMADO, ENTREGADO o PAGADO" },
@@ -206,8 +252,13 @@ export async function POST(request: NextRequest) {
     try {
       await client.query("BEGIN");
 
-      const existeCliente = await client.query<{ tipo_cliente: string }>(
-        `SELECT tipo_cliente FROM cliente WHERE id_cliente = $1 AND estado_cliente = TRUE`, [idCliente]
+      const existeCliente = await client.query<{
+        tipo_cliente: string;
+        nombre?: string;
+        telefono?: string | null;
+        nit_cliente?: string | null;
+      }>(
+        `SELECT tipo_cliente, nombre, telefono, nit_cliente FROM cliente WHERE id_cliente = $1 AND estado_cliente = TRUE`, [idCliente]
       );
       if (existeCliente.rowCount === 0) {
         await client.query("ROLLBACK");
@@ -259,12 +310,52 @@ export async function POST(request: NextRequest) {
       const totalQ = await client.query(`SELECT ROUND($1::numeric, 2) AS t`, [total]);
       total = Number(totalQ.rows[0].t);
 
+      // ── Crédito: fecha de factura, plan de cuotas y límite del cliente ──
+      // Todo se valida ANTES de tocar el stock, para rechazar sin efectos.
+      let fechaFactura: string | null = null;
+      let cuotas: Cuota[] = [];
+      if (esCredito) {
+        const hoyRes = await client.query<{ hoy: string }>(`SELECT TO_CHAR(CURRENT_DATE, 'YYYY-MM-DD') AS hoy`);
+        const hoy = hoyRes.rows[0].hoy;
+        fechaFactura = fechaFacturaBody ?? hoy;
+        const diff = diferenciaDias(hoy, fechaFactura);
+        if (diff > MAX_DIAS_ADELANTE_FACTURA || diff < -MAX_DIAS_ATRAS_FACTURA) {
+          await client.query("ROLLBACK");
+          return NextResponse.json(
+            { error: `La fecha de factura no puede ser futura ni de hace más de ${MAX_DIAS_ATRAS_FACTURA} días` },
+            { status: 400 }
+          );
+        }
+        if (total <= 0) {
+          await client.query("ROLLBACK");
+          return NextResponse.json({ error: "Una venta a crédito debe tener un total mayor a 0" }, { status: 400 });
+        }
+
+        const verificacion = await verificarLimiteAntesDeDeuda(client, Number(idCliente), total);
+        if (!verificacion.permitido) {
+          await client.query("ROLLBACK");
+          log.warn(
+            { id_cliente: idCliente, total, motivo: verificacion.motivo },
+            "Venta a crédito rechazada por límite de crédito del cliente"
+          );
+          return NextResponse.json(
+            { error: verificacion.motivo || "No se puede otorgar este crédito." },
+            { status: 400 }
+          );
+        }
+
+        cuotas = generarCuotas(fechaFactura, plazoDias, numeroCuotas, total);
+        fechaLimite = cuotas[cuotas.length - 1].fecha_vencimiento;
+      }
+
       const insVenta = await client.query(
         `INSERT INTO venta (id_cliente, id_empleado, estado_venta, tipo_venta, tipo_entrega,
-          direccion_entrega, enlinea, total, fecha_limite_pago)
-         VALUES ($1, $2, $3, $4, $5, $6, FALSE, $7, $8) RETURNING id_venta`,
+          direccion_entrega, enlinea, total, fecha_limite_pago, condicion_pago, fecha_venta)
+         VALUES ($1, $2, $3, $4, $5, $6, FALSE, $7, $8, $9, COALESCE(($10::date + LOCALTIME)::timestamp, NOW()))
+         RETURNING id_venta`,
         [idCliente, usuario.id_usuario, estado_venta, tipoVentaFinal, tipo_entrega,
-         tipo_entrega === "EN_TIENDA" ? null : direccion || null, total, fechaLimite]
+         tipo_entrega === "EN_TIENDA" ? null : direccion || null, total, fechaLimite,
+         esCredito ? "CREDITO" : "CONTADO", fechaFactura]
       );
 
       const idVenta = insVenta.rows[0].id_venta as number;
@@ -302,16 +393,96 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      // ── Crédito: factura + cuenta por cobrar + plan de cuotas ──
+      let creditoCreado: {
+        id_deuda: number;
+        id_factura: number;
+        numero_factura: string;
+        fecha_factura: string;
+        fecha_limite_pago: string;
+        plazo_dias: number;
+        cuotas: Cuota[];
+        alerta: Awaited<ReturnType<typeof recalcularBloqueoCliente>>;
+      } | null = null;
+
+      if (esCredito && fechaFactura) {
+        const cli = existeCliente.rows[0];
+
+        // El número de factura lo da la secuencia de Postgres (correlativo, sin repetidos).
+        const factura = await client.query(
+          `INSERT INTO factura (id_venta, numero_factura, nombre_cliente, nit_cliente, total_factura)
+           VALUES ($1, 'FACT-' || LPAD(nextval('factura_numero_seq')::text, 6, '0'), $2, $3, $4)
+           RETURNING id_factura, numero_factura`,
+          [idVenta, cli.nombre || "Consumidor Final", cli.nit_cliente || "CF", total]
+        );
+
+        const deuda = await client.query(
+          `INSERT INTO deuda (nombre_deudor, telefono_deudor, fecha_inicio, fecha_limite_pago, monto_total,
+                              id_usuario, id_cliente, id_venta, plazo_dias, numero_cuotas)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+           RETURNING id_deuda`,
+          [cli.nombre || "Cliente", cli.telefono || null, fechaFactura, fechaLimite, total,
+           usuario.id_usuario, idCliente, idVenta, plazoDias, numeroCuotas]
+        );
+        const idDeuda = deuda.rows[0].id_deuda as number;
+
+        // deuda_producto tiene una fila por producto: si el mismo producto salió
+        // de dos bodegas, se suman sus cantidades y subtotales.
+        const porProducto = new Map<number, { cantidad: number; subtotal: number }>();
+        for (const p of prepared) {
+          const acum = porProducto.get(p.id_producto) ?? { cantidad: 0, subtotal: 0 };
+          acum.cantidad += p.cantidad;
+          acum.subtotal = Math.round((acum.subtotal + p.subtotal) * 100) / 100;
+          porProducto.set(p.id_producto, acum);
+        }
+        for (const [idProducto, acum] of porProducto) {
+          await client.query(
+            `INSERT INTO deuda_producto (id_deuda, id_producto, cantidad, precio_unitario, subtotal)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [idDeuda, idProducto, acum.cantidad, Math.round((acum.subtotal / acum.cantidad) * 100) / 100, acum.subtotal]
+          );
+        }
+
+        for (const c of cuotas) {
+          await client.query(
+            `INSERT INTO cuota_credito (id_deuda, numero, fecha_vencimiento, monto) VALUES ($1, $2, $3, $4)`,
+            [idDeuda, c.numero, c.fecha_vencimiento, c.monto]
+          );
+        }
+
+        // Al crecer el saldo por cobrar puede alcanzarse el límite del cliente.
+        const alerta = await recalcularBloqueoCliente(client, Number(idCliente));
+
+        creditoCreado = {
+          id_deuda: idDeuda,
+          id_factura: factura.rows[0].id_factura,
+          numero_factura: factura.rows[0].numero_factura,
+          fecha_factura: fechaFactura,
+          fecha_limite_pago: cuotas[cuotas.length - 1].fecha_vencimiento,
+          plazo_dias: plazoDias,
+          cuotas,
+          alerta,
+        };
+      }
+
       await client.query("COMMIT");
       log.info(
-        { id_venta: idVenta, id_cliente: idCliente, tipo_venta: tipoVentaFinal, forzado: forzarTipoVenta, total, usuario: usuario.id_usuario },
+        {
+          id_venta: idVenta, id_cliente: idCliente, tipo_venta: tipoVentaFinal, forzado: forzarTipoVenta, total,
+          condicion_pago: esCredito ? "CREDITO" : "CONTADO", id_deuda: creditoCreado?.id_deuda,
+          usuario: usuario.id_usuario,
+        },
         "Venta registrada"
       );
       return NextResponse.json({
-        mensaje: "Venta registrada correctamente",
+        mensaje: esCredito
+          ? "Venta a crédito registrada: factura y cuenta por cobrar generadas"
+          : "Venta registrada correctamente",
         id_venta: idVenta,
         total,
         tipo_venta: tipoVentaFinal,
+        condicion_pago: esCredito ? "CREDITO" : "CONTADO",
+        ...(creditoCreado ? { credito: creditoCreado } : {}),
       });
     } catch (error) {
       await client.query("ROLLBACK");

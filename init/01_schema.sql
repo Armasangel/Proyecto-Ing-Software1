@@ -325,6 +325,10 @@ CREATE TABLE venta (
     enlinea              BOOLEAN         NOT NULL DEFAULT FALSE,
     total               NUMERIC(12,2)   NOT NULL DEFAULT 0,
     fecha_limite_pago   DATE,
+    -- migración 07: CONTADO = se paga completa al vender; CREDITO = genera
+    -- factura + cuenta por cobrar (tabla deuda) con plan de cuotas.
+    condicion_pago      VARCHAR(10)     NOT NULL DEFAULT 'CONTADO'
+                            CHECK (condicion_pago IN ('CONTADO', 'CREDITO')),
     CONSTRAINT fk_venta_cliente   FOREIGN KEY (id_cliente)  REFERENCES cliente(id_cliente),
     CONSTRAINT fk_venta_empleado  FOREIGN KEY (id_empleado) REFERENCES usuario(id_usuario),
     CONSTRAINT chk_direccion      CHECK (tipo_entrega = 'EN_TIENDA' OR direccion_entrega IS NOT NULL)
@@ -391,6 +395,10 @@ CREATE TABLE deuda (
     id_cliente          INT             REFERENCES cliente(id_cliente),
     fecha_limite_pago   DATE,
     fecha_creacion       TIMESTAMP       NOT NULL DEFAULT NOW(),
+    -- migración 07: cuando la cuenta por cobrar nace de una venta a crédito.
+    id_venta            INT             UNIQUE REFERENCES venta(id_venta),
+    plazo_dias          INT             CHECK (plazo_dias IS NULL OR plazo_dias > 0),
+    numero_cuotas       INT             NOT NULL DEFAULT 1 CHECK (numero_cuotas >= 1),
     CONSTRAINT fk_deuda_usuario FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario)
 );
 
@@ -420,6 +428,19 @@ CREATE TABLE pago_deuda (
 );
 
 CREATE INDEX idx_pago_deuda_id_deuda ON pago_deuda(id_deuda);
+
+-- CUOTA_CREDITO (plan de pagos de una venta a crédito, migración 07). Los
+-- abonos de pago_deuda se aplican en orden a las cuotas.
+CREATE TABLE cuota_credito (
+    id_cuota           SERIAL         PRIMARY KEY,
+    id_deuda           INT            NOT NULL REFERENCES deuda(id_deuda) ON DELETE CASCADE,
+    numero             INT            NOT NULL CHECK (numero >= 1),
+    fecha_vencimiento  DATE           NOT NULL,
+    monto              NUMERIC(12,2)  NOT NULL CHECK (monto > 0),
+    CONSTRAINT uq_cuota_credito_numero UNIQUE (id_deuda, numero)
+);
+
+CREATE INDEX idx_cuota_credito_vencimiento ON cuota_credito (fecha_vencimiento);
 
 -- CONFIGURACION_NOTIFICACIONES_DEUDA (migración 06) — fila única (id = 1)
 -- con lo que configura el dueño: cada cuántos días se le recuerda a un

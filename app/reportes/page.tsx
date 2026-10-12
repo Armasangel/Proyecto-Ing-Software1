@@ -452,21 +452,21 @@ export default function EstadisticasPage() {
       rows.push(["Rotación de inventario", exportData.kpis.inventario.rotacion_inventario]);
       rows.push(["Productos sin movimiento", exportData.kpis.inventario.productos_sin_movimiento]);
       rows.push(["% cartera vencida", `${exportData.kpis.deuda.pct_cartera_vencida}%`]);
-      rows.push(["Tasa de recuperación de deuda", `${exportData.kpis.deuda.tasa_recuperacion}%`]);
+      rows.push(["Tasa de recuperación de cuentas por cobrar", `${exportData.kpis.deuda.tasa_recuperacion}%`]);
       rows.push(["Ventas sin cerrar (sin cobrar/entregar)", exportData.kpis.operacion.ventas_pendientes]);
       rows.push(["Monto de ventas sin cerrar", exportData.kpis.operacion.monto_ventas_pendientes]);
       rows.push(["Pedidos pendientes", exportData.kpis.operacion.pedidos_pendientes]);
       rows.push(["% cancelación de ventas", `${exportData.kpis.operacion.pct_cancelacion}%`]);
       rows.push([]);
 
-      addSection("Deudas y deudores (estado actual)");
-      rows.push(["Deuda pendiente total", exportData.deudas.resumen.deuda_pendiente_total]);
+      addSection("Cuentas por cobrar y deudores (estado actual)");
+      rows.push(["Saldo por cobrar total", exportData.deudas.resumen.deuda_pendiente_total]);
       rows.push(["Deudores activos", exportData.deudas.resumen.cantidad_deudores]);
-      rows.push(["Deudas pendientes", exportData.deudas.resumen.cantidad_deudas_pendientes]);
-      rows.push(["Clientes bloqueados por deuda", exportData.deudas.resumen.clientes_bloqueados]);
-      rows.push(["Deuda promedio por deudor", exportData.deudas.resumen.deuda_promedio_por_deudor]);
+      rows.push(["Cuentas por cobrar pendientes", exportData.deudas.resumen.cantidad_deudas_pendientes]);
+      rows.push(["Clientes bloqueados por límite de crédito", exportData.deudas.resumen.clientes_bloqueados]);
+      rows.push(["Saldo promedio por deudor", exportData.deudas.resumen.deuda_promedio_por_deudor]);
       rows.push([]);
-      rows.push(["Top deudores", "Teléfono", "Deuda pendiente", "Límite", "Estado"]);
+      rows.push(["Top deudores", "Teléfono", "Saldo por cobrar", "Límite", "Estado"]);
       exportData.deudas.top_deudores.forEach((d) =>
         rows.push([
           d.nombre,
@@ -594,10 +594,10 @@ export default function EstadisticasPage() {
               </div>
 
               <div>
-                <div style={s.kpiGroupLabel}>Clientes y deuda</div>
+                <div style={s.kpiGroupLabel}>Clientes y cuentas por cobrar</div>
                 <div style={s.statsGrid}>
                   <StatCard icon="lockout" label="Cartera vencida"          value={`${data.kpis.deuda.pct_cartera_vencida}%`} sub={`${q(data.kpis.deuda.deuda_pendiente_bloqueados)} en clientes ya bloqueados`} />
-                  <StatCard icon="debt"    label="Tasa de recuperación"     value={`${data.kpis.deuda.tasa_recuperacion}%`}   sub="deuda pagada / deuda generada (histórico)" />
+                  <StatCard icon="debt"    label="Tasa de recuperación"     value={`${data.kpis.deuda.tasa_recuperacion}%`}   sub="cobrado / total a crédito generado (histórico)" />
                 </div>
               </div>
 
@@ -849,14 +849,14 @@ export default function EstadisticasPage() {
           {/* Fila 7 — Deudas y deudores (estado actual, no filtrado por periodo) */}
           <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
             <div style={s.statsGrid}>
-              <StatCard icon="money-bag" label="Deuda pendiente"       value={q(data.deudas.resumen.deuda_pendiente_total)} sub={`${data.deudas.resumen.cantidad_deudas_pendientes} deuda${data.deudas.resumen.cantidad_deudas_pendientes !== 1 ? "s" : ""} sin pagar`} />
-              <StatCard icon="ticket"   label="Deudores activos"       value={data.deudas.resumen.cantidad_deudores.toLocaleString("es-GT")} sub="con deuda pendiente" />
-              <StatCard icon="close"    label="Clientes bloqueados"    value={data.deudas.resumen.clientes_bloqueados.toLocaleString("es-GT")} sub="alcanzaron su límite de deuda" />
-              <StatCard icon="bill"     label="Deuda promedio"         value={q(data.deudas.resumen.deuda_promedio_por_deudor)} sub="por deudor" />
+              <StatCard icon="money-bag" label="Saldo por cobrar"       value={q(data.deudas.resumen.deuda_pendiente_total)} sub={`${data.deudas.resumen.cantidad_deudas_pendientes} cuenta por cobrar${data.deudas.resumen.cantidad_deudas_pendientes !== 1 ? "s" : ""} sin pagar`} />
+              <StatCard icon="ticket"   label="Deudores activos"       value={data.deudas.resumen.cantidad_deudores.toLocaleString("es-GT")} sub="con saldo por cobrar" />
+              <StatCard icon="close"    label="Clientes bloqueados"    value={data.deudas.resumen.clientes_bloqueados.toLocaleString("es-GT")} sub="alcanzaron su límite de crédito" />
+              <StatCard icon="bill"     label="Saldo promedio"         value={q(data.deudas.resumen.deuda_promedio_por_deudor)} sub="por deudor" />
             </div>
 
-            <Card title="Top deudores (deuda pendiente actual)">
-              {data.deudas.top_deudores.length === 0 ? <EmptyChart label="No hay deudas pendientes" /> : (
+            <Card title="Top deudores (saldo por cobrar actual)">
+              {data.deudas.top_deudores.length === 0 ? <EmptyChart label="No hay cuentas por cobrar pendientes" /> : (
                 <div style={{ overflowX: "auto" }}>
                   <table style={s.table}>
                     <thead>
@@ -864,8 +864,8 @@ export default function EstadisticasPage() {
                         <th style={s.th}>#</th>
                         <th style={s.th}>Persona</th>
                         <th style={s.th}>Estado</th>
-                        <th style={{ ...s.th, textAlign: "right" }}>Deuda pendiente</th>
-                        <th style={{ ...s.th, textAlign: "right" }}>Deudas</th>
+                        <th style={{ ...s.th, textAlign: "right" }}>Saldo por cobrar</th>
+                        <th style={{ ...s.th, textAlign: "right" }}>Cuentas por cobrar</th>
                       </tr>
                     </thead>
                     <tbody>

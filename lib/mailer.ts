@@ -130,7 +130,7 @@ export async function enviarRecordatorioDeuda(
     ? `La fecha límite más próxima es el ${new Date(proximaFechaLimite).toLocaleDateString("es-GT")}.`
     : "";
 
-  log.debug({ destinatario, montoPendiente }, "Enviando recordatorio de deuda");
+  log.debug({ destinatario, montoPendiente }, "Enviando recordatorio de cuenta por cobrar");
   await getTransporter().sendMail({
     from: `"Tienda San Miguel" <${remitente}>`,
     to: destinatario,

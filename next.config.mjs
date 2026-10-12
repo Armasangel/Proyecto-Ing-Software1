@@ -3,7 +3,7 @@
 // Se aplican a TODAS las rutas (`/:path*`) y no solo a `/api/*`: el clickjacking
 // se ejerce contra el HTML que renderiza el navegador, así que proteger solo las
 // respuestas de la API deja sin cubrir justamente las páginas donde hay sesión
-// iniciada (ventas, deudas, usuarios). Para la API no cambia nada: sigue
+// iniciada (ventas, cuentas por cobrar, usuarios). Para la API no cambia nada: sigue
 // heredándolos, y `/api/:path*` queda incluido en `/:path*`.
 const securityHeaders = [
   { key: "X-Content-Type-Options", value: "nosniff" },
@@ -30,6 +30,14 @@ const nextConfig = {
   reactStrictMode: true,
   // Evita exponer el header "X-Powered-By: Next.js"
   poweredByHeader: false,
+  // La sección "Deudas" ahora se llama "Cuentas por cobrar": se conservan los
+  // enlaces y favoritos viejos redirigiendo a la ruta nueva.
+  async redirects() {
+    return [
+      { source: "/deudas", destination: "/cuentas-por-cobrar", permanent: true },
+      { source: "/deudas/:path*", destination: "/cuentas-por-cobrar/:path*", permanent: true },
+    ];
+  },
   async headers() {
     const headers =
       process.env.NODE_ENV === "production"
