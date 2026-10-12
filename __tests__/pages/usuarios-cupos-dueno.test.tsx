@@ -43,39 +43,48 @@ function setup(datos: Respuesta) {
   );
 }
 
+// El botón de promover ya no lleva el emoji 👑 (se sustituyó por el icono
+// `owner` del sistema, monocromático), así que se localiza por su `title` en
+// vez de por texto. Es además un selector más estable: el texto del botón ya
+// no es su identificador.
+const botonesPromover = () =>
+  screen.queryAllByTitle(/Promover a Dueño|No se puede promover a un usuario inactivo/);
+
 describe("Usuarios: cupos de dueño", () => {
   beforeEach(() => {
     (useRouter as jest.Mock).mockReturnValue({ replace: jest.fn() });
     (usePathname as jest.Mock).mockReturnValue("/usuarios");
   });
 
-  it("con 1 dueño muestra cuántos cupos quedan y deja el botón 👑", async () => {
+  it("con 1 dueño muestra cuántos cupos quedan y deja el botón de promover", async () => {
     setup(respuesta(conUnDueno, 1));
     render(<UsuariosPage />);
 
     expect(await screen.findByTestId("cupos-dueno")).toHaveTextContent("1 de 2 cupos de dueño disponibles");
     // María y Carlos pueden promoverse; Juan ya es dueño
-    expect(screen.getAllByText("👑")).toHaveLength(2);
+    expect(botonesPromover()).toHaveLength(2);
   });
 
-  it("con el cupo lleno avisa una sola vez y ya no muestra ningún 👑", async () => {
+  it("con el cupo lleno avisa una sola vez y ya no muestra ningún botón de promover", async () => {
     setup(respuesta(conDosDuenos, 2));
     render(<UsuariosPage />);
 
     expect(await screen.findByTestId("cupos-dueno")).toHaveTextContent("Sin cupos de dueño (2 de 2 en uso)");
-    expect(screen.queryAllByText("👑")).toHaveLength(0);
+    expect(botonesPromover()).toHaveLength(0);
   });
 
-  it("un usuario inactivo conserva el 👑 deshabilitado mientras haya cupo", async () => {
+  it("un usuario inactivo conserva el botón de promover deshabilitado mientras haya cupo", async () => {
     setup(respuesta([u(1, "Juan Pérez", "DUENO"), u(2, "María López", "EMPLEADO", false)], 1));
     render(<UsuariosPage />);
 
-    const corona = await screen.findByText("👑");
-    expect(corona).toBeDisabled();
-    expect(corona).toHaveAttribute("title", "No se puede promover a un usuario inactivo");
+    const [boton] = await screen.findAllByTitle(
+      "No se puede promover a un usuario inactivo"
+    );
+    expect(boton).toBeDisabled();
+    expect(boton).toHaveAttribute("title", "No se puede promover a un usuario inactivo");
   });
 
-  it("los cupos no cambian al filtrar: la lista sin dueños no habilita el 👑", async () => {
+  it("los cupos no cambian al filtrar: la lista sin dueños no habilita el botón de promover", async () => {
     // Filtro por Colaborador: la lista no trae dueños, pero el servidor sabe que ya hay 2
     setup(respuesta([u(2, "María López", "EMPLEADO")], 2, { EMPLEADO: 1, BODEGUERO: 1 }));
     render(<UsuariosPage />);
@@ -102,7 +111,7 @@ describe("Usuarios: cupos de dueño", () => {
 
     const nota = await screen.findByTestId("nota-cupos-dueno");
     expect(nota).toHaveTextContent("1 de 2 cupos de dueño disponibles");
-    expect(nota).toHaveTextContent("usa el botón 👑 de la tabla");
+    expect(nota).toHaveTextContent("usa el botón de promover");
   });
 
   it("el modal de nuevo usuario avisa cuando el cupo está lleno", async () => {

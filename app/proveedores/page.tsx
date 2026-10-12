@@ -81,7 +81,7 @@ export default function ProveedoresPage() {
   if (usuario.tipo_usuario !== "DUENO") {
     return (
       <StaffShell usuario={usuario} title="Gestión de Proveedores" subtitle="">
-        <p className="text-ink-muted">No tenés permiso para ver esta página.</p>
+        <p className="text-ink-muted">No tienes permiso para ver esta página.</p>
       </StaffShell>
     );
   }
@@ -131,7 +131,7 @@ export default function ProveedoresPage() {
     <StaffShell
       usuario={usuario}
       title="Gestión de Proveedores"
-      subtitle="Administrá los proveedores de la tienda"
+      subtitle="Administra los proveedores de la tienda"
     >
       {mensaje && (
         <p key={mensaje} className="text-market-600 mb-4 font-semibold animate-toast-in">

@@ -130,7 +130,7 @@ export function PanelAuditoria() {
       </div>
       <p className="text-[0.83rem] text-ink-muted mb-4">
         Entradas, contraseñas, bloqueos y cambios de permisos. Si algo no
-        coincide con lo que reconocés, cambiá tu contraseña y cerrá tus sesiones
+        coincide con lo que reconoces, cambia tu contraseña y cierra tus sesiones
         desde <strong>Mi cuenta</strong>.
       </p>
 

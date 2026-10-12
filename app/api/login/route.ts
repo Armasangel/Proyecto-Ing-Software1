@@ -183,7 +183,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         {
           error:
-            "Por seguridad tenés que cambiar tu contraseña antes de continuar. Usá «¿Olvidaste tu contraseña?» en la pantalla de acceso.",
+            "Por seguridad tienes que cambiar tu contraseña antes de continuar. Usa «¿Olvidaste tu contraseña?» en la pantalla de acceso.",
         },
         { status: 403 }
       );

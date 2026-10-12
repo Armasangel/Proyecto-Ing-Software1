@@ -3,6 +3,7 @@
 import type { CSSProperties } from "react";
 import { useCallback, useEffect, useState } from "react";
 import { StaffShell } from "@/components/StaffShell";
+import { Icon } from "@/components/Icon";
 import { PanelAuditoria } from "@/components/PanelAuditoria";
 import { useDuenoSession } from "@/hooks/useDuenoSession";
 import { MAX_DUENOS, TIPOS_USUARIO } from "@/lib/roles";
@@ -564,7 +565,7 @@ export default function UsuariosPage() {
                           title="Editar rol y estado"
                           disabled={esMismoUsuario}
                         >
-                          ✏️
+                          <Icon name="pencil" />
                         </button>
                         {/* Con el cupo lleno el botón no se muestra: el aviso está en la tarjeta de Dueño */}
                         {u.tipo_usuario !== TIPOS_USUARIO.DUENO && !limiteDuenosAlcanzado && (
@@ -579,7 +580,7 @@ export default function UsuariosPage() {
                                 : "Promover a Dueño (requiere verificación por correo)"
                             }
                           >
-                            👑
+                            <Icon name="owner" />
                           </button>
                         )}
                         <button
@@ -646,7 +647,7 @@ export default function UsuariosPage() {
                   {Object.entries(TIPO_META).map(([val, meta]) => {
                     const activo = editTipo === val;
                     // Volverse dueño no pasa por este selector: requiere el
-                    // proceso de verificación por correo (botón 👑 en la
+                    // proceso de verificación por correo (botón de promover en la
                     // tabla). Si el usuario ya es dueño, sí se puede dejar
                     // seleccionado (no es un ascenso) o quitarle el rol.
                     const esAscensoADueno = val === TIPOS_USUARIO.DUENO && editando.tipo_usuario !== TIPOS_USUARIO.DUENO;
@@ -674,7 +675,7 @@ export default function UsuariosPage() {
                             <div style={{ fontSize: "0.72rem", color: "var(--muted)" }}>
                               {limiteDuenosAlcanzado
                                 ? `Ya hay ${MAX_DUENOS} dueños (el máximo). Hay que quitarle el rol a alguno antes.`
-                                : "Requiere el proceso aparte de verificación por correo (botón 👑)."}
+                                : "Requiere el proceso aparte de verificación por correo (botón de promover)."}
                             </div>
                           </div>
                         </div>
@@ -971,7 +972,7 @@ export default function UsuariosPage() {
                   {Object.entries(TIPO_META)
                     // El rol de Dueño nunca se asigna al crear: solo se
                     // otorga después, a un usuario ya establecido, con el
-                    // proceso de verificación por correo (botón 👑).
+                    // proceso de verificación por correo (botón de promover).
                     .filter(([val]) => val !== TIPOS_USUARIO.DUENO)
                     .map(([val, meta]) => (
                       <option key={val} value={val}>
@@ -997,7 +998,7 @@ export default function UsuariosPage() {
                   <strong style={{ color: limiteDuenosAlcanzado ? "var(--red)" : "var(--green)" }}>{cuposResumen}.</strong>{" "}
                   {limiteDuenosAlcanzado
                     ? "Para dar el rol de dueño a otra persona, primero hay que quitárselo a uno de los actuales."
-                    : "El rol de dueño no se asigna al crear la cuenta: crea el usuario y luego usa el botón 👑 de la tabla."}
+                    : "El rol de dueño no se asigna al crear la cuenta: crea el usuario y luego usa el botón de promover de la tabla."}
                 </div>
               )}
 

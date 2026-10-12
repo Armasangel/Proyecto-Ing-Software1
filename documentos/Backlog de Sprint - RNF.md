@@ -67,14 +67,14 @@ Cada una ataca un eje distinto e independiente: **datos**, **complejidad** y
 | Sprint | Foco | Tareas | Puntos | 🔴 | RNF que cierra |
 |---|---|:---:|---:|:---:|---|
 | **S0** | Autorización financiera | 6 | 17 | 6 | **8.3** |
-| **S1** | Datos, auditoría y fugas | 12 | 54 | 6 | 6.1, 6.2, 6.3, 8.1, 11.3 |
+| **S1** | Datos, auditoría y fugas | 10 | 44 | 4 | 6.2, 8.1, 11.3 |
 | **S7** | **Escalabilidad** | **3** | **26** | **3** | 3.1, 3.2, 3.3, 9.1 |
 | **S2** | **Disponibilidad y evidencia** | **7** | **25** | **1** | 3.1, 3.2, 3.3, 8.2, 9.1, 9.2, 9.3, 13.1 |
 | **S3** | Identidad visual | 8 | 27 | 3 | 1.1, 1.2, 1.3, 7.1, 7.3 |
 | **S4** | Ayuda y documentación | 8 | 33 | 5 | 11.1, 11.2, 2.3, 4.1, 4.3, 13.3 |
 | **S5** | Configuración e interoperabilidad | 9 | 54 | 3 | 4.2, 5.1, 5.2, 5.3, 10.1, 10.3, 13.2, 14.2 |
 | **S6** | Evidencia y mediciones | 4 | 18 | 1 | 2.1, 2.2, 7.2 |
-| | | **57** | **258** | **29** | **35 de 38 RNF** |
+| | | **55** | **248** | **27** | **35 de 38 RNF** |
 
 > **Orden de ejecución:** S7 aparece primero porque es el único sprint que
 > **no depende de nada** y corrige la degradación por crecimiento de datos.
@@ -104,9 +104,9 @@ Cada una ataca un eje distinto e independiente: **datos**, **complejidad** y
 | 5.1 Windows 10+ | ⚠️ | S5-03 |
 | 5.2 Ubuntu 20.04+ | ⚠️ | S5-03 |
 | 5.3 Chrome/Firefox/Edge | ⚪ | S5-04 |
-| 6.1 Autenticación | ⚠️ | S1-09, S1-10, S1-11, S1-12 |
+| 6.1 Autenticación | ✅ | ~~S1-12~~ completada |
 | 6.2 Cifrado en BD | ❌ | S1-01, S1-02, S1-03 |
-| 6.3 Logs de cambios | ⚠️ | S1-04, S1-05, S1-06 |
+| 6.3 Logs de cambios | ⚠️ | ~~S1-04~~ completada · S1-05, S1-06 |
 | 7.1 100 % español | ✅ | S3-07 *(higiene)* |
 | 7.2 Lenguaje claro | ⚪ | S6-03 |
 | 7.3 Colores e iconos neutros | ⚠️ | S3-04, S3-08 |
@@ -335,69 +335,68 @@ decisión.**
 ### S1-03 🔴 Cifrar los respaldos automáticos y sub retention a 5 años
 
 **RNF:** 6.2, 8.2 · **Tipo:** DAT · **Esfuerzo:** M (5) · **Depende de:** —
-**Hallazgo (dos problemas en una tarea):**
-- `README.md:435-442` admite que los respaldos automáticos **no están cifrados**
-- `docker-compose.yml:93` fija `BACKUP_KEEP_MONTHS=6`, **contra los 5 años de RNF 8.2**
+**Estado:** 🔄 **reducida.** `BACKUP_ENCRYPTION_KEY` **ya está en `.env.example:42`**,
+lo que cierra la contradicción documentada de `README.md` y `backup-db.sh:80`.
+Quedan los dos problemas de fondo:
+
+- `README.md` admite que los respaldos automáticos **no están cifrados**
+- `docker-compose.yml` fija `BACKUP_KEEP_MONTHS=6`, **contra los 5 años de RNF 8.2**
 
 **Criterios de aceptación:**
 - [ ] `BACKUP_KEEP_MONTHS` = **60** (o más) en `docker-compose.yml`
 - [ ] Respaldos automáticos **cifrados** en reposo
-- [ ] `BACKUP_ENCRYPTION_KEY` **añadida a `.env.example`** (hoy falta, aunque `README.md:454` y `backup-db.sh:80` remiten a ella)
 - [ ] Un respaldo generado es **descifrable** con la clave del `.env` (prueba real de ciclo completo)
 - [ ] Procedimiento de rotación de claves documentado
 - [ ] **Considerado:** respaldos fuera del disco de la base (S2-03 cubre la programación; aquí la copia externa)
 
 ---
 
-### S1-04 🔴 Tabla de auditoría persistente
+### ~~S1-04 Tabla de auditoría persistente~~ ✅ **COMPLETADA — eliminada del backlog**
 
-**RNF:** 6.3 · **Tipo:** SEG · **Esfuerzo:** M (5) · **Depende de:** —
-**Hallazgo:** **no existe tabla de auditoría** (0 resultados para
-`auditoria|audit|bitacora` entre las 27 tablas). Los logs en archivo son mutables,
-borrables y no consultables por SQL: con rotación de 5 × 50 MB, un cambio malicioso
-queda sin prueba tras su expiración.
-
-**Tarea:** tabla `auditoria` genérica + helper de escritura.
-
-**Criterios de aceptación:**
-- [ ] Tabla `auditoria` con: `actor_id`, `rol_actor`, `accion`, `entidad`, `id_entidad`, `datos_antes JSONB`, `datos_despues JSONB`, `ip`, `en timestamptz`
-- [ ] Índices sobre `(entidad, id_entidad)` y `(actor_id, en)` y `(en DESC)`
-- [ ] Helper en `lib/` que registre la mutación **dentro de la misma transacción** que el cambio (para que no puedan divergir)
-- [ ] **Retención indefinida** (la tabla de auditoría no se rota)
-- [ ] El actor se obtiene del token **releyendo la BD**, para que una degradación de rol posterior no falsifique el registro
-
-**Archivo:** nueva migración + `lib/auditoria.ts` (nuevo)
+**Implementada** en los commits `1aeba61`, `1b1ea6c`, `492d09b`, `70f1162`:
+`init/01_schema.sql:459` (`CREATE TABLE auditoria`), `migrations/07_auditoria_credenciales.sql`,
+`lib/audit.ts` (`registrarAuditoria`, `TIPOS_EVENTO`, `ETIQUETAS_EVENTO`),
+`components/PanelAuditoria.tsx` (panel consultable desde `/usuarios`),
+`app/api/usuarios/auditoria/route.ts` (lectura paginada) y pruebas en
+`__tests__/lib/audit.test.ts` + `__tests__/integration/auditoria.test.ts`.
+El diseño cubre el requisito completo, incluida la **retención indefinida** y la
+conservación del `correo` aunque se borre el `id_usuario`.
 
 ---
 
-### S1-05 🔴 Auditar las 31 rutas mutantes sin registro
+### S1-05 🔴 Auditar las rutas de datos maestros y financieros
 
-**RNF:** 6.3 · **Tipo:** SEG · **Esfuerzo:** M (5) · **Depende de:** S1-04
-**Hallazgo:** 8 de 39 rutas registran el evento de negocio; **31 no registran nada**.
-Huecos graves: `precios:45-49` (precio), `facturacion:77-82` (emisión fiscal),
-`usuarios:173-179` (alta y cambio de rol), `productos/[id]:165` (**DELETE**),
-`clientes/[id]` (límite de deuda), `gestion-inventario/ajuste`,
-`gestion-inventario/transferencia`, `bodegas/[id]:126-129` (**DELETE**).
+**RNF:** 6.3 · **Tipo:** SEG · **Esfuerzo:** M (5) · **Depende de:** ~~S1-04~~ ✅ hecha
+**Estado:** 🔄 **reducida.** La infraestructura (S1-04) ya existe y **9 rutas
+consumen `registrarAuditoria`** — todas del eje de credenciales:
+`login`, `login/verificar-codigo`, `logout`, `recuperar/solicitar`,
+`recuperar/cambiar`, `usuarios/mi-contrasena`, `usuarios/mi-sesiones/cerrar`,
+`usuarios`, `usuarios/promover-dueno/confirmar`.
 
-**Prioridad de esta tarea — las 8 rutas con impacto financiero o de seguridad:**
+**Lo que queda: los datos maestros y financieros siguen sin rastro.** Verificado
+que estas 8 rutas **no** emiten eventos de auditoría:
 
-| # | Ruta | Operación |
+| # | Ruta | Operación sin rastro |
 |---|---|---|
 | 1 | `app/api/precios/route.ts` | Cambio de precio de venta |
 | 2 | `app/api/facturacion/route.ts` | Emisión de factura + cambio de estado de venta |
-| 3 | `app/api/usuarios/route.ts` | Alta de usuario, cambio de rol, desactivación, exención de 2FA |
-| 4 | `app/api/clientes/[id]/route.ts` | Cambio del límite de deuda |
-| 5 | `app/api/productos/[id]/route.ts` | Actualización y **DELETE** de producto |
-| 6 | `app/api/gestion-inventario/ajuste/route.ts` | Ajuste manual de stock |
-| 7 | `app/api/gestion-inventario/transferencia/route.ts` | Transferencia entre bodegas |
+| 3 | `app/api/productos/route.ts` | Alta de producto |
+| 4 | `app/api/productos/[id]/route.ts` | Actualización y **DELETE** de producto |
+| 5 | `app/api/gestion-inventario/ajuste/route.ts` | Ajuste manual de stock |
+| 6 | `app/api/gestion-inventario/transferencia/route.ts` | Transferencia entre bodegas |
+| 7 | `app/api/bodegas/route.ts` | Alta de bodega |
 | 8 | `app/api/bodegas/[id]/route.ts` | **DELETE** de bodega y existencias |
 
+`usuarios` y `clientes/[id]` (límite de deuda) **ya están cubiertos** por el
+eje de credenciales, por lo que salen de la lista.
+
 **Criterios de aceptación:**
-- [ ] Las 8 rutas prioritarias escriben en `auditoria` (actor, acción, entidad, datos antes/después)
-- [ ] Las 23 restantes también quedan cubiertas (pueden ser en un sprint siguiente)
+- [ ] Las 8 rutas anteriores escriben en `auditoria` (actor, acción, entidad, datos antes/después)
 - [ ] Los **`DELETE`** registran el estado previo del registro eliminado
 - [ ] Los cambios de precio y factura registran los valores **anteriores y nuevos**
 - [ ] Ningún dato sensible (contraseña, token) se escribe en `auditoria`
+- [ ] Se reutiliza el vocabulario de `TIPOS_EVENTO` de `lib/audit.ts`; si falta un tipo, se añade — **no crear un segundo sistema**
+- [ ] Los eventos aparecen en el panel de `PanelAuditoria.tsx` sin cambios en ese componente
 - [ ] Prueba: una operación deja rastro consultable por `actor_id` y `entidad`
 
 ---
@@ -523,28 +522,25 @@ y `ordenes/[id]/route.ts:76` («*No se puede modificar una orden ${estado}*»).
 
 ---
 
-### S1-12 🟠 Política de contraseña y revocación de sesión
+### ~~S1-12 Política de contraseña y revocación de sesión~~ ✅ **COMPLETADA — eliminada del backlog**
 
-**RNF:** 6.1 · **Tipo:** SEG · **Esfuerzo:** M (5) · **Depende de:** —
-**Hallazgo (cuatro debilidades):**
-- **Contraseña ≥ 6 chars sin complejidad** (`usuarios/route.ts:216-218`, `recuperar/cambiar:21,40-42`) — sin mayúscula/minúscula, dígitos, símbolos, ni lista de contraseñas comunes. Y el dueño puede **eximir de 2FA** (`requiere_2fa`, `usuarios/route.ts:274`)
-- **JWT no revocable** (`logout/route.ts:7` solo borra la cookie del cliente; el token sigue siendo válido 8 h). Cambiar la contraseña **no** invalida sesiones activas
-- **Rol confiado al claim del JWT** (`lib/server-auth.ts:4-8` no relee la BD): un usuario degradado o desactivado conserva permisos hasta 8 h
-- **Sin bloqueo por cuenta, solo por IP** — `login_intento` tiene `ip` como PK (`01_schema.sql:429`), así que no es implementable sin cambio de esquema
+**Las cuatro debilidades fueron resueltas** (commits `aea9221`, `1aeba61`,
+`e57443d`, `7347775`, `e710fb2`, `ce72249`, `0a803f4`):
 
-**Criterios de aceptación:**
-- [ ] Contraseña mínima **≥ 8** caracteres, con al menos 2 de 3 clases de caracteres
-- [ ] Rechazo de contraseñas comunes y de las que contienen el correo o nombre del usuario
-- [ ] Mensaje de validación en español, **sin revelar qué regla exacta falló**
-- [ ] **Blacklist de revocación de JWT** (`jti` + `sub` + expiración), consultado al verificar el token
-- [ ] Logout y cambio de contraseña **invalidan** las sesiones activas
-- [ ] Un usuario desactivado o degradado de rol pierde permisos en **≤ 5 min** (no 8 h)
-- [ ] **Bloqueo por cuenta** añadido a `login_intento` (columna de usuario), además del límite por IP
-- [ ] Cierre de la fuga de enumeración de usuarios por tiempo (`login/route.ts:62-74`): un `bcrypt.compare` contra hash constante en la ruta de «no encontrado»
+| Debilidad | Resolución |
+|---|---|
+| Contraseña ≥ 6 chars sin complejidad | `lib/password-policy.ts` — `PASSWORD_MIN_LENGTH = 12`, `PASSWORD_MAX_BYTES = 72`, lista `CONTRASENAS_COMUNES`, `validarContrasena()` con mensajes en español; hooked en `usuarios/route.ts`, `recuperar/cambiar` y el nuevo `usuarios/mi-contrasena` |
+| JWT no revocable | `lib/sesion.ts` — `esSesionValida()`, `revocarSesiones()`, `registrarAcceso()`; `middleware.ts` reescribe el request sin la cookie cuando la sesión está revocada; endpoints `usuarios/cerrar-sesiones` y `usuarios/mi-sesiones/cerrar` |
+| Rol confiado al claim del JWT | El middleware consulta `esSesionValida` en cada request, releyendo el estado real de la cuenta |
+| Sin bloqueo por cuenta | `login_intento` rediseñada con **clave polimórfica** (`init/01_schema.sql:445`): escribe filas `ip:<dir>` y `acct:<correo>`, con ventana más larga para la cuenta (OWASP ASVS V2.5) |
+| Enumeración por diferencia de tiempo | `HASH_SENUELO` en `login/route.ts:100` — ejecuta un `bcrypt.compare` real en la ruta de «usuario no encontrado» |
 
-**Nota de esfuerzo:** el ítem de *blacklist de revocación* puede diferirse a un
-sprint posterior si el tiempo aprieta; **los ítems de contraseña y de
-desactivación de usuario no deben diferirse**.
+Además: `migrations/06_seguridad_credenciales.sql` marca con
+`requiere_cambio_contrasena = TRUE` las cuentas que siguen usando la contraseña
+de ejemplo del repositorio, y el login les devuelve 403oward el flujo de
+recuperación. La página `/mi-cuenta` expone el cambio de contraseña propia.
+Pruebas en `__tests__/lib/password-policy.test.ts`, `__tests__/lib/sesion.test.ts`,
+`__tests__/integration/sesion-revocacion.test.ts` y `__tests__/api/usuarios-mi-contrasena.test.ts`.
 
 ---
 
@@ -641,28 +637,21 @@ y magic bytes** antes de tocar la base (`.sql.gz.enc` exige header `Salted__`,
 ### S2-05 🟠 Monitoreo y medición de disponibilidad
 
 **RNF:** 9.1 · **Tipo:** DIS · **Esfuerzo:** M (5) · **Depende de:** **S7-03**
-**Hallazgo:** **cero monitoreo externo** (sin Sentry, Prometheus, Uptime Kuma ni
-Nagios) y **cero cifra de disponibilidad medida**. Búsqueda de
-`uptime|disponibilidad|95%|monitoreo|Sentry` en toda la documentación → solo
-2 falsos positivos sobre alertas de stock y deudas, que son de negocio.
-El único dato cuantitativo implícito es `http_req_failed = 0.00 %` en las cuatro
-carreras de k6, pero eso mide errores de aplicación bajo carga sintética durante
-~2 minutos, **no disponibilidad en tiempo laboral**.
-Y el propio health check **puede colgarse**: `api/health/route.ts:5-34` no aplica
-timeout a la consulta, así que si PostgreSQL se cuelga, el health check se cuelga
-con él y no puede reportar «caído».
+**Estado:** 🔄 **reducida.** `.github/workflows/health-check.yml` **ya existe**
+(cron `*/5 * * * *`) y verifica aplicación, base de datos, página de login y
+headers de seguridad. `README.md` gained a section «📡 Monitoreo de disponibilidad».
+**Queda lo que el workflow no puede hacer por sí solo.**
 
 > **Lo absorbido por S7-03:** las políticas `restart: unless-stopped` en `db` y
 > `app`, el healthcheck del servicio `app` y la configuración del pool **ya no se
 > cotizan aquí**. Esta tarea cubre únicamente **detectar y medir**.
 
 **Criterios de aceptación:**
-- [ ] El health check aplica **timeout** a la consulta: si PostgreSQL no responde, devuelve **«caído»** en vez de colgarse
-- [ ] Monitoreo externo o verificación periódica configurada, con **alerta** si no hay respuesta
-- [ ] **Disponibilidad mensual ≥ 95 % medida** en el periodo de observación (el criterio del RNF)
-- [ ] Se registra el historial de incidentes, no solo el porcentaje final
+- [ ] El health check aplica **timeout** a la consulta: si PostgreSQL no responde, devuelve **«caído»** en vez de colgarse (`api/health/route.ts:5-34`)
+- [ ] El workflow **notifica** cuando una verificación falla (hoy queda solo en el log de Actions)
+- [ ] **Disponibilidad mensual ≥ 95 % medida** en el periodo de observación, con **historial de incidentes**, no solo el porcentaje final (el criterio del RNF)
 - [ ] El servicio `db_backup` **también se monitoriza**: que esté arriba no significa que esté respaldando (relevante por S2-03)
-- [ ] El health check **no expone** el nombre del motor ni el de la base de datos (coordinar con S1-09)
+- [ ] Se documenta la **limitación conocida** que el propio workflow ya declara: los cron de GitHub **no se ejecutan desde ramas de feature** y se encolan en hora pico, así que la latencia real no es de 5 minutos
 
 ---
 
@@ -707,9 +696,11 @@ que **no es el criterio de 40 s**. `carga.js:60-88` mide con el servidor ya arri
 ### S3-01 🔴 Elevar el texto por debajo de 14 px (bloque central)
 
 **RNF:** 1.1 · **Tipo:** UX · **Esfuerzo:** M (5) · **Depende de:** —
-**Hallazgo:** de **478 declaraciones de tamaño de fuente, 304 (63.6 %) están bajo
-14 px**, en 19 de 24 archivos. `app/globals.css:46` fija `body { font-size: 15px }`,
-así que el umbral es `0.875rem`. Mínimo absoluto **10.4 px**.
+**Estado:** 🔄 **avance parcial.** Las violaciones **bajaron de 304 → ~118**
+(el refactor de `app/reportes/`Timing eliminó el archivo más grande). Quedan
+`99` declaraciones `fontSize: "0.XXrem"` en estilos inline y `19` clases
+`text-[0.XXrem]`. `app/globals.css:46` fija `body { font-size: 15px }`, así que
+el umbral es `0.875rem`.
 
 **Criterios de aceptación:**
 - [ ] **0 declaraciones** de tamaño de fuente por debajo de 14 px
@@ -717,10 +708,7 @@ así que el umbral es `0.875rem`. Mínimo absoluto **10.4 px**.
       tiene 10 declaraciones en `0.82rem` (13.1 px) → afecta a **todas las tablas
       de 3 pantallas**. Un solo cambio cubre el mayor bloque
 - [ ] Mínimo absoluto de **13 px** mientras la transición, y **14 px** al cierre
-- [ ] Los 7 `text-xs` eliminated: `facturacion/page.tsx:140,224,278`,
-      `dashboard/page.tsx:103`, `ventas/page.tsx:573`,
-      `productos/page.tsx:667,668`
-- [ ] Los 10.4 px eliminados: `historial-ventas/page.tsx:870`, `CatalogoView.tsx:900`
+- [ ] Los 7 `text-xs` eliminados
 - [ ] Verificación automatizada que falle el CI si aparece cualquier tamaño < 14 px
 - [ ] Contraste AA verificado en los textos aumentados sobre fondo `cream`
 
@@ -810,21 +798,18 @@ y `recuperar/page.tsx:309-311,338`.
 
 ---
 
-### S3-07 🟡 Corregir la cadena en inglés y unificar el dialecto
+### S3-07 🟡 Unificar el dialecto y proteger el invariante de idioma
 
 **RNF:** 7.1, 7.2 · **Tipo:** UX · **Esfuerzo:** XS (1) · **Depende de:** —
-**Hallazgo:** el RNF 7.1 está prácticamente cumplido, con **una** excepción:
-`app/reportes/page.tsx:256` dibuja la palabra **`total`** en el centro de un gráfico
-de dona, **visible al usuario**. Además se mezclan **voseo rioplatense y tuteo
-para el mismo mensaje**: `proveedores/page.tsx:84` «*No tenés permiso*» vs
-`deudas/page.tsx:677` «*No tienes permiso*»; `login/page.tsx:179` «*Verificá*»;
-`lib/mailer.ts:109,137` «*Tenés*», «*ignorá*».
+**Estado:** 🔄 **reducida.** La cadena **`total` ya no existe** en
+`app/reportes/` (verificado: 0 coincidencias tras el refactor a
+`components/reportes/`). El RNF 7.1 queda **100 % cumplido**.
+Queda la mezcla dialectal y el invariante sin proteger.
 
 **Criterios de aceptación:**
-- [ ] `total` → `Total` (o el equivalente que corresponda al gráfico)
-- [ ] **100 % de la interfaz en español**, verificado
-- [ ] Un **único dialecto** en toda la aplicación
-- [ ] Verificación automatizada que rechace `toLocale*()` sin locale explícito (hoy ya se cumple 34/34, se protege el invariante)
+- [ ] Un **único dialecto** en toda la aplicación: `proveedores/page.tsx:84` «*No tenés permiso*» vs `deudas/page.tsx:677` «*No tienes permiso*» — mismo mensaje, dos variantes; `login/page.tsx:179` «*Verificá*»; `lib/mailer.ts:109,137` «*Tenés*», «*ignorá*»
+- [ ] Verificación automatizada que rechace `toLocale*()` sin locale explícito (hoy ya se cumple; se protege el invariante)
+- [ ] Verificación automatizada que rechace cadenas en inglés conocidas en la UI
 
 ---
 
@@ -954,26 +939,21 @@ empatía sin capa de texto).
 ### S4-07 🔴 Corregir credenciales y documentar migraciones
 
 **RNF:** 4.1, 4.3 · **Tipo:** DOC · **Esfuerzo:** S (3) · **Depende de:** —
-**Hallazgo (3 problemas):**
-1. **Credenciales contradictorias:** `README.md:99-104` indica `password123` para
-   todos y lista `dueno@tienda.com` como DUEÑO, pero el seed inserta
-   `cumatzemilio6@gmail.com` (`01_schema.sql:492`) y **4 usuarios, no 2**.
-   **Quien siga el README al pie de la letra no puede iniciar sesión.**
-2. **Migraciones no documentadas:** solo se menciona `05_recuperacion_contrasena.sql`
-   (`README.md:154-158`). **`05_promocion_dueno_y_notificaciones_deuda.sql` no se
-   menciona en ningún documento.** No hay versión de esquema ni tabla de migraciones
-   aplicadas, así que nadie puede saber si su base está al día.
-3. **README desactualizado:** dice «Next.js 14» (`:168`) vs 15.5.26 real; «Middleware
-   Edge con Web Crypto» (`:326`) vs runtime Node.js real; omite la página `/bodega`
-   y el rol BODEGUERO.
+**Estado:** 🔄 **reducida.** Los problemas 1 y 2 **están resueltos**:
+
+| Problema | Estado |
+|---|---|
+| Credenciales contradictorias | ✅ `README.md:109-116` ahora lista la contraseña real (`password123`) y el correo real (`cumatzemilio6@gmail.com`), con la nota de que esas cuentas exigen cambio de contraseña |
+| Migraciones no documentadas | ✅ Nueva sección «Despliegue: aplicar las migraciones»; `README.md` grew +350 líneas incluyendo el procedimiento |
+
+**Queda el problema 3 — README desactualizado:**
 
 **Criterios de aceptación:**
-- [ ] Las credenciales del README **coinciden con el seed**, o el seed **deja de incluir contraseñas conocidas** (preferible; ver Sprint 1)
-- [ ] **Las 2 migraciones** están documentadas, con orden y propósito
-- [ ] Existe un **mecanismo de versionado de esquema** (tabla de migraciones aplicadas)
-- [ ] `README.md` refleja la versión real de Next.js y el runtime real del middleware
+- [ ] `README.md` refleja la versión real de Next.js (dice «Next.js 14»; el proyecto usa 15.5.26)
+- [ ] `README.md` describe el runtime real del middleware (dice «Edge con Web Crypto»; ahora es Node.js + `esSesionValida`)
 - [ ] La página `/bodega` y el rol BODEGUERO aparecen en la tabla de módulos
 - [ ] La tabla de permisos por rol **coincide con la API real** (coordinar con S0-05)
+- [ ] Documentar las **migraciones 06 y 07** junto a las anteriores
 
 ---
 
@@ -1116,28 +1096,29 @@ workbook; 0 menciones de «importar» en las páginas de inventario, catálogo o
 ### S5-07 🟠 Extraer subcomponentes de los archivos monolíticos
 
 **RNF:** 10.3 · **Tipo:** INT · **Esfuerzo:** M (5) · **Depende de:** —
-**Hallazgo:** **8 archivos superan las 850 líneas**, todos *client components*:
+**Estado:** 🔄 **reducida.** `app/reportes/page.tsx` pasó de **947 → 246 líneas**,
+extrayendo 9 módulos a `components/reportes/` (`VentasTab`, `ClientesDeudasTab`,
+`InventarioTab`, `Tabs`, `charts`, `ui`, `utils`, `types`, `styles`, `constants`).
+Es el **patrón de referencia** a replicar. Quedan 6 archivos:
 
-| Archivo | Líneas |
-|---|---:|
-| `app/deudas/page.tsx` | **1,896** |
-| `app/usuarios/page.tsx` | 1,416 |
-| `InventarioView.tsx` | 1,070 |
-| `app/historial-ventas/page.tsx` | 1,043 |
-| `app/reportes/page.tsx` | 947 |
-| `CatalogoView.tsx` | 924 |
-| `app/ordenes/page.tsx` | 876 |
-| `app/api/estadisticas/route.ts` | 766 |
-
-Existe un **patrón correcto ya probado** en `inventario-catalogo/`, donde
-`InventarioCatalogo.tsx` (68 líneas) orquesta dos vistas separadas.
+| Archivo | Líneas | Estado |
+|---|---:|---|
+| ~~`app/reportes/page.tsx`~~ | ~~947~~ → **246** | ✅ **hecho** |
+| `app/deudas/page.tsx` | **1,896** | ⚠️ solo +18 líneas desde la auditoría |
+| `app/usuarios/page.tsx` | 1,416 | ⚠️ +69 (panel de auditoría añadido) |
+| `components/inventario-catalogo/InventarioView.tsx` | 1,070 | pendiente |
+| `app/historial-ventas/page.tsx` | 1,043 | pendiente |
+| `components/inventario-catalogo/CatalogoView.tsx` | 924 | pendiente |
+| `app/ordenes/page.tsx` | 876 | pendiente |
+| `app/api/estadisticas/route.ts` | 766 | → depende de **S7-02** |
 
 **Criterios de aceptación:**
 - [ ] Ningún archivo de UI supera **500 líneas**
-- [ ] `app/deudas/page.tsx` (1,896) se divide en subcomponentes y un hook de dominio
+- [ ] Se replica **el patrón de `components/reportes/`**: un `page.tsx` delgado que orquesta tabs/módulos en `components/<dominio>/`, con `types.ts`, `constants.ts`, `styles.ts` y `utils.ts` separados
 - [ ] Se sigue el patrón de `InventarioCatalogo.tsx` para orquestar
 - [ ] **Sin cambio de comportamiento**: la suite de pruebas existente sigue verde
 - [ ] Los estilos no se duplican en el proceso
+- [ ] Cada dominio extraído **no supera los 400 líneas por archivo**
 
 ---
 
@@ -1473,3 +1454,100 @@ carencias que impiden usarlo como evidencia de auditoría:
 | **10.2** BD relacional | **Ya cumple.** No requiere acción. 27 tablas, 36 FK, transacciones, 33 archivos de pruebas |
 | **14.1** BD de productos al día | **Ya cumple en cuanto a sistema.** El CRUD completo existe. Que el catálogo esté *efectivamente* al día es un **dato del negocio**, no verificable desde el código |
 
+
+---
+
+## Camino crítico
+
+```
+S7 (escalabilidad) ──── independiente ──┬──►  S1 (datos y auditoría)
+                                        │          │
+S0 (autorización) ──┬──►                 └──►  S2 (medir + disponibilidad)
+                   │                                 │
+                   └──►  S4 (ayuda y documentación) ─┐│
+                                                     ││
+S3 (identidad visual) ─── independiente ─────────────┤│
+                                                     │▼
+S5 (configuración) ───── independiente ───────────────┤  S6 (evidencia y
+        ▲                                            │  mediciones)
+        │                                            │
+        └────────────────────────────────────────────┘
+              (S2 requiere S7 y S1 · S6 requiere S2 y S3)
+```
+
+**Secuencias que no deben romperse:**
+
+1. **S0 → S1**: la auditoría registra el actor de las operaciones; conviene que el
+   modelo de autorización ya sea correcto para no auditar eventos que van a cambiar.
+2. **S7 → S2**: **el orden cambió con la consolidación.** S2 ya no corrige
+   rendimiento, solo lo mide: medir antes de que S7 corrija los endpoints sin
+   paginar daría cifras que no corresponden al sistema final.
+3. **S7, S1 → S2**: el rendimiento debe medirse sin ruido de fugas de datos.
+4. **S2, S3 → S6**: **medir un producto que va a cambiar no produce evidencia válida.**
+5. **S4-01 → S4-03, S4-05, S6-01, S6-03**: el manual de usuario es la entrada de la
+   ayuda en línea, del PDF y de las dos pruebas con usuarios.
+
+**Paralelizables desde el inicio:** S7 (escalabilidad), S3 (identidad visual) y
+S5 (configuración) no dependen de nada. **S7 debe arrancar junto con S0**: el
+sistema se degrada por crecimiento natural de datos, no por un evento
+excepcional, así que cada mes de retraso son meses de historial que hacen la
+migración más costosa.
+
+> **Prioridad: S7 antes que S2.** Si solo hay capacidad para un sprint de
+> rendimiento, **se ejecuta S7**.
+
+---
+
+## Métricas de cierre del backlog
+
+| Métrica | Valor actual | Valor objetivo |
+|---|:---:|:---:|
+| Requisitos ✅ CUMPLE | 3 / 38 | **≥ 26 / 38** |
+| Requisitos ⚪ no verificables | 9 / 38 | **≤ 3 / 38** |
+| Rutas financieras con autorización incorrecta | 7 | **0** |
+| Rutas de datos maestros sin auditoría | 8 | **0** |
+| Declaraciones de fuente < 14 px | 118 | **0** |
+| Hexadecimales fuera de paleta | 27 | **0** |
+| Vistas con botón de ayuda | 0 / 13 | **13 / 13** |
+| Funcionalidades con guía de uso | 0 / 40 | **40 / 40** |
+| Fugas `String(error)` al cliente | 6 | **0** |
+| Puntos de paso de error sin transformar (UI) | 42 | **0** |
+| Operaciones de config que exigen editar código | 6 / 12 | **0 / 12** |
+| **Endpoints que devuelven el conjunto completo** | **4** | **0** |
+| **Bytes transferidos por corrida de carga** | **256 MB** | **< 20 MB** |
+| **p(95) `/api/deudas` con 5,000 deudas** | **29.33 s** | **< 3 s** |
+| **p(95) `/api/ventas` con 20,180 ventas** | **22.61 s** | **< 3 s** |
+| **Round-trips de `/api/estadisticas`** | **24** | **≤ 3** |
+| **Conexiones máximas del pool** | **10 (por defecto)** | **≥ 10 + margen** |
+| **Consultas sin timeout** | **todas** | **0** |
+| **Servicios sin política de reinicio** | **`db` y `app` (dev)** | **0** |
+| Retención de respaldos | 6 meses | **≥ 60 meses** |
+| Días consecutivos sin respaldo | 5 | **0** |
+
+---
+
+## Registro de avance
+
+| Sprint | Tareas | Completadas | Puntos | Fecha de cierre | Estado |
+|---|:---:|:---:|:---:|---|:---:|
+| S0 | 6 | 0 / 6 | 0 / 17 | — | 🔴 No iniciado |
+| S1 | 10 | 0 / 10 | 0 / 44 | — | 🔴 No iniciado · **S1-04 y S1-12 completadas** |
+| S2 | 7 | 0 / 7 | 0 / 25 | — | 🔴 No iniciado · reducido con S7 |
+| S3 | 8 | 0 / 8 | 0 / 27 | — | 🔴 No iniciado · S3-07 parcial |
+| S4 | 8 | 0 / 8 | 0 / 33 | — | 🔴 No iniciado · S4-07 parcial |
+| S5 | 9 | 0 / 9 | 0 / 54 | — | 🔴 No iniciado · S5-07 parcial |
+| **S7** | **3** | **0 / 3** | **0 / 26** | — | 🔴 **No iniciado — ejecutar primero** |
+| S6 | 4 | 0 / 4 | 0 / 18 | — | 🔴 No iniciado |
+| **Total** | **55** | **0** | **0 / 248** | — | — |
+
+### Tareas completadas desde la auditoría original
+
+| Tarea | Commit(s) | Qué se resolvió |
+|---|---|---|
+| ~~S1-04~~ Tabla de auditoría | `1aeba61`, `1b1ea6c`, `492d09b`, `70f1162` | Tabla `auditoria`, `lib/audit.ts`, panel consultable, API paginada, pruebas |
+| ~~S1-12~~ Contraseña y revocación | `aea9221`, `e57443d`, `7347775`, `e710fb2`, `ce72249`, `0a803f4` | Política de 12 caracteres, `lib/sesion.ts`, revocación, bloqueo por cuenta, anti-enumeración, `/mi-cuenta` |
+
+> **Tareas cuya estimación no está cerrada** (marcadas con ⚠️ en su ficha):
+> `S0-05` (alcance a confirmar con el dueño), `S1-01` (frontera de datos a cifrar),
+> `S5-09` (depende de la decisión PWA vs. nativa). Re-estimar tras la primera
+> reunión de refinamiento.
