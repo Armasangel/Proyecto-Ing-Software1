@@ -3,9 +3,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      # Sin `target`, Docker construye el ÚLTIMO stage del Dockerfile
-      # (production), que trae `npm ci --omit=dev`: sin typescript, tailwind,
-      # jest ni nada de devDependencies, así que `next dev` no compilaba.
       target: dev
     ports:
       - "3001:3000"
@@ -69,14 +66,10 @@ services:
     image: dpage/pgadmin4:latest
     # Perfil "tools": no arranca con `docker compose up`. Debe pedirse
     # explícitamente con `docker compose --profile tools up -d pgadmin`.
-    # Así la UI de administración de la base no queda expuesta por defecto,
-    # y en particular nunca en producción (docker-compose.prod.yml lo hereda
-    # pero sin el perfil activo no se levanta).
+    # Así la UI de administración de la base no queda expuesta por defecto
     profiles: ["tools"]
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@dsm.com}
-      # Sin default a propósito: la UI de pgAdmin queda expuesta en el puerto
-      # 5050, así que la contraseña debe venir del entorno.
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:?define PGADMIN_DEFAULT_PASSWORD en tu .env}
     ports:
       - "5050:80"
@@ -88,7 +81,6 @@ services:
   # Respaldo automático de PostgreSQL: dumps periódicos con rotación (diaria/
   # semanal/mensual). Guarda todo en ./backups (fuera de los volúmenes de
   # Docker) para que sobreviva a un `docker compose down -v`.
-  #
   db_backup:
     image: prodrigestivill/postgres-backup-local:16
     restart: unless-stopped
@@ -105,7 +97,10 @@ services:
       - BACKUP_ON_START=TRUE
       - BACKUP_KEEP_DAYS=7
       - BACKUP_KEEP_WEEKS=4
-      - BACKUP_KEEP_MONTHS=6
+      # 60 meses = 5 años exactos. Bajar este número
+      # hace que los respaldos más antiguos se borren y el historial quede
+      # irrecuperable aunque la base operativa todavía lo tenga.
+      - BACKUP_KEEP_MONTHS=60
       - HEALTHCHECK_PORT=8080
     volumes:
       - ./backups:/backups
