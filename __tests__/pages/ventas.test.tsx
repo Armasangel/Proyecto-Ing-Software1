@@ -144,6 +144,29 @@ describe("VentasPage", () => {
     expect(screen.queryByText("Carlos Ruiz (carlos@email.com)")).not.toBeInTheDocument();
   });
 
+  it("no se cae al buscar cuando hay un cliente sin correo, y no muestra '(null)'", async () => {
+    server.use(
+      rest.get("/api/sesion", (_req, res, ctx) => res(ctx.json({ usuario: mockUsuarioEmpleado }))),
+      rest.get("/api/clientes", (_req, res, ctx) =>
+        res(ctx.json({ clientes: [...clientes, { id_cliente: 3, nombre: "Roberto Sin Correo", correo: null, tipo_cliente: "MINORISTA", total_ventas: 0 }] }))
+      ),
+      rest.get("/api/productos", (_req, res, ctx) => res(ctx.json({ productos }))),
+      rest.get("/api/bodegas", (_req, res, ctx) => res(ctx.json({ bodegas }))),
+      rest.get("/api/gestion-inventario", (_req, res, ctx) => res(ctx.json({ stock }))),
+      rest.get("/api/ventas", (_req, res, ctx) => res(ctx.json({ ventas: [] })))
+    );
+    const user = userEvent.setup();
+    render(<VentasPage />);
+
+    const buscadorCliente = await screen.findByPlaceholderText("Buscar cliente por nombre o correo…");
+    await user.type(buscadorCliente, "rob");
+
+    // Antes del arreglo, escribir aquí tiraba la página completa ("Algo salió mal en esta pantalla").
+    expect(await screen.findByText("Roberto Sin Correo")).toBeInTheDocument();
+    expect(screen.queryByText(/null/)).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Buscar cliente por nombre o correo…")).toBeInTheDocument();
+  });
+
   it("keeps the submit disabled while the form is incomplete", async () => {
     setupServerVentas();
     const user = userEvent.setup();

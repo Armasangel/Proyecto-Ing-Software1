@@ -376,11 +376,19 @@ export default function DeudasPage() {
   }
 
   async function cargarNotifConfig() {
-    const res = await fetch("/api/configuracion/notificaciones-deuda");
-    const data = await res.json();
-    if (data.configuracion) {
-      setNotifConfig(data.configuracion);
-      setNotifIntervaloInput(String(data.configuracion.intervalo_dias));
+    // Si el servidor no tiene esta ruta (404 con HTML) o falla, el resto de la
+    // página debe seguir funcionando: solo se avisa en la tarjeta de recordatorios.
+    try {
+      const res = await fetch("/api/configuracion/notificaciones-deuda");
+      const data = res.ok ? await res.json() : null;
+      if (data?.configuracion) {
+        setNotifConfig(data.configuracion);
+        setNotifIntervaloInput(String(data.configuracion.intervalo_dias));
+      } else {
+        setNotifError("No se pudo cargar la configuración de los recordatorios.");
+      }
+    } catch {
+      setNotifError("No se pudo cargar la configuración de los recordatorios.");
     }
   }
 
