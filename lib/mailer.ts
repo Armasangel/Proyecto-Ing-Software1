@@ -64,19 +64,33 @@ async function enviarOMostrar(
 function getTransporter(): nodemailer.Transporter {
   if (transporter) return transporter;
 
-  const user = process.env.GMAIL_USER;
-  const pass = process.env.GMAIL_APP_PASSWORD;
+  const user = process.env.SMTP_USER || process.env.GMAIL_USER;
+  const pass = process.env.SMTP_PASSWORD || process.env.GMAIL_APP_PASSWORD;
 
   if (!user || !pass) {
     throw new Error(
-      "Faltan GMAIL_USER / GMAIL_APP_PASSWORD en las variables de entorno — necesarias para enviar el código de verificación."
+      "Faltan SMTP_USER / SMTP_PASSWORD (o GMAIL_USER / GMAIL_APP_PASSWORD) en las variables de entorno — necesarias para enviar el código de verificación."
     );
   }
 
-  transporter = nodemailer.createTransport({
-    service: "gmail",
-    auth: { user, pass },
-  });
+  // Si hay host explícito, se usa configuración SMTP genérica; si no, se cae
+  // al preset "gmail" de nodemailer. Eso permite migrar a Mailgun, SES o al
+  // servidor corporativo del negocio SIN tocar código — antes el host estaba
+  // fijo en `service: "gmail"`.
+  const host = process.env.SMTP_HOST;
+  if (host) {
+    transporter = nodemailer.createTransport({
+      host,
+      port: Number(process.env.SMTP_PORT ?? 587),
+      secure: process.env.SMTP_SECURE === "true",
+      auth: { user, pass },
+    });
+  } else {
+    transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: { user, pass },
+    });
+  }
 
   return transporter;
 }
