@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { StaffShell } from "@/components/StaffShell";
 import { useStaffSession } from "@/hooks/useStaffSession";
 import { staffVariantFromTipo } from "@/lib/roles";
+import { CantidadInput } from "@/components/CantidadInput";
 import { Icon } from "@/components/Icon";
 
 type Cliente = {
@@ -636,7 +637,7 @@ export default function OrdenesPage() {
                   const factor = factorDeLinea(ln);
                   const qBase = cantidadBaseDeLinea(ln);
                   return (
-                    <div key={ln.key} style={{ display: "grid", gridTemplateColumns: "1fr 160px 100px 120px auto", gap: "0.5rem", alignItems: "end" }}>
+                    <div key={ln.key} style={{ display: "grid", gridTemplateColumns: "1fr 160px 150px 120px auto", gap: "0.5rem", alignItems: "end" }}>
                       <div style={field}>
                         <label style={label}>Producto</label>
                         <select value={ln.id_producto} onChange={(e) => onProductoChange(ln.key, e.target.value)} style={input}>
@@ -666,7 +667,12 @@ export default function OrdenesPage() {
                       </div>
                       <div style={field}>
                         <label style={label}>Cantidad</label>
-                        <input type="number" min="0.001" step="1" value={ln.cantidad} onChange={(e) => actualizarLinea(ln.key, { cantidad: e.target.value })} style={input} />
+                        <CantidadInput
+                          ariaLabel="Cantidad"
+                          style={input}
+                          value={ln.cantidad}
+                          onChange={(cantidad) => actualizarLinea(ln.key, { cantidad })}
+                        />
                       </div>
                       <div style={field}>
                         <label style={label}>P. unitario</label>

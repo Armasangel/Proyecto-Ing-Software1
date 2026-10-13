@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Icon } from "@/components/Icon";
+import { CantidadInput } from "@/components/CantidadInput";
 import { matchesQuery, paginar, PaginationBar, PAGE_SIZES_COMPACT, type PageSize } from "@/lib/ui-table";
 
 const MIS_ITEMS = [
@@ -576,9 +577,14 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
                   ))}
                 </select>
               </div>
-              <div style={{ ...s.field, flex: "1 1 120px" }}>
+              <div style={{ ...s.field, flex: "1 1 200px" }}>
                 <label style={s.label}>Cantidad *</label>
-                <input type="number" min="0.001" step="1" value={entradaForm.cantidad} onChange={e => setEntradaForm(f => ({ ...f, cantidad: e.target.value }))} style={s.select} />
+                <CantidadInput
+                  ariaLabel="Cantidad de entrada"
+                  style={s.select}
+                  value={entradaForm.cantidad}
+                  onChange={(cantidad) => setEntradaForm(f => ({ ...f, cantidad }))}
+                />
                 {entradaForm.id_presentacion && entradaForm.cantidad && (
                   <span style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
                     = {(Number(entradaForm.cantidad) * Number(entradaPresentaciones.find(p => p.id_presentacion === Number(entradaForm.id_presentacion))?.factor_conversion || 1)).toLocaleString("es-GT")} {productoSeleccionado?.unidad_medida || "unidades"} en total
@@ -632,7 +638,12 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
             </div>
             <div style={s.field}>
               <label style={s.label}>Cantidad</label>
-              <input type="number" min="0.001" step="1" value={xfer.cantidad} onChange={e => setXfer(x => ({ ...x, cantidad: e.target.value }))} style={s.select} inputMode="decimal" />
+              <CantidadInput
+                ariaLabel="Cantidad a trasladar"
+                style={s.select}
+                value={xfer.cantidad}
+                onChange={(cantidad) => setXfer(x => ({ ...x, cantidad }))}
+              />
             </div>
             <div style={s.field}>
               <label style={s.label}>Descripción (opcional)</label>

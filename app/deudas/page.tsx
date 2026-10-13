@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { StaffShell } from "@/components/StaffShell";
 import { useStaffSession } from "@/hooks/useStaffSession";
+import { CantidadInput } from "@/components/CantidadInput";
 import { matchesQuery, paginar, PaginationBar, type PageSize } from "@/lib/ui-table";
 
 type ProductoDeuda = {
@@ -1186,13 +1187,12 @@ export default function DeudasPage() {
                       </option>
                     ))}
                   </select>
-                  <input
-                    type="number"
-                    min={0.001}
-                    step="1"
-                    style={{ ...inputStyle, width: 100 }}
+                  <CantidadInput
+                    ariaLabel="Cantidad"
+                    containerStyle={{ flex: "0 0 128px" }}
+                    style={inputStyle}
                     value={linea.cantidad}
-                    onChange={(e) => actualizarLinea(idx, "cantidad", e.target.value)}
+                    onChange={(cantidad) => actualizarLinea(idx, "cantidad", cantidad)}
                   />
                   {lineas.length > 1 && (
                     <button

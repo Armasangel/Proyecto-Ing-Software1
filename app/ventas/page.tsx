@@ -6,6 +6,7 @@ import { StaffShell } from "@/components/StaffShell";
 import { useStaffSession } from "@/hooks/useStaffSession";
 import { TIPOS_USUARIO } from "@/lib/roles";
 import { Icon } from "@/components/Icon";
+import { CantidadInput } from "@/components/CantidadInput";
 import { etiquetaCliente, filtrarClientesPorTexto } from "@/lib/clientes-busqueda";
 
 type Cliente = {
@@ -495,7 +496,7 @@ export default function VentasPage() {
                   const pSel = ln.id_producto ? productoPorId.get(Number(ln.id_producto)) : undefined;
                   const disponible = stockDisponible(ln.id_producto, ln.id_bodega);
                   return (
-                    <div key={ln.key} className="grid gap-2 items-end" style={{ gridTemplateColumns: "1fr 140px 100px 120px auto" }}>
+                    <div key={ln.key} className="grid gap-2 items-end" style={{ gridTemplateColumns: "1fr 140px 150px 120px auto" }}>
                       <div className="flex flex-col gap-1.5">
                         <label className={labelCls}>Producto</label>
                         <select value={ln.id_producto} onChange={(e) => onProductoChange(ln.key, e.target.value)} className={inputCls}>
@@ -512,7 +513,12 @@ export default function VentasPage() {
                       </div>
                       <div className="flex flex-col gap-1.5">
                         <label className={labelCls}>Cantidad</label>
-                        <input type="number" min="0.001" step="0.001" value={ln.cantidad} onChange={(e) => actualizarLinea(ln.key, { cantidad: e.target.value })} className={inputCls} />
+                        <CantidadInput
+                          ariaLabel="Cantidad"
+                          className={inputCls}
+                          value={ln.cantidad}
+                          onChange={(cantidad) => actualizarLinea(ln.key, { cantidad })}
+                        />
                       </div>
                       <div className="flex flex-col gap-1.5">
                         <label className={labelCls}>P. venta</label>
