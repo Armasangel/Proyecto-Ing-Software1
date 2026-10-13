@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { StaffShell } from "@/components/StaffShell";
 import { useStaffSession } from "@/hooks/useStaffSession";
+import { CantidadInput } from "@/components/CantidadInput";
 import { matchesQuery, paginar, PaginationBar, type PageSize } from "@/lib/ui-table";
 import { reglaDePago, type ReglaPago } from "@/lib/credito";
 
@@ -1085,7 +1086,56 @@ export default function CuentasPorCobrarPage() {
                 </div>
               </div>
 
+<<<<<<< HEAD:app/deudas/page.tsx
+              <label className="block mb-1 text-[0.85rem]">
+                Productos *
+              </label>
+              {lineas.map((linea, idx) => (
+                <div key={idx} className="flex gap-2 mb-2">
+                  <select
+                    className={`${cls.input} w-full`}
+                    value={linea.id_producto}
+                    onChange={(e) => actualizarLinea(idx, "id_producto", e.target.value)}
+                  >
+                    <option value="">Seleccionar un producto…</option>
+                    {productos.map((p) => (
+                      <option key={p.id_producto} value={p.id_producto}>
+                        {p.nombre_producto} (Q{Number(p.precio_unitario).toFixed(2)}/{p.unidad_medida})
+                      </option>
+                    ))}
+                  </select>
+                  <CantidadInput
+                    ariaLabel="Cantidad"
+                    containerStyle={{ flex: "0 0 128px" }}
+                    style={inputStyle}
+                    value={linea.cantidad}
+                    onChange={(cantidad) => actualizarLinea(idx, "cantidad", cantidad)}
+                  />
+                  {lineas.length > 1 && (
+                    <button
+                      onClick={() => quitarLinea(idx)}
+                      className="px-[0.6rem] py-0 rounded-[14px] bg-line border-none cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              ))}
+              <button
+                onClick={agregarLinea}
+                className="mt-1 mb-4 px-[0.8rem] py-[0.3rem] rounded-[14px] bg-transparent border border-dashed border-line cursor-pointer text-[0.85rem]"
+              >
+                + Agregar producto
+              </button>
+
+              <p className="font-bold mb-4">
+                Total: Q{totalPreview().toFixed(2)}
+              </p>
+
+              <div className="flex gap-2">
+=======
               <div style={{ display: "flex", gap: 8 }}>
+>>>>>>> develop:app/cuentas-por-cobrar/page.tsx
                 <button
                   onClick={crearDeuda}
                   className="px-4 py-[0.4rem] rounded-[14px] bg-success text-white border-none cursor-pointer"

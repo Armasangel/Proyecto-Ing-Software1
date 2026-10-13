@@ -6,9 +6,13 @@ import { StaffShell } from "@/components/StaffShell";
 import { useStaffSession } from "@/hooks/useStaffSession";
 import { isStaffTipo } from "@/lib/roles";
 import { Icon } from "@/components/Icon";
+<<<<<<< HEAD
+import { CantidadInput } from "@/components/CantidadInput";
+=======
 import { ProductoAutocompletar } from "@/components/ProductoAutocompletar";
 import Link from "next/link";
 import { CUOTAS_MAXIMAS, PLAZO_MAXIMO_DIAS, generarCuotas, sumarDias, validarCondicionesCredito } from "@/lib/credito";
+>>>>>>> develop
 import { etiquetaCliente, filtrarClientesPorTexto } from "@/lib/clientes-busqueda";
 
 type Cliente = {
@@ -805,6 +809,60 @@ export default function VentasPage() {
               <div className="flex flex-col gap-3 p-4 border border-market/40 bg-market-50/50 rounded-control">
                 <div className="font-semibold text-[0.9rem] text-market-600">Condiciones del crédito</div>
 
+<<<<<<< HEAD
+            <div className="mt-2">
+              <div className="font-semibold text-[0.9rem] mb-3 text-ink">Productos</div>
+              <div className="flex flex-col gap-3">
+                {lineas.map((ln) => {
+                  const pSel = ln.id_producto ? productoPorId.get(Number(ln.id_producto)) : undefined;
+                  const disponible = stockDisponible(ln.id_producto, ln.id_bodega);
+                  return (
+                    <div key={ln.key} className="grid gap-2 items-end" style={{ gridTemplateColumns: "1fr 140px 150px 120px auto" }}>
+                      <div className="flex flex-col gap-1.5">
+                        <label className={labelCls}>Producto</label>
+                        <select value={ln.id_producto} onChange={(e) => onProductoChange(ln.key, e.target.value)} className={inputCls}>
+                          <option value="">— Producto —</option>
+                          {productos.filter((p) => p.estado_producto).map((p) => <option key={p.id_producto} value={p.id_producto}>[{p.codigo_producto}] {p.nombre_producto}</option>)}
+                        </select>
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <label className={labelCls}>Bodega *</label>
+                        <select value={ln.id_bodega} onChange={(e) => { actualizarLinea(ln.key, { id_bodega: e.target.value }); setError(null); setOkMsg(null); }} className={inputCls}>
+                          <option value="">— Bodega —</option>
+                          {bodegas.map((b) => <option key={b.id_bodega} value={b.id_bodega}>{b.nombre_bodega}</option>)}
+                        </select>
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <label className={labelCls}>Cantidad</label>
+                        <CantidadInput
+                          ariaLabel="Cantidad"
+                          className={inputCls}
+                          value={ln.cantidad}
+                          onChange={(cantidad) => actualizarLinea(ln.key, { cantidad })}
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <label className={labelCls}>P. venta</label>
+                        <input type="number" min="0" step="0.01" value={ln.precio_unitario_venta} onChange={(e) => actualizarLinea(ln.key, { precio_unitario_venta: e.target.value })} className={inputCls} />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setLineas((prev) => prev.length <= 1 ? prev : prev.filter((x) => x.key !== ln.key))}
+                        disabled={lineas.length <= 1}
+                        title="Quitar línea"
+                        className="h-10 w-10 flex items-center justify-center rounded-control border border-[var(--border)] bg-cream/60 text-ink-muted transition-colors disabled:cursor-not-allowed disabled:opacity-50 enabled:hover:bg-achiote-50 enabled:hover:text-achiote-600"
+                      >
+                        <Icon name="close" variant="dark" size={14} />
+                      </button>
+                      {pSel && (
+                        <span className="col-span-full text-[0.78rem] text-ink-muted">
+                          Unidad: {pSel.unidad_medida}
+                          {ln.id_bodega && (
+                            <> · Disponible en bodega: <strong className={disponible > 0 ? "text-market-600" : "text-achiote-600"}>{disponible}</strong></>
+                          )}
+                        </span>
+                      )}
+=======
                 <div className="flex flex-col gap-1.5">
                   <label className={labelCls}>Fecha de la factura</label>
                   <div className="flex items-center gap-3 flex-wrap">
@@ -857,6 +915,7 @@ export default function VentasPage() {
                           {d} días
                         </button>
                       ))}
+>>>>>>> develop
                     </div>
                   </div>
                   <div className="flex-1 min-w-[200px] flex flex-col gap-1.5">

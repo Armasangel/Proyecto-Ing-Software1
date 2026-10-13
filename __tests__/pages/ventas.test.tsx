@@ -68,8 +68,9 @@ async function llenarFormulario(user: ReturnType<typeof userEvent.setup>) {
   // al del cliente" — se detecta solo a partir del tipo_cliente del cliente.
   await user.selectOptions(combos[1], "1"); // bodega
 
-  const spinbuttons = screen.getAllByRole("spinbutton");
-  await user.type(spinbuttons[0], "2"); // cantidad → total Q50.00
+  // La cantidad va en un type="text" + inputMode="decimal" (lo limpia
+  // lib/cantidad), no en un spinbutton como el precio de venta.
+  await user.type(screen.getByLabelText("Cantidad"), "2"); // cantidad → total Q50.00
 }
 
 describe("VentasPage", () => {
@@ -94,6 +95,50 @@ describe("VentasPage", () => {
     // Cancelar cierra el modal y no registra nada.
     await user.click(screen.getByRole("button", { name: "Cancelar" }));
     expect(screen.queryByText("¿Confirmar esta venta?")).not.toBeInTheDocument();
+  });
+
+  it("solo admite enteros positivos y medios en la cantidad", async () => {
+    setupServerVentas();
+    const user = userEvent.setup();
+    render(<VentasPage />);
+
+    const cantidad = await screen.findByLabelText("Cantidad");
+
+    // "1.3" → se descarta el .3 (el único decimal válido es el medio).
+    await user.type(cantidad, "1.3");
+    expect(cantidad).toHaveValue("1");
+
+    // "1.5" sí se acepta completo.
+    await user.clear(cantidad);
+    await user.type(cantidad, "1.5");
+    expect(cantidad).toHaveValue("1.5");
+
+    // El menos no cuela: queda el entero positivo.
+    await user.clear(cantidad);
+    await user.type(cantidad, "-2");
+    expect(cantidad).toHaveValue("2");
+  });
+
+  it("sube y baja la cantidad en medios con los botones − / +", async () => {
+    setupServerVentas();
+    const user = userEvent.setup();
+    render(<VentasPage />);
+
+    const cantidad = await screen.findByLabelText("Cantidad");
+
+    // Vacío + → arranca en 1, y de ahí sube de medio en medio.
+    await user.click(screen.getByLabelText("Aumentar cantidad"));
+    expect(cantidad).toHaveValue("1");
+    await user.click(screen.getByLabelText("Aumentar cantidad"));
+    expect(cantidad).toHaveValue("1.5");
+
+    // − da media vuelta… hasta el medio, donde se detiene.
+    await user.click(screen.getByLabelText("Disminuir cantidad"));
+    expect(cantidad).toHaveValue("1");
+    await user.click(screen.getByLabelText("Disminuir cantidad"));
+    expect(cantidad).toHaveValue("0.5");
+    await user.click(screen.getByLabelText("Disminuir cantidad"));
+    expect(cantidad).toHaveValue("0.5");
   });
 
   it("auto-detects tipo_venta from the selected cliente's tipo_cliente", async () => {

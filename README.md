@@ -455,32 +455,56 @@ HTTP de páginas protegidas y rutas `/api/*`; los handlers loguean el desenlace
 
 ## 👥 Roles y módulos
 
-El sistema diferencia **tres** roles con permisos distintos:
+El sistema diferencia **tres** roles con permisos distintos. Cada uno entra a
+una vista propia tras el login (`lib/roles.ts` → `postLoginPath`):
+
+| Rol | `usuario.tipo_usuario` | Entra a | Navegación |
+|---|---|---|---|
+| Dueño | `DUENO` | `/dashboard` | Sidebar completo |
+| Colaborador | `EMPLEADO` | `/ventas` | Sidebar reducido (sin módulos del dueño) |
+| Bodeguero | `BODEGUERO` | `/bodega` | Panel propio con pestañas, **sin sidebar** |
 
 | Módulo | Ruta | Dueño | Colaborador | Bodeguero |
 |---|---|:---:|:---:|:---:|
 | Dashboard (KPIs) | `/dashboard` | ✅ | ✅ | — |
-| Ventas | `/ventas` | ✅ | ✅ | — |
+| Ventas | `/ventas` | — | ✅ | — |
+| Órdenes de compra | `/ordenes` | ✅ | ✅ | — |
+| Facturación | `/facturacion` | ✅ | ✅ | — |
+| Reportes / Estadísticas | `/reportes` | ✅ | — | — |
 | Inventario / bodegas / kardex | `/inventario` | ✅ | — | — |
-| Pedidos y movimientos de su bodega | `/bodega` | ✅ | — | ✅ |
 | Catálogo de productos | `/catalogo` | ✅ | — | — |
 | Productos (maestro) | `/productos` | ✅ | — | — |
-| Facturación | `/facturacion` | ✅ | ✅ | — |
-| Reportes / Estadísticas | `/reportes` | ✅ | ✅ | — |
-| Órdenes de compra | `/ordenes` | ✅ | ✅ | — |
 | Historial de ventas | `/historial-ventas` | ✅ | — | — |
 | Deudas | `/deudas` | ✅ | — | — |
 | Proveedores | `/proveedores` | ✅ | — | — |
 | Usuarios | `/usuarios` | ✅ | — | — |
 | Bitácora de acceso | `/usuarios` (panel) | ✅ | — | — |
+| Pedidos asignados | `/bodega` → Pedidos | — | — | ✅ |
+| Entrada de stock | `/bodega` → Entrada | — | — | ✅ |
+| Salida de stock | `/bodega` → Salida | — | — | ✅ |
+| Traslado entre bodegas | `/bodega` → Traslado | — | — | ✅ |
+| Kardex de su bodega | `/bodega` → Entrada/Salida/Traslado | — | — | ✅ |
 | Mi cuenta (cambiar contraseña, sesiones) | `/mi-cuenta` | ✅ | ✅ | ✅ |
 
-> **Nota sobre `/ventas`:** el menú lateral muestra el enlace de ventas al
-> colaborador; el dueño accede a la vista desde el dashboard. El RNF 8.3 pide
-> restringir el **acceso financiero** (facturación, deudas, reportes) al dueño:
-> esa restricción hoy se aplica en la interfaz, pero la API todavía acepta un
-> token de colaborador en varias de esas rutas. Es el pendiente de seguridad
-> más abierto del proyecto.
+> **El bodeguero** entra directo a `/bodega` y solo ve su bodega asignada
+> (`id_bodega`): es el único rol que no usa el `StaffShell` con sidebar, así
+> que su panel resuelve "Mi cuenta" con el mismo botón fantasma del logout.
+> `/mi-cuenta` funciona para los tres porque usa `useMiSesion`, que no filtra
+> por tipo de usuario. El dueño y el colaborador tienen su propio sidebar;
+> el bodeguero llega a la misma pantalla desde la cabecera de su panel.
+
+> **Accesos que se redirigen:** `/ventas` manda al dueño a `/dashboard` y
+> `/bodega` manda a cualquier rol que no sea bodeguero de vuelta a su vista
+> (`useBodegueroSession`). Por eso no aparecen en el menú lateral de esos
+> roles.
+
+> **Pendiente de seguridad:** el RNF 8.3 pide restringir el acceso financiero
+> (facturación, deudas) al dueño. En la interfaz ya no se ve nada de eso en el
+> sidebar del colaborador, pero la API todavía acepta un token de colaborador
+> en `app/api/facturacion/route.ts` e `app/api/deudas/route.ts`, que validan
+> con `isStaffTipo`. Reportes sí está cerrado por ambos lados
+> (`app/api/estadisticas/route.ts` valida `isDuenoTipo`). Sigue siendo el
+> pendiente más abierto del proyecto.
 
 ---
 
