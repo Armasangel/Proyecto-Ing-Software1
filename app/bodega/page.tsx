@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useBodegueroSession } from "@/hooks/useBodegueroSession";
 import { Icon } from "@/components/Icon";
 
@@ -274,9 +275,17 @@ export default function BodegaPage() {
           </div>
           <div style={s.subtitle}>{usuario.nombre}</div>
         </div>
-        <button type="button" style={s.logoutBtn} onClick={handleLogout}>
-          <Icon name="logout" size={14} variant="light" /> Cerrar sesión
-        </button>
+        <div style={s.headerAcciones}>
+          {/* El bodeguero no tiene sidebar (a diferencia de dueño y
+              colaborador), así que "Mi cuenta" se le ofrece aquí con el
+              mismo botón fantasma del logout para que no se note el hueco. */}
+          <Link href="/mi-cuenta" style={{ ...s.logoutBtn, textDecoration: "none" }}>
+            <Icon name="lockout" size={14} variant="light" /> Mi cuenta
+          </Link>
+          <button type="button" style={s.logoutBtn} onClick={handleLogout}>
+            <Icon name="logout" size={14} variant="light" /> Cerrar sesión
+          </button>
+        </div>
       </header>
 
       <main style={tab === "pedidos" ? s.mainAncho : s.main}>
@@ -595,6 +604,7 @@ const s: Record<string, CSSProperties> = {
     fontWeight: 700,
   },
   subtitle: { fontSize: "0.8rem", opacity: 0.75, marginTop: "0.15rem" },
+  headerAcciones: { display: "flex", alignItems: "center", gap: "0.5rem" },
   logoutBtn: {
     display: "flex",
     alignItems: "center",
