@@ -7,7 +7,7 @@ import { getLogger } from "@/lib/logger";
 const log = getLogger("api/bodega/pedidos");
 
 // Tablero "en vivo" de pedidos para el panel de bodega: muestra las ordenes
-// creadas por dueno/colaborador (via /ordenes) que tienen al menos una linea
+// generadas por una venta a domicilio (via /ventas) que tienen al menos una linea
 // asignada a la bodega del bodeguero autenticado, en los estados que le
 // corresponde preparar. Pensado para refrescarse por polling, como una
 // pantalla de ordenes de comida rapida.

@@ -1,6 +1,10 @@
 import { NextRequest } from "next/server";
 import {
+  ACCOUNT_LOCKOUT_MAX,
+  ACCOUNT_LOCKOUT_WINDOW_MS,
   clearFailedLogins,
+  claveCuenta,
+  claveIp,
   getClientIp,
   isLoginRateLimited,
   LOGIN_RATE_LIMIT_MAX,
@@ -37,12 +41,12 @@ describe("login-rate-limit", () => {
     expect(getClientIp(requestWithHeaders({}))).toBe("unknown");
   });
 
-  it("is not limited when there is no row for the IP", async () => {
+  it("is not limited when there is no row for the clave", async () => {
     mockPool.query.mockResolvedValue({ rows: [] });
-    await expect(isLoginRateLimited("203.0.113.50")).resolves.toBe(false);
+    await expect(isLoginRateLimited(claveIp("203.0.113.50"))).resolves.toBe(false);
     expect(mockPool.query).toHaveBeenCalledWith(
       expect.stringContaining("SELECT bloqueado_hasta FROM login_intento"),
-      ["203.0.113.50"]
+      ["ip:203.0.113.50"]
     );
   });
 
@@ -67,17 +71,80 @@ describe("login-rate-limit", () => {
         intentos += 1;
         return { rows: [{ intentos }] };
       }
+      // Sin bloqueo previo mientras se acumula.
+      if (sql.includes("SELECT bloqueado_hasta")) return { rows: [{ bloqueado_hasta: null }] };
       return { rows: [] };
     });
 
+    const clave = claveIp("203.0.113.50");
     for (let i = 0; i < LOGIN_RATE_LIMIT_MAX; i++) {
-      await recordFailedLogin("203.0.113.50");
+      await recordFailedLogin(clave);
     }
 
-    expect(mockPool.query).toHaveBeenCalledTimes(LOGIN_RATE_LIMIT_MAX + 1);
-    const blockCall = mockPool.query.mock.calls[LOGIN_RATE_LIMIT_MAX];
-    expect(blockCall[0]).toContain("UPDATE login_intento");
-    expect(blockCall[1]).toEqual(["203.0.113.50", expect.any(Number)]);
+    const updateCalls = mockPool.query.mock.calls.filter((call) =>
+      (call[0] as string).includes("UPDATE login_intento")
+    );
+    expect(updateCalls).toHaveLength(1);
+    expect(updateCalls[0][1]).toEqual([clave, expect.any(Number)]);
+  });
+
+  it("señala el bloqueo sólo en el intento que lo provoca, no en los siguientes", async () => {
+    // El aviso por correo se manda una sola vez: si se repitiera en cada
+    // intento posterior, un atacante con la contraseña podría usarlo para
+    // bombardear la bandeja de la víctima.
+    let intentos = 0;
+    mockPool.query.mockImplementation(async (sql: string) => {
+      if (sql.includes("INSERT INTO login_intento")) {
+        intentos += 1;
+        return { rows: [{ intentos }] };
+      }
+      if (sql.includes("SELECT bloqueado_hasta")) {
+        const bloqueado = intentos >= LOGIN_RATE_LIMIT_MAX;
+        return {
+          rows: [
+            {
+              bloqueado_hasta: bloqueado ? new Date(Date.now() + 30_000) : null,
+            },
+          ],
+        };
+      }
+      return { rows: [] };
+    });
+
+    const resultados: boolean[] = [];
+    for (let i = 0; i < LOGIN_RATE_LIMIT_MAX + 3; i++) {
+      resultados.push(await recordFailedLogin(claveIp("203.0.113.50")));
+    }
+
+    // Sólo el quinto intento (el que alcanza el máximo) devuelve true.
+    expect(resultados.filter(Boolean)).toHaveLength(1);
+    expect(resultados[LOGIN_RATE_LIMIT_MAX - 1]).toBe(true);
+    expect(resultados.slice(LOGIN_RATE_LIMIT_MAX)).toEqual([false, false, false]);
+  });
+
+  it("el bloqueo por cuenta usa su propia ventana, más larga que la de IP", async () => {
+    const intentos: number[] = [];
+    mockPool.query.mockImplementation(async (sql: string, params: unknown[]) => {
+      if (sql.includes("INSERT INTO login_intento")) {
+        intentos.push(params[1] as number);
+        return { rows: [{ intentos: intentos.length }] };
+      }
+      if (sql.includes("SELECT bloqueado_hasta")) return { rows: [{ bloqueado_hasta: null }] };
+      return { rows: [] };
+    });
+
+    await recordFailedLogin(claveCuenta("Dueño@Tienda.com"), ACCOUNT_LOCKOUT_MAX, ACCOUNT_LOCKOUT_WINDOW_MS);
+
+    expect(intentos[0]).toBe(ACCOUNT_LOCKOUT_WINDOW_MS / 1000);
+    expect(ACCOUNT_LOCKOUT_WINDOW_MS).toBeGreaterThan(LOGIN_RATE_LIMIT_MAX * 1000);
+  });
+
+  it("normaliza el correo para que el bloqueo no se evada con mayúsculas", () => {
+    // El login busca con LOWER(correo) = LOWER($1): si la clave no se
+    // normalizara, Usuario@x.com y usuario@x.com serían dos cuentas
+    // distintas y el bloqueo se esquivaría cambiando mayúsculas.
+    expect(claveCuenta("  Dueño@Tienda.COM  ")).toBe(claveCuenta("dueño@tienda.com"));
+    expect(claveCuenta("a@b.com")).not.toBe(claveIp("1.2.3.4"));
   });
 
   it("clears failures for an IP", async () => {

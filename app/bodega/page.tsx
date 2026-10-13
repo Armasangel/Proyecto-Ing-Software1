@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useBodegueroSession } from "@/hooks/useBodegueroSession";
 import { Icon } from "@/components/Icon";
+import { ProductoAutocompletar } from "@/components/ProductoAutocompletar";
 
 type Producto = {
   id_producto: number;
@@ -36,6 +38,9 @@ type Movimiento = {
 
 type TabKey = "pedidos" | "entrada" | "salida" | "traslado";
 
+// USO_INTERNO ya no se puede registrar (la tienda se modela como una bodega y
+// ese movimiento es un traslado), pero se conserva la etiqueta para que los
+// movimientos viejos sigan mostrándose bien en el historial.
 const MOTIVO_LABEL: Record<string, string> = {
   MERMA: "Merma / daño",
   USO_INTERNO: "Uso interno",
@@ -89,7 +94,11 @@ export default function BodegaPage() {
   const [idProducto, setIdProducto] = useState("");
   const [idPresentacion, setIdPresentacion] = useState(""); // "" = unidad base
   const [cantidad, setCantidad] = useState("");
-  const [motivo, setMotivo] = useState<"MERMA" | "USO_INTERNO">("MERMA");
+  // Sugerencias del selector de producto: 5 al azar (ver ProductoAutocompletar);
+  // el resto del catálogo aparece al escribir. Se vuelven a sortear al cambiar
+  // de pestaña y después de cada movimiento registrado.
+  const [productosSugeridos, setProductosSugeridos] = useState<Producto[]>([]);
+  const [versionSugeridos, setVersionSugeridos] = useState(0);
   const [idBodegaDestino, setIdBodegaDestino] = useState("");
   const [descripcion, setDescripcion] = useState("");
 
@@ -165,6 +174,17 @@ export default function BodegaPage() {
     cargarHistorial();
   }, [usuario, cargarHistorial]);
 
+  // En Salida y Traslado solo se sugieren productos con existencias en tu
+  // bodega (no se puede sacar lo que no hay); en Entrada, cualquiera.
+  useEffect(() => {
+    if (!usuario || tab === "pedidos") return;
+    const soloConStock = tab === "salida" || tab === "traslado";
+    fetch(`/api/productos/frecuentes?limit=5${soloConStock ? "&con_stock=1" : ""}`)
+      .then((r) => r.json())
+      .then((d) => setProductosSugeridos(d.productos || []))
+      .catch(() => setProductosSugeridos([]));
+  }, [usuario, tab, versionSugeridos]);
+
   useEffect(() => {
     setIdPresentacion("");
     if (!idProducto) {
@@ -183,7 +203,6 @@ export default function BodegaPage() {
     setCantidad("");
     setDescripcion("");
     setIdBodegaDestino("");
-    setMotivo("MERMA");
   };
 
   const handleLogout = async () => {
@@ -199,10 +218,6 @@ export default function BodegaPage() {
     }
     if (tab === "traslado" && !idBodegaDestino) {
       setMensaje({ texto: "Selecciona la bodega destino", tipo: "err" });
-      return;
-    }
-    if (tab === "salida" && motivo === "USO_INTERNO" && !descripcion.trim()) {
-      setMensaje({ texto: "Describe brevemente el uso interno", tipo: "err" });
       return;
     }
 
@@ -226,7 +241,8 @@ export default function BodegaPage() {
         body.descripcion = descripcion || undefined;
       } else if (tab === "salida") {
         url = "/api/inventario/salida";
-        body.motivo = motivo;
+        // Única salida manual posible. Para pasar producto a la tienda se usa Traslado.
+        body.motivo = "MERMA";
         body.descripcion = descripcion || undefined;
       } else {
         url = "/api/gestion-inventario/transferencia";
@@ -253,6 +269,7 @@ export default function BodegaPage() {
         setMensaje({ texto: "Movimiento registrado ✓", tipo: "ok" });
         limpiarFormulario();
         cargarHistorial();
+        setVersionSugeridos((v) => v + 1);
       }
     } catch {
       setMensaje({ texto: "Error de conexión", tipo: "err" });
@@ -274,9 +291,17 @@ export default function BodegaPage() {
           </div>
           <div style={s.subtitle}>{usuario.nombre}</div>
         </div>
-        <button type="button" style={s.logoutBtn} onClick={handleLogout}>
-          <Icon name="logout" size={14} variant="light" /> Cerrar sesión
-        </button>
+        <div style={s.headerAcciones}>
+          {/* El bodeguero no tiene sidebar (a diferencia de dueño y
+              colaborador), así que "Mi cuenta" se le ofrece aquí con el
+              mismo botón fantasma del logout para que no se note el hueco. */}
+          <Link href="/mi-cuenta" style={{ ...s.logoutBtn, textDecoration: "none" }}>
+            <Icon name="lockout" size={14} variant="light" /> Mi cuenta
+          </Link>
+          <button type="button" style={s.logoutBtn} onClick={handleLogout}>
+            <Icon name="logout" size={14} variant="light" /> Cerrar sesión
+          </button>
+        </div>
       </header>
 
       <main style={tab === "pedidos" ? s.mainAncho : s.main}>
@@ -369,14 +394,16 @@ export default function BodegaPage() {
         {tab !== "pedidos" && <div style={s.card}>
           <div style={s.field}>
             <label style={s.label}>Producto</label>
-            <select style={s.input} value={idProducto} onChange={(e) => setIdProducto(e.target.value)}>
-              <option value="">Selecciona un producto…</option>
-              {productos.map((p) => (
-                <option key={p.id_producto} value={p.id_producto}>
-                  {p.nombre_producto} ({p.codigo_producto})
-                </option>
-              ))}
-            </select>
+            <ProductoAutocompletar
+              productos={productos}
+              sugeridos={productosSugeridos}
+              value={idProducto}
+              onChange={setIdProducto}
+              style={s.input}
+              mensajeVacio={
+                tab === "entrada" ? "Escribe para buscar un producto" : "No hay productos con existencias en tu bodega"
+              }
+            />
           </div>
 
           <div style={s.row}>
@@ -408,23 +435,9 @@ export default function BodegaPage() {
           </div>
 
           {tab === "salida" && (
-            <div style={s.field}>
-              <label style={s.label}>Motivo</label>
-              <div style={{ display: "flex", gap: "0.6rem" }}>
-                {(["MERMA", "USO_INTERNO"] as const).map((m) => (
-                  <label
-                    key={m}
-                    style={{
-                      ...s.radioPill,
-                      borderColor: motivo === m ? "var(--accent2)" : "var(--border)",
-                      background: motivo === m ? "rgba(34,197,94,.12)" : "var(--surface)",
-                    }}
-                  >
-                    <input type="radio" checked={motivo === m} onChange={() => setMotivo(m)} />
-                    {MOTIVO_LABEL[m]}
-                  </label>
-                ))}
-              </div>
+            <div style={{ ...s.field, color: "var(--muted)", fontSize: "0.82rem", lineHeight: 1.5 }}>
+              Motivo: <strong style={{ color: "var(--text)" }}>{MOTIVO_LABEL.MERMA}</strong>. Para pasar producto a
+              la tienda usa la pestaña Traslado.
             </div>
           )}
 
@@ -450,7 +463,7 @@ export default function BodegaPage() {
 
           <div style={s.field}>
             <label style={s.label}>
-              Descripción {tab === "salida" && motivo === "USO_INTERNO" ? "*" : "(opcional)"}
+              Descripción (opcional)
             </label>
             <input
               style={s.input}
@@ -595,6 +608,7 @@ const s: Record<string, CSSProperties> = {
     fontWeight: 700,
   },
   subtitle: { fontSize: "0.8rem", opacity: 0.75, marginTop: "0.15rem" },
+  headerAcciones: { display: "flex", alignItems: "center", gap: "0.5rem" },
   logoutBtn: {
     display: "flex",
     alignItems: "center",

@@ -117,6 +117,19 @@ CREATE TABLE usuario (
     -- DUENO y BODEGUERO nunca pasan por 2FA sin importar este valor (ver
     -- app/api/login/route.ts).
     requiere_2fa      BOOLEAN         NOT NULL DEFAULT TRUE,
+    -- Revocación de sesiones. El JWT lleva este valor como claim `sv` y cada
+    -- request lo compara contra la fila actual: si difiere, el token ya no
+    -- sirve. Subir el contador equivale a "cerrar todas las sesiones" de este
+    -- usuario (cambio de contraseña, cambio de rol, deshabilitación).
+    sesion_version    INT             NOT NULL DEFAULT 1,
+    -- Última señal de acceso, para mostrar "inicio de sesión anterior" en
+    -- /mi-cuenta y detectar accesos sospechosos.
+    ultimo_login_en   TIMESTAMP,
+    ultimo_login_ip   VARCHAR(45),
+    -- Fuerza el cambio de contraseña en el próximo login. Se activa para las
+    -- cuentas que aún usan la contraseña de ejemplo publicada en este repo
+    -- (ver migrations/06_seguridad_credenciales.sql).
+    requiere_cambio_contrasena BOOLEAN NOT NULL DEFAULT FALSE,
     -- Bodega fija asignada (obligatoria solo para BODEGUERO). La FK hacia
     -- bodega(id_bodega) se agrega más abajo con ALTER TABLE porque la tabla
     -- bodega todavía no existe en este punto del script.
@@ -180,6 +193,90 @@ CREATE TABLE solicitud_promocion_dueno (
 CREATE INDEX idx_solicitud_promocion_dueno_objetivo
     ON solicitud_promocion_dueno (id_usuario_objetivo, creado_en DESC);
 
+-- LIMITES DE USUARIOS POR TIPO (migración 06)
+-- Tope configurable de usuarios activos por tipo + verificación en 2 pasos para
+-- cambiarlo (ver app/api/usuarios/limites y migrations/06_limites_usuarios.sql).
+CREATE TABLE IF NOT EXISTS limite_tipo_usuario (
+    tipo_usuario     VARCHAR(20)  PRIMARY KEY CHECK (tipo_usuario IN ('DUENO', 'EMPLEADO', 'BODEGUERO')),
+    max_usuarios     INT          CHECK (max_usuarios IS NULL OR max_usuarios >= 1),
+    actualizado_en   TIMESTAMP    NOT NULL DEFAULT NOW(),
+    actualizado_por  INT          REFERENCES usuario(id_usuario) ON DELETE SET NULL
+);
+
+INSERT INTO limite_tipo_usuario (tipo_usuario, max_usuarios) VALUES
+    ('DUENO', 2),
+    ('EMPLEADO', NULL),
+    ('BODEGUERO', NULL)
+ON CONFLICT (tipo_usuario) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS solicitud_cambio_limite (
+    id_solicitud          SERIAL       PRIMARY KEY,
+    tipo_usuario          VARCHAR(20)  NOT NULL CHECK (tipo_usuario IN ('DUENO', 'EMPLEADO', 'BODEGUERO')),
+    nuevo_limite          INT          CHECK (nuevo_limite IS NULL OR nuevo_limite >= 1),
+    id_dueno_solicitante  INT          NOT NULL REFERENCES usuario(id_usuario) ON DELETE CASCADE,
+    codigo_hash           VARCHAR(255) NOT NULL,
+    creado_en             TIMESTAMP    NOT NULL DEFAULT NOW(),
+    expira_en             TIMESTAMP    NOT NULL,
+    usado                 BOOLEAN      NOT NULL DEFAULT FALSE,
+    intentos              INT          NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_solicitud_cambio_limite_solicitante
+    ON solicitud_cambio_limite (id_dueno_solicitante, creado_en DESC);
+
+-- Solo cuentan los usuarios ACTIVOS. Se valida al insertar, al cambiar el
+-- tipo y al reactivar una cuenta; si no cambia ni el tipo ni el estado no
+-- se revisa nada (así editar nombre/teléfono nunca falla por el límite).
+-- Al fallar lanza el SQLSTATE 'LU001' con el tipo en DETAIL y el tope en HINT.
+CREATE OR REPLACE FUNCTION fn_validar_limite_usuarios() RETURNS trigger AS $$
+DECLARE
+    v_limite  INT;
+    v_activos INT;
+BEGIN
+    IF NEW.estado_usuario IS NOT TRUE THEN
+        RETURN NEW;
+    END IF;
+
+    IF TG_OP = 'UPDATE'
+       AND OLD.tipo_usuario = NEW.tipo_usuario
+       AND OLD.estado_usuario IS TRUE THEN
+        RETURN NEW;
+    END IF;
+
+    -- Serializa altas/cambios del mismo tipo; el COUNT de abajo corre como
+    -- sentencia nueva, así que ya ve lo que confirmó la transacción anterior.
+    PERFORM pg_advisory_xact_lock(hashtext('limite_usuarios:' || NEW.tipo_usuario));
+
+    SELECT max_usuarios INTO v_limite
+    FROM limite_tipo_usuario
+    WHERE tipo_usuario = NEW.tipo_usuario;
+
+    IF v_limite IS NULL THEN
+        RETURN NEW;
+    END IF;
+
+    SELECT COUNT(*) INTO v_activos
+    FROM usuario
+    WHERE tipo_usuario = NEW.tipo_usuario
+      AND estado_usuario IS TRUE
+      AND id_usuario <> COALESCE(NEW.id_usuario, -1);
+
+    IF v_activos >= v_limite THEN
+        RAISE EXCEPTION 'LIMITE_USUARIOS'
+            USING ERRCODE = 'LU001',
+                  DETAIL  = NEW.tipo_usuario,
+                  HINT    = v_limite::text;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_validar_limite_usuarios ON usuario;
+CREATE TRIGGER trg_validar_limite_usuarios
+    BEFORE INSERT OR UPDATE OF tipo_usuario, estado_usuario ON usuario
+    FOR EACH ROW EXECUTE FUNCTION fn_validar_limite_usuarios();
+
 -- BODEGA
 CREATE TABLE bodega (
     id_bodega       SERIAL          PRIMARY KEY,
@@ -241,6 +338,10 @@ CREATE TABLE venta (
     enlinea              BOOLEAN         NOT NULL DEFAULT FALSE,
     total               NUMERIC(12,2)   NOT NULL DEFAULT 0,
     fecha_limite_pago   DATE,
+    -- migración 07: CONTADO = se paga completa al vender; CREDITO = genera
+    -- factura + cuenta por cobrar (tabla deuda) con plan de cuotas.
+    condicion_pago      VARCHAR(10)     NOT NULL DEFAULT 'CONTADO'
+                            CHECK (condicion_pago IN ('CONTADO', 'CREDITO')),
     CONSTRAINT fk_venta_cliente   FOREIGN KEY (id_cliente)  REFERENCES cliente(id_cliente),
     CONSTRAINT fk_venta_empleado  FOREIGN KEY (id_empleado) REFERENCES usuario(id_usuario),
     CONSTRAINT chk_direccion      CHECK (tipo_entrega = 'EN_TIENDA' OR direccion_entrega IS NOT NULL)
@@ -307,6 +408,10 @@ CREATE TABLE deuda (
     id_cliente          INT             REFERENCES cliente(id_cliente),
     fecha_limite_pago   DATE,
     fecha_creacion       TIMESTAMP       NOT NULL DEFAULT NOW(),
+    -- migración 07: cuando la cuenta por cobrar nace de una venta a crédito.
+    id_venta            INT             UNIQUE REFERENCES venta(id_venta),
+    plazo_dias          INT             CHECK (plazo_dias IS NULL OR plazo_dias > 0),
+    numero_cuotas       INT             NOT NULL DEFAULT 1 CHECK (numero_cuotas >= 1),
     CONSTRAINT fk_deuda_usuario FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario)
 );
 
@@ -336,6 +441,19 @@ CREATE TABLE pago_deuda (
 );
 
 CREATE INDEX idx_pago_deuda_id_deuda ON pago_deuda(id_deuda);
+
+-- CUOTA_CREDITO (plan de pagos de una venta a crédito, migración 07). Los
+-- abonos de pago_deuda se aplican en orden a las cuotas.
+CREATE TABLE cuota_credito (
+    id_cuota           SERIAL         PRIMARY KEY,
+    id_deuda           INT            NOT NULL REFERENCES deuda(id_deuda) ON DELETE CASCADE,
+    numero             INT            NOT NULL CHECK (numero >= 1),
+    fecha_vencimiento  DATE           NOT NULL,
+    monto              NUMERIC(12,2)  NOT NULL CHECK (monto > 0),
+    CONSTRAINT uq_cuota_credito_numero UNIQUE (id_deuda, numero)
+);
+
+CREATE INDEX idx_cuota_credito_vencimiento ON cuota_credito (fecha_vencimiento);
 
 -- CONFIGURACION_NOTIFICACIONES_DEUDA (migración 06) — fila única (id = 1)
 -- con lo que configura el dueño: cada cuántos días se le recuerda a un
@@ -375,6 +493,8 @@ CREATE TABLE orden (
                         CHECK (estado IN ('PENDIENTE','CONFIRMADO','EN_PREPARACION','ENVIADO','ENTREGADO','CANCELADO')),
     notas           TEXT,
     total           NUMERIC(12,2)   NOT NULL DEFAULT 0,
+    -- migración 08: la orden es el ticket de entrega de una venta a domicilio.
+    id_venta        INT             UNIQUE REFERENCES venta(id_venta),
     CONSTRAINT fk_orden_cliente  FOREIGN KEY (id_cliente) REFERENCES cliente(id_cliente),
     CONSTRAINT fk_orden_usuario  FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario)
 );
@@ -425,12 +545,41 @@ GROUP BY v.id_venta, c.nombre, c.correo, v.fecha_venta, v.fecha_limite_pago, v.t
 HAVING v.total - COALESCE(SUM(p.monto), 0) > 0;
 
 --  TABLA DE RATE-LIMIT DE LOGIN (compartida entre instancias vía Postgres)
+-- La clave es polimórfica a propósito: el login escribe filas "ip:<direccion>"
+-- y "acct:<correo>", de modo que un ataque distribuido desde muchas IP contra
+-- una sola cuenta también se contiene (OWASP ASVS V2.5). Ver
+-- lib/login-rate-limit.ts.
 CREATE TABLE login_intento (
-    ip              VARCHAR(45)     PRIMARY KEY,
-    intentos        INT             NOT NULL DEFAULT 0,
-    bloqueado_hasta TIMESTAMP,
-    ultimo_intento  TIMESTAMP       NOT NULL DEFAULT NOW()
+    clave            VARCHAR(200)    PRIMARY KEY,
+    intentos         INT             NOT NULL DEFAULT 0,
+    bloqueado_hasta  TIMESTAMP,
+    ultimo_intento   TIMESTAMP       NOT NULL DEFAULT NOW()
 );
+
+--  AUDITORIA DE CREDENCIALES (OWASP ASVS V7)
+-- Rastro persistente de los hechos que cambian el acceso a una cuenta:
+-- entradas, cambios de contraseña, bloqueos, cambios de rol, cierres de
+-- sesión. Antes esto sólo vivía en logs de pino, que se rotan y se pueden
+-- borrar; ahora queda consultable desde el panel del dueño.
+-- id_usuario queda NULL si la cuenta se borra, pero `correo` se conserva:
+-- el rastro de qué cuenta se estaba atacando tiene que sobrevivir.
+CREATE TABLE auditoria (
+    id           SERIAL         PRIMARY KEY,
+    id_usuario   INT            REFERENCES usuario(id_usuario) ON DELETE SET NULL,
+    correo       VARCHAR(200),
+    tipo_evento  VARCHAR(50)     NOT NULL,
+    ip           VARCHAR(45),
+    user_agent   TEXT,
+    detalle      JSONB           NOT NULL DEFAULT '{}'::jsonb,
+    creado_en    TIMESTAMP       NOT NULL DEFAULT NOW()
+);
+
+-- Consulta principal del panel: "qué pasó, y en este orden".
+CREATE INDEX idx_auditoria_created ON auditoria (creado_en DESC);
+-- Filtro por cuenta concreta.
+CREATE INDEX idx_auditoria_usuario ON auditoria (id_usuario, creado_en DESC);
+-- Filtro por tipo de evento.
+CREATE INDEX idx_auditoria_tipo ON auditoria (tipo_evento, creado_en DESC);
 
 -- API_RATE_LIMIT (contador genérico de rate limiting, migración 03)
 -- Ventana fija; se usa primero en /api/usuarios y es reutilizable para

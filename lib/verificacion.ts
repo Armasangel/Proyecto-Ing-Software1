@@ -117,6 +117,28 @@ export function verifyPromocionToken(token: string): number | null {
   }
 }
 
+// Token del cambio de límite de usuarios por tipo: prueba de que el dueño que
+// lo confirma es el mismo que lo inició, y de a qué fila de
+// `solicitud_cambio_limite` corresponde (el "subject" es el id_solicitud).
+export function signLimiteToken(id_solicitud: number): string {
+  return jwt.sign({ purpose: "cambio_limite_pendiente" }, getJwtSecret(), {
+    subject: String(id_solicitud),
+    expiresIn: PRE_TOKEN_EXPIRA,
+  });
+}
+
+export function verifyLimiteToken(token: string): number | null {
+  try {
+    const decoded = jwt.verify(token, getJwtSecret()) as jwt.JwtPayload & { purpose?: string };
+    if (decoded.purpose !== "cambio_limite_pendiente") return null;
+    const id = decoded.sub;
+    if (typeof id !== "string" || !id) return null;
+    return Number(id);
+  } catch {
+    return null;
+  }
+}
+
 // Muestra el correo parcialmente oculto en el paso 2, ej. "ma***@tienda.com",
 // para confirmarle al usuario a dónde llegó el código sin exponerlo entero.
 export function enmascararCorreo(correo: string): string {

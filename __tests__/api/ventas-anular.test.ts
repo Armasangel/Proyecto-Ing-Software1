@@ -1,3 +1,4 @@
+import type { UsuarioParaFirmar } from "@/lib/auth";
 import { POST } from "@/app/api/ventas/[id]/anular/route";
 import { createMockRequest, testUserDueno, testUserEmpleado } from "@/__tests__/utils/api-test-utils";
 
@@ -20,8 +21,7 @@ function makeClient() {
 }
 
 function makeReq(id: string, user: "dueno" | "empleado" | "none" = "dueno") {
-  const options: { method: "POST"; user?: { id_usuario: number; nombre: string; correo: string; tipo_usuario: string } } =
-    { method: "POST" };
+  const options: { method: "POST"; user?: UsuarioParaFirmar } = { method: "POST" };
   if (user === "dueno") options.user = testUserDueno;
   if (user === "empleado") options.user = testUserEmpleado;
   return createMockRequest(`/api/ventas/${id}/anular`, options);
@@ -93,6 +93,7 @@ describe("POST /api/ventas/:id/anular", () => {
       rows: [{ ...ventaRecienteDelDueno, id_empleado: testUserEmpleado.id_usuario }],
       rowCount: 1,
     });
+    client.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // SELECT deuda de la venta (contado: ninguna)
     client.query.mockResolvedValueOnce({ rows: lineasConBodega, rowCount: 2 });
     client.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // UPDATE bodega_producto (2x)
     client.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
@@ -143,6 +144,7 @@ describe("POST /api/ventas/:id/anular", () => {
       rows: [{ ...ventaRecienteDelDueno, fecha_venta: new Date(Date.now() - 9.9 * 60_000).toISOString() }],
       rowCount: 1,
     });
+    client.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // SELECT deuda de la venta (contado: ninguna)
     client.query.mockResolvedValueOnce({ rows: lineasConBodega, rowCount: 2 });
     client.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
     client.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
@@ -160,6 +162,7 @@ describe("POST /api/ventas/:id/anular", () => {
     const client = makeClient();
     client.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // BEGIN
     client.query.mockResolvedValueOnce({ rows: [ventaRecienteDelDueno], rowCount: 1 });
+    client.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // SELECT deuda de la venta (contado: ninguna)
     client.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // SELECT detalle
     client.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // ROLLBACK
 
@@ -173,6 +176,7 @@ describe("POST /api/ventas/:id/anular", () => {
     const client = makeClient();
     client.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // BEGIN
     client.query.mockResolvedValueOnce({ rows: [ventaRecienteDelDueno], rowCount: 1 });
+    client.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // SELECT deuda de la venta (contado: ninguna)
     client.query.mockResolvedValueOnce({
       rows: [{ id_producto: 1, id_bodega: null, cantidad: 3 }],
       rowCount: 1,
@@ -189,6 +193,7 @@ describe("POST /api/ventas/:id/anular", () => {
     const client = makeClient();
     client.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // BEGIN
     client.query.mockResolvedValueOnce({ rows: [ventaRecienteDelDueno], rowCount: 1 });
+    client.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // SELECT deuda de la venta (contado: ninguna)
     client.query.mockResolvedValueOnce({ rows: lineasConBodega, rowCount: 2 });
     client.query.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // UPDATE bodega_producto x2
     client.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });

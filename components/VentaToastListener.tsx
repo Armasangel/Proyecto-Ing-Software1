@@ -9,6 +9,7 @@
    el id de venta más alto que ya existe (no dispara toasts de ventas
    viejas); desde ahí, cada fetch pregunta "¿hay ventas con id mayor al
    último que vi?" y si las hay, las apila como toasts. */
+import { Icon } from "@/components/Icon";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -74,7 +75,7 @@ export function VentaToastListener() {
     <div style={s.container}>
       {toasts.map((t) => (
         <div key={t.toastKey} style={s.toast}>
-          <div style={s.icon}>🛎️</div>
+          <div style={s.icon}><Icon name="shopping-cart" /></div>
           <div>
             <div style={s.title}>Venta realizada</div>
             <div style={s.body}>

@@ -66,9 +66,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ bodega: result.rows[0] }, { status: 201 });
   } catch (error) {
-    return NextResponse.json(
-      { error: "Error al crear bodega", detalle: String(error) },
-      { status: 500 }
-    );
+    return apiError("BODEGAS POST", error);
   }
 }

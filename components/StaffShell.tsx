@@ -5,7 +5,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { isColaboradorTipo, isDuenoTipo, labelRol, staffVariantFromTipo } from "@/lib/roles";
+import { isDuenoTipo, labelRol, staffVariantFromTipo } from "@/lib/roles";
 import { Icon, type IconName } from "@/components/Icon";
 import { VentaToastListener } from "@/components/VentaToastListener";
 
@@ -26,13 +26,12 @@ type NavItem = {
 const NAV: NavItem[] = [
   { href: "/dashboard",        label: "Dashboard",       icon: "dashboard"     },
   { href: "/inventario",       label: "Inventario",      icon: "inventory"     },
-  { href: "/ordenes",          label: "Órdenes",         icon: "ticket"        },
   { href: "/ventas",           label: "Ventas",          icon: "shopping-cart" },
   { href: "/facturacion",      label: "Facturación",     icon: "bill"          },
   { href: "/reportes",         label: "Reportes",        icon: "report"        },
   { href: "/proveedores",      label: "Proveedores",     icon: "hand-truck"    },
   { href: "/historial-ventas", label: "Historial ventas",icon: "distribution"  },
-  { href: "/deudas",           label: "Deudas",          icon: "debt"     },
+  { href: "/cuentas-por-cobrar",           label: "Cuentas por cobrar",          icon: "debt"     },
   { href: "/usuarios",         label: "Usuarios",        icon: "owner"         },
 ];
 
@@ -42,6 +41,8 @@ function isStaffNavActive(
   allHrefs: readonly string[]
 ): boolean {
   if (pathname === href) return true;
+  // Los pedidos de entrega (/ordenes) cuelgan de Ventas en el menú.
+  if (href === "/ventas" && (pathname === "/ordenes" || pathname.startsWith("/ordenes/"))) return true;
   if (href === "/dashboard") return false;
   if (!pathname.startsWith(`${href}/`)) return false;
   return !allHrefs.some(
@@ -85,16 +86,15 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
   const t = THEMES[variant];
 
   const navVisible = NAV.filter((item) => {
-    if (item.href === "/ventas") return isColaboradorTipo(usuario.tipo_usuario);
     if (
-      ["/inventario", "/historial-ventas", "/proveedores", "/deudas", "/usuarios"].includes(
+      ["/inventario", "/historial-ventas", "/proveedores", "/cuentas-por-cobrar", "/usuarios", "/reportes"].includes(
         item.href
       )
     ) {
       return isDuenoTipo(usuario.tipo_usuario);
     }
-    // "/ordenes" (y cualquier otra ruta no listada arriba) queda visible
-    // tanto para dueño como para colaborador, igual que permite la API.
+    // "/ventas" (y "/facturacion") quedan visibles para dueño y colaborador,
+    // igual que permite la API.
     return true;
   });
 
@@ -163,6 +163,13 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
               <div className={`text-[0.7rem] mt-0.5 ${t.rolTextClass}`}>{labelRol(usuario.tipo_usuario)}</div>
             </div>
           </div>
+          <Link
+            href="/mi-cuenta"
+            className="w-full flex items-center gap-2 bg-transparent border border-sidebar-border rounded-control text-sidebar-muted px-3 py-2 text-[0.82rem] text-left transition-colors duration-150 hover:bg-white/5 hover:text-cream mb-2"
+          >
+            <Icon name="lockout" size={14} variant="light" />
+            Mi cuenta
+          </Link>
           <button
             type="button"
             onClick={handleLogout}

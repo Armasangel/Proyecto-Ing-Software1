@@ -4,14 +4,21 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { StaffShell } from "@/components/StaffShell";
 import { useStaffSession } from "@/hooks/useStaffSession";
-import { TIPOS_USUARIO } from "@/lib/roles";
+import { isStaffTipo } from "@/lib/roles";
 import { Icon } from "@/components/Icon";
+import { CantidadInput } from "@/components/CantidadInput";
+import { ProductoAutocompletar } from "@/components/ProductoAutocompletar";
+import Link from "next/link";
+import { CUOTAS_MAXIMAS, PLAZO_MAXIMO_DIAS, generarCuotas, sumarDias, validarCondicionesCredito } from "@/lib/credito";
+import { etiquetaCliente, filtrarClientesPorTexto } from "@/lib/clientes-busqueda";
 
 type Cliente = {
   id_cliente: number;
   nombre: string;
-  correo: string;
+  correo: string | null;
   tipo_cliente: string;
+  telefono?: string | null;
+  limite_deuda?: string | null;
   total_ventas?: number;
 };
 
@@ -33,11 +40,21 @@ type StockRow = {
   cantidad_disponible: string;
 };
 
+// Presentación de mayoreo de un producto (ej. "Caja de 24" = 24 unidades base).
+type Presentacion = {
+  id_presentacion: number;
+  nombre_presentacion: string;
+  factor_conversion: string;
+};
+
 type LineaVenta = {
   key: string;
   id_producto: string;
   id_bodega: string;
+  // En unidades de la presentación si hay id_presentacion; si no, en unidad base.
   cantidad: string;
+  id_presentacion: string;
+  // Precio por unidad BASE del producto.
   precio_unitario_venta: string;
 };
 
@@ -62,22 +79,57 @@ type VentaListada = {
   direccion_entrega: string | null;
   total: string;
   fecha_limite_pago: string | null;
+  condicion_pago?: string;
+  id_orden?: number | null;
+  estado_pedido?: string | null;
   nombre_cliente: string;
   correo_cliente: string;
   nombre_colaborador: string | null;
   productos: ProductoVentaRow[];
 };
 
-const ESTADOS = [
-  { value: "PAGADO", label: "Pagado" },
-  { value: "PENDIENTE", label: "Pendiente" },
-  { value: "CONFIRMADO", label: "Confirmado" },
-  { value: "ENTREGADO", label: "Entregado" },
-] as const;
+// Forma de pago de la venta: de contado se paga completa en el momento; a
+// crédito se genera la factura y una cuenta por cobrar con su plan de pagos.
+type CondicionPago = "CONTADO" | "CREDITO";
+
+// Estado del pedido de entrega que genera una venta a domicilio.
+const ESTADOS_PEDIDO: Record<string, string> = {
+  PENDIENTE: "pendiente",
+  CONFIRMADO: "confirmado",
+  EN_PREPARACION: "en preparación",
+  ENVIADO: "enviado",
+  ENTREGADO: "entregado",
+  CANCELADO: "cancelado",
+};
+
+const OPCIONES_PAGOS = [1, 2, 3, 4, 6, 12] as const;
+const PLAZOS_RAPIDOS = [15, 30, 45, 60] as const;
+
+// Fecha local (no UTC) en formato AAAA-MM-DD, para no adelantar el día de noche.
+function hoyLocalISO(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function formatoFecha(iso: string): string {
+  const [y, m, d] = iso.split("-");
+  return `${d}/${m}/${y}`;
+}
 
 const inputCls =
   "w-full px-3 py-2.5 rounded-control border border-[var(--border)] bg-cream/60 text-ink text-[0.95rem] outline-none focus:ring-2 focus:ring-market/40 transition-shadow";
 const labelCls = "font-semibold text-[0.88rem] text-ink-muted";
+
+// Formulario de "+ Cliente nuevo" (mismo patrón que en Deudas, pero acá el
+// correo es obligatorio: la venta queda ligada a un cliente localizable).
+const clienteFormVacio = {
+  nombre: "",
+  telefono: "",
+  correo: "",
+  tipo_cliente: "MINORISTA",
+  limite_deuda: "",
+};
+const CORREO_VALIDO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function nuevaLinea(): LineaVenta {
   return {
@@ -85,6 +137,7 @@ function nuevaLinea(): LineaVenta {
     id_producto: "",
     id_bodega: "",
     cantidad: "",
+    id_presentacion: "",
     precio_unitario_venta: "",
   };
 }
@@ -116,7 +169,20 @@ export default function VentasPage() {
   // sugieren de entrada los más frecuentes y se busca el resto por texto.
   const [busquedaCliente, setBusquedaCliente] = useState("");
   const [sugerenciasClienteAbiertas, setSugerenciasClienteAbiertas] = useState(false);
-  const [estadoPago, setEstadoPago] = useState<string>("PAGADO");
+  // Alta rápida de cliente sin salir de Ventas
+  const [creandoCliente, setCreandoCliente] = useState(false);
+  const [formCliente, setFormCliente] = useState(clienteFormVacio);
+  const [guardandoCliente, setGuardandoCliente] = useState(false);
+  const [errorCliente, setErrorCliente] = useState<string | null>(null);
+  // Confirmación visible bajo el buscador (okMsg solo se muestra tras una venta).
+  const [avisoCliente, setAvisoCliente] = useState<string | null>(null);
+  const [condicionPago, setCondicionPago] = useState<CondicionPago>("CONTADO");
+  // Crédito: la factura lleva por defecto la fecha de hoy; se puede forzar otra.
+  const [otraFechaFactura, setOtraFechaFactura] = useState(false);
+  const [fechaFactura, setFechaFactura] = useState("");
+  const [plazoDias, setPlazoDias] = useState("30");
+  const [numeroCuotas, setNumeroCuotas] = useState("1");
+  const [creditoGenerado, setCreditoGenerado] = useState<{ numero_factura: string; fecha_limite_pago: string; bloqueado: boolean } | null>(null);
   const [tipoVenta, setTipoVenta] = useState<string>("MINORISTA");
   // El tipo de venta ya no lo escoge el colaborador a mano: se detecta solo
   // según el tipo_cliente que ya tiene guardado el cliente elegido. Este
@@ -125,8 +191,10 @@ export default function VentasPage() {
   const [forzarTipoVenta, setForzarTipoVenta] = useState(false);
   const [tipoEntrega, setTipoEntrega] = useState<string>("EN_TIENDA");
   const [direccionEntrega, setDireccionEntrega] = useState("");
-  const [fechaLimitePago, setFechaLimitePago] = useState("");
   const [lineas, setLineas] = useState<LineaVenta[]>([nuevaLinea()]);
+  // Presentaciones por producto, cargadas bajo demanda al elegir el producto
+  // (undefined = sin cargar, [] = cargadas y sin presentaciones).
+  const [presentacionesPorProducto, setPresentacionesPorProducto] = useState<Record<number, Presentacion[]>>({});
 
   const cargarVentas = useCallback(async () => {
     setLoadingLista(true);
@@ -150,11 +218,8 @@ export default function VentasPage() {
 
   useEffect(() => {
     if (!usuario) return;
-    if (usuario.tipo_usuario === TIPOS_USUARIO.DUENO) {
-      router.replace("/dashboard");
-      return;
-    }
-    if (usuario.tipo_usuario !== TIPOS_USUARIO.EMPLEADO) return;
+    // Ventas es de dueño y colaborador: el dueño también vende (y hace pedidos).
+    if (!isStaffTipo(usuario.tipo_usuario)) return;
     cargarClientes();
     fetch("/api/productos").then((r) => r.json()).then((d) => setProductos(d.productos || []));
     fetch("/api/bodegas").then((r) => r.json()).then((d) => setBodegas(d.bodegas || []));
@@ -172,7 +237,7 @@ export default function VentasPage() {
   // (o desbloquea) a un cliente por deuda mientras tanto, esto refresca la
   // lista al volver — así nunca queda desactualizada.
   useEffect(() => {
-    if (!usuario || usuario.tipo_usuario !== TIPOS_USUARIO.EMPLEADO) return;
+    if (!usuario || !isStaffTipo(usuario.tipo_usuario)) return;
     function onFocus() {
       cargarClientes();
     }
@@ -203,6 +268,8 @@ export default function VentasPage() {
     return m;
   }, [productos]);
 
+  const productosActivos = useMemo(() => productos.filter((p) => p.estado_producto), [productos]);
+
   const clienteSeleccionado = useMemo(
     () => clientes.find((c) => String(c.id_cliente) === idCliente),
     [clientes, idCliente]
@@ -217,11 +284,8 @@ export default function VentasPage() {
   }, [clientes]);
 
   const clientesSugeridos = useMemo(() => {
-    const q = busquedaCliente.trim().toLowerCase();
-    if (q === "") return clientesDestacados;
-    return clientes
-      .filter((c) => c.nombre.toLowerCase().includes(q) || c.correo.toLowerCase().includes(q))
-      .slice(0, 8);
+    if (busquedaCliente.trim() === "") return clientesDestacados;
+    return filtrarClientesPorTexto(clientes, busquedaCliente).slice(0, 8);
   }, [busquedaCliente, clientes, clientesDestacados]);
 
   const stockDisponible = useCallback((idProducto: string, idBodega: string): number => {
@@ -232,20 +296,57 @@ export default function VentasPage() {
     return row ? Number(row.cantidad_disponible) : 0;
   }, [stock]);
 
+  const cargarPresentacionesSiFalta = useCallback(async (idProducto: number) => {
+    if (!idProducto || presentacionesPorProducto[idProducto] !== undefined) return;
+    try {
+      const r = await fetch(`/api/presentaciones?id_producto=${idProducto}`);
+      const d = await r.json();
+      setPresentacionesPorProducto((prev) => ({ ...prev, [idProducto]: d.presentaciones || [] }));
+    } catch {
+      setPresentacionesPorProducto((prev) => ({ ...prev, [idProducto]: [] }));
+    }
+  }, [presentacionesPorProducto]);
+
+  // Cantidad en unidad base (convierte si la línea viene en una presentación,
+  // ej. 3 "Caja de 24" => 72).
+  function factorDeLinea(ln: LineaVenta): number {
+    if (!ln.id_presentacion) return 1;
+    const lista = presentacionesPorProducto[Number(ln.id_producto)] || [];
+    const pres = lista.find((p) => p.id_presentacion === Number(ln.id_presentacion));
+    return pres ? Number(pres.factor_conversion) || 1 : 1;
+  }
+
   const totalBorrador = useMemo(() => {
     let t = 0;
     for (const ln of lineas) {
-      const q = Number(ln.cantidad);
+      const q = Number(ln.cantidad) * factorDeLinea(ln);
       const pu = Number(ln.precio_unitario_venta);
       if (q > 0 && pu >= 0 && !Number.isNaN(q) && !Number.isNaN(pu)) {
         t += Math.round(q * pu * 100) / 100;
       }
     }
     return Math.round(t * 100) / 100;
-  }, [lineas]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lineas, presentacionesPorProducto]);
+
+  // ── Crédito: fecha efectiva de la factura y vista previa del plan de pagos ──
+  const fechaFacturaEfectiva = otraFechaFactura && fechaFactura ? fechaFactura : hoyLocalISO();
+  const errorCredito = useMemo(() => {
+    if (condicionPago !== "CREDITO") return null;
+    if (otraFechaFactura && !fechaFactura) return "Elige la fecha de la factura";
+    return validarCondicionesCredito(Number(plazoDias), Number(numeroCuotas));
+  }, [condicionPago, otraFechaFactura, fechaFactura, plazoDias, numeroCuotas]);
+  const planCuotas = useMemo(() => {
+    if (condicionPago !== "CREDITO" || errorCredito || totalBorrador <= 0) return [];
+    try {
+      return generarCuotas(fechaFacturaEfectiva, Number(plazoDias), Number(numeroCuotas), totalBorrador);
+    } catch {
+      return [];
+    }
+  }, [condicionPago, errorCredito, totalBorrador, fechaFacturaEfectiva, plazoDias, numeroCuotas]);
 
   if (!usuario) return <p className="p-8 text-ink-muted">Cargando…</p>;
-  if (usuario.tipo_usuario !== TIPOS_USUARIO.EMPLEADO) return <p className="p-8 text-ink-muted">Redirigiendo…</p>;
+  if (!isStaffTipo(usuario.tipo_usuario)) return <p className="p-8 text-ink-muted">Redirigiendo…</p>;
 
   function precioSugerido(p: Producto | undefined): string {
     if (!p) return "";
@@ -262,7 +363,8 @@ export default function VentasPage() {
   function onProductoChange(key: string, idStr: string) {
     const id = Number(idStr);
     const p = productoPorId.get(id);
-    setLineas((prev) => prev.map((ln) => ln.key === key ? { ...ln, id_producto: idStr, precio_unitario_venta: p ? precioSugerido(p) : ln.precio_unitario_venta } : ln));
+    setLineas((prev) => prev.map((ln) => ln.key === key ? { ...ln, id_producto: idStr, id_presentacion: "", precio_unitario_venta: p ? precioSugerido(p) : ln.precio_unitario_venta } : ln));
+    if (id) cargarPresentacionesSiFalta(id);
     setError(null); setOkMsg(null);
   }
 
@@ -293,11 +395,76 @@ export default function VentasPage() {
 
   function seleccionarCliente(c: Cliente) {
     onClienteChange(String(c.id_cliente));
-    setBusquedaCliente(`${c.nombre} (${c.correo})`);
+    setBusquedaCliente(etiquetaCliente(c));
     setSugerenciasClienteAbiertas(false);
   }
 
+  async function crearCliente() {
+    const nombre = formCliente.nombre.trim();
+    const correo = formCliente.correo.trim();
+    if (!nombre) {
+      setErrorCliente("El nombre del cliente nuevo es obligatorio");
+      return;
+    }
+    if (!correo) {
+      setErrorCliente("El correo es obligatorio para crear un cliente desde Ventas");
+      return;
+    }
+    if (!CORREO_VALIDO.test(correo)) {
+      setErrorCliente("Escribe un correo válido (ej. nombre@correo.com)");
+      return;
+    }
+    const limite = formCliente.limite_deuda.trim() === "" ? null : Number(formCliente.limite_deuda);
+    if (limite !== null && (!Number.isFinite(limite) || limite < 0)) {
+      setErrorCliente("El límite de crédito debe ser un número mayor o igual a 0");
+      return;
+    }
+
+    setGuardandoCliente(true);
+    setErrorCliente(null);
+    try {
+      const res = await fetch("/api/clientes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nombre,
+          correo,
+          telefono: formCliente.telefono.trim(),
+          tipo_cliente: formCliente.tipo_cliente,
+          limite_deuda: limite,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setErrorCliente(data.error || "No se pudo crear el cliente");
+        return;
+      }
+      const nuevo: Cliente = data.cliente;
+      setClientes((prev) => [...prev, nuevo].sort((a, b) => a.nombre.localeCompare(b.nombre)));
+
+      // Se deja seleccionado de una vez. onClienteChange no sirve acá porque
+      // busca en `clientes`, que todavía no incluye al recién creado.
+      setIdCliente(String(nuevo.id_cliente));
+      setBusquedaCliente(`${nuevo.nombre} (${nuevo.correo})`);
+      setSugerenciasClienteAbiertas(false);
+      if (!forzarTipoVenta) {
+        const detectado = nuevo.tipo_cliente === "MAYORISTA" ? "MAYORISTA" : "MINORISTA";
+        setTipoVenta(detectado);
+        aplicarPreciosPorTipo(detectado);
+      }
+      setError(null);
+      setAvisoCliente(`Cliente "${nuevo.nombre}" creado y seleccionado ✓`);
+      setCreandoCliente(false);
+      setFormCliente(clienteFormVacio);
+    } catch {
+      setErrorCliente("Error de conexión al crear el cliente");
+    } finally {
+      setGuardandoCliente(false);
+    }
+  }
+
   function limpiarClienteSeleccionado() {
+    setAvisoCliente(null);
     setBusquedaCliente("");
     setSugerenciasClienteAbiertas(false);
     onClienteChange("");
@@ -319,18 +486,43 @@ export default function VentasPage() {
     try {
       const lineasPayload = lineas
         .filter((ln) => ln.id_producto && ln.id_bodega && ln.cantidad && ln.precio_unitario_venta)
-        .map((ln) => ({ id_producto: Number(ln.id_producto), id_bodega: Number(ln.id_bodega), cantidad: Number(ln.cantidad), precio_unitario_venta: Number(ln.precio_unitario_venta) }));
+        .map((ln) => ({
+          id_producto: Number(ln.id_producto),
+          id_bodega: Number(ln.id_bodega),
+          cantidad: Number(ln.cantidad),
+          id_presentacion: ln.id_presentacion ? Number(ln.id_presentacion) : undefined,
+          precio_unitario_venta: Number(ln.precio_unitario_venta),
+        }));
       const res = await fetch("/api/ventas", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id_cliente: Number(idCliente), estado_pago: estadoPago, tipo_venta: tipoVenta, forzar_tipo_venta: forzarTipoVenta, tipo_entrega: tipoEntrega, direccion_entrega: tipoEntrega === "DOMICILIO" ? direccionEntrega.trim() : undefined, fecha_limite_pago: fechaLimitePago || undefined, lineas: lineasPayload }),
+        body: JSON.stringify({
+          id_cliente: Number(idCliente),
+          condicion_pago: condicionPago,
+          credito: condicionPago === "CREDITO"
+            ? { fecha_factura: fechaFacturaEfectiva, plazo_dias: Number(plazoDias), numero_cuotas: Number(numeroCuotas) }
+            : undefined,
+          tipo_venta: tipoVenta, forzar_tipo_venta: forzarTipoVenta, tipo_entrega: tipoEntrega,
+          direccion_entrega: tipoEntrega === "DOMICILIO" ? direccionEntrega.trim() : undefined,
+          lineas: lineasPayload,
+        }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error || "No se pudo registrar la venta"); return; }
-      setOkMsg(`Venta #${data.id_venta} registrada. Total: Q${Number(data.total).toFixed(2)}`);
+      if (data.credito) {
+        setOkMsg(`Venta #${data.id_venta} a crédito registrada. Total: Q${Number(data.total).toFixed(2)} · Factura ${data.credito.numero_factura}${data.id_orden ? ` · Pedido de entrega #${data.id_orden}` : ""}`);
+        setCreditoGenerado({
+          numero_factura: data.credito.numero_factura,
+          fecha_limite_pago: data.credito.fecha_limite_pago,
+          bloqueado: !!data.credito.alerta?.bloqueado,
+        });
+      } else {
+        setOkMsg(`Venta #${data.id_venta} registrada. Total: Q${Number(data.total).toFixed(2)}${data.id_orden ? ` · Pedido de entrega #${data.id_orden}` : ""}`);
+        setCreditoGenerado(null);
+      }
       setVentaDeshacer({ id: data.id_venta, total: Number(data.total) });
       setSegundosRestantes(VENTANA_DESHACER_SEGUNDOS);
-      setIdCliente(""); setBusquedaCliente(""); setEstadoPago("PAGADO"); setTipoVenta("MINORISTA"); setForzarTipoVenta(false); setTipoEntrega("EN_TIENDA");
-      setDireccionEntrega(""); setFechaLimitePago(""); setLineas([nuevaLinea()]);
+      setIdCliente(""); setBusquedaCliente(""); setCondicionPago("CONTADO"); setOtraFechaFactura(false); setFechaFactura(""); setPlazoDias("30"); setNumeroCuotas("1"); setTipoVenta("MINORISTA"); setForzarTipoVenta(false); setTipoEntrega("EN_TIENDA");
+      setDireccionEntrega(""); setLineas([nuevaLinea()]);
       await cargarVentas();
     } catch { setError("No se pudo conectar con el servidor"); }
     finally { setLoadingSubmit(false); setConfirmando(false); }
@@ -351,11 +543,16 @@ export default function VentasPage() {
     finally { setDeshaciendo(false); }
   }
 
-  const puedeEnviar = idCliente && lineas.some((ln) => ln.id_producto && ln.id_bodega && ln.cantidad && Number(ln.cantidad) > 0) && (tipoEntrega === "EN_TIENDA" || direccionEntrega.trim().length > 0);
+  const puedeEnviar = idCliente && lineas.some((ln) => ln.id_producto && ln.id_bodega && ln.cantidad && Number(ln.cantidad) > 0) && (tipoEntrega === "EN_TIENDA" || direccionEntrega.trim().length > 0) && (condicionPago === "CONTADO" || (!errorCredito && totalBorrador > 0));
 
   return (
-    <StaffShell usuario={usuario} title="Ventas" subtitle="Registro de ventas y control de transacciones (colaborador)">
+    <StaffShell usuario={usuario} title="Ventas" subtitle="Registro de ventas, créditos y pedidos de entrega">
       <div className="flex flex-col gap-8">
+        <div className="max-w-[720px] flex justify-end -mb-5">
+          <Link href="/ordenes" className="text-[0.85rem] font-semibold text-market-600 hover:underline">
+            Ver pedidos de entrega →
+          </Link>
+        </div>
         <div className="max-w-[720px] bg-white border border-[var(--border)] rounded-card shadow-warm p-7">
 
           {/* Encabezado del formulario */}
@@ -421,7 +618,7 @@ export default function VentasPage() {
                         }}
                         className="px-3 py-2 text-[0.88rem] text-ink cursor-pointer hover:bg-cream/60 border-b border-[var(--border)] last:border-b-0 flex justify-between items-center gap-2"
                       >
-                        <span>{c.nombre} ({c.correo})</span>
+                        <span>{etiquetaCliente(c)}</span>
                         {!!c.total_ventas && (
                           <span className="text-[0.72rem] text-ink-muted whitespace-nowrap">
                             {c.total_ventas} venta{c.total_ventas === 1 ? "" : "s"}
@@ -432,15 +629,135 @@ export default function VentasPage() {
                   </div>
                 )}
               </div>
+              <div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCreandoCliente((v) => !v);
+                    setErrorCliente(null);
+                    setAvisoCliente(null);
+                  }}
+                  className="text-[0.84rem] font-semibold text-market-600 hover:underline"
+                >
+                  {creandoCliente ? "Cancelar cliente nuevo" : "+ Cliente nuevo"}
+                </button>
+              </div>
+
+              {avisoCliente && idCliente && !creandoCliente && (
+                <div className="text-[0.85rem] text-market-600 font-medium">{avisoCliente}</div>
+              )}
+
+              {creandoCliente && (
+                <div className="flex flex-col gap-2.5 p-3 border border-dashed border-[var(--border)] rounded-control">
+                  <div className="grid gap-2.5" style={{ gridTemplateColumns: "1fr 1fr" }}>
+                    <div className="flex flex-col gap-1.5">
+                      <label className={labelCls}>Nombre *</label>
+                      <input
+                        className={inputCls}
+                        value={formCliente.nombre}
+                        onChange={(e) => setFormCliente((f) => ({ ...f, nombre: e.target.value }))}
+                        placeholder="Nombre del cliente"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className={labelCls}>Teléfono</label>
+                      <input
+                        className={inputCls}
+                        value={formCliente.telefono}
+                        onChange={(e) => setFormCliente((f) => ({ ...f, telefono: e.target.value }))}
+                        placeholder="Opcional"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className={labelCls}>Correo *</label>
+                      <input
+                        type="email"
+                        className={inputCls}
+                        value={formCliente.correo}
+                        onChange={(e) => setFormCliente((f) => ({ ...f, correo: e.target.value }))}
+                        placeholder="nombre@correo.com"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className={labelCls}>Tipo de cliente</label>
+                      <select
+                        className={inputCls}
+                        value={formCliente.tipo_cliente}
+                        onChange={(e) => setFormCliente((f) => ({ ...f, tipo_cliente: e.target.value }))}
+                      >
+                        <option value="MINORISTA">Minorista</option>
+                        <option value="MAYORISTA">Mayorista</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label className={labelCls}>Límite de crédito (opcional)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      className={inputCls}
+                      value={formCliente.limite_deuda}
+                      onChange={(e) => setFormCliente((f) => ({ ...f, limite_deuda: e.target.value }))}
+                      placeholder="Sin límite"
+                    />
+                  </div>
+                  {errorCliente && (
+                    <div className="text-[0.85rem] text-achiote-600 font-medium">{errorCliente}</div>
+                  )}
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={crearCliente}
+                      disabled={guardandoCliente}
+                      className="bg-market text-white border-none rounded-control px-4 py-2 text-[0.88rem] font-semibold hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {guardandoCliente ? "Creando…" : "Crear cliente"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCreandoCliente(false);
+                        setFormCliente(clienteFormVacio);
+                        setErrorCliente(null);
+                      }}
+                      className="bg-transparent border border-[var(--border)] text-ink-muted rounded-control px-4 py-2 text-[0.88rem] font-semibold"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex gap-4 flex-wrap">
               <div className="flex-1 min-w-[200px] flex flex-col gap-1.5">
-                <label className={labelCls}>Estado de pago *</label>
-                <select value={estadoPago} onChange={(e) => { setEstadoPago(e.target.value); setError(null); }} className={inputCls}>
-                  {ESTADOS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
-                <span className="text-[0.78rem] text-ink-muted">En base de datos: <code>estado_venta</code></span>
+                <label className={labelCls}>Forma de pago *</label>
+                <div className="flex gap-2" role="group" aria-label="Forma de pago">
+                  {([
+                    { v: "CONTADO", t: "Contado" },
+                    { v: "CREDITO", t: "Crédito" },
+                  ] as const).map((o) => (
+                    <button
+                      key={o.v}
+                      type="button"
+                      aria-pressed={condicionPago === o.v}
+                      onClick={() => { setCondicionPago(o.v); setError(null); }}
+                      className={`flex-1 px-3 py-2.5 rounded-control border text-[0.95rem] font-semibold transition-colors ${
+                        condicionPago === o.v
+                          ? "bg-market text-white border-market"
+                          : "bg-transparent text-ink-muted border-[var(--border)] hover:bg-cream"
+                      }`}
+                    >
+                      {o.t}
+                    </button>
+                  ))}
+                </div>
+                <span className="text-[0.78rem] text-ink-muted">
+                  {condicionPago === "CONTADO"
+                    ? "El cliente paga el total en este momento."
+                    : "Se genera la factura y una cuenta por cobrar."}
+                </span>
               </div>
               <div className="flex-1 min-w-[200px] flex flex-col gap-1.5">
                 <label className={labelCls}>Tipo de venta</label>
@@ -485,70 +802,203 @@ export default function VentasPage() {
               </div>
             )}
 
-            <div className="flex flex-col gap-1.5">
-              <label className={labelCls}>Fecha límite de pago (opcional)</label>
-              <input type="date" value={fechaLimitePago} onChange={(e) => setFechaLimitePago(e.target.value)} className={inputCls} />
-            </div>
+            {condicionPago === "CREDITO" && (
+              <div className="flex flex-col gap-3 p-4 border border-market/40 bg-market-50/50 rounded-control">
+                <div className="font-semibold text-[0.9rem] text-market-600">Condiciones del crédito</div>
+                <div className="flex flex-col gap-1.5">
+                  <label className={labelCls}>Fecha de la factura</label>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    {otraFechaFactura ? (
+                      <input
+                        type="date"
+                        value={fechaFactura}
+                        max={hoyLocalISO()}
+                        min={sumarDias(hoyLocalISO(), -365)}
+                        onChange={(e) => setFechaFactura(e.target.value)}
+                        className={`${inputCls} max-w-[200px]`}
+                        aria-label="Fecha de la factura"
+                      />
+                    ) : (
+                      <span className="text-[0.95rem] text-ink">Hoy, {formatoFecha(hoyLocalISO())}</span>
+                    )}
+                    <label className="flex items-center gap-2 text-[0.85rem] text-ink-muted">
+                      <input
+                        type="checkbox"
+                        checked={otraFechaFactura}
+                        onChange={(e) => { setOtraFechaFactura(e.target.checked); if (!e.target.checked) setFechaFactura(""); }}
+                      />
+                      Elegir otra fecha
+                    </label>
+                  </div>
+                </div>
 
-            <div className="mt-2">
-              <div className="font-semibold text-[0.9rem] mb-3 text-ink">Productos</div>
-              <div className="flex flex-col gap-3">
-                {lineas.map((ln) => {
-                  const pSel = ln.id_producto ? productoPorId.get(Number(ln.id_producto)) : undefined;
-                  const disponible = stockDisponible(ln.id_producto, ln.id_bodega);
-                  return (
-                    <div key={ln.key} className="grid gap-2 items-end" style={{ gridTemplateColumns: "1fr 140px 100px 120px auto" }}>
-                      <div className="flex flex-col gap-1.5">
-                        <label className={labelCls}>Producto</label>
-                        <select value={ln.id_producto} onChange={(e) => onProductoChange(ln.key, e.target.value)} className={inputCls}>
-                          <option value="">— Producto —</option>
-                          {productos.filter((p) => p.estado_producto).map((p) => <option key={p.id_producto} value={p.id_producto}>[{p.codigo_producto}] {p.nombre_producto}</option>)}
-                        </select>
-                      </div>
-                      <div className="flex flex-col gap-1.5">
-                        <label className={labelCls}>Bodega *</label>
-                        <select value={ln.id_bodega} onChange={(e) => { actualizarLinea(ln.key, { id_bodega: e.target.value }); setError(null); setOkMsg(null); }} className={inputCls}>
-                          <option value="">— Bodega —</option>
-                          {bodegas.map((b) => <option key={b.id_bodega} value={b.id_bodega}>{b.nombre_bodega}</option>)}
-                        </select>
-                      </div>
-                      <div className="flex flex-col gap-1.5">
-                        <label className={labelCls}>Cantidad</label>
-                        <input type="number" min="0.001" step="0.001" value={ln.cantidad} onChange={(e) => actualizarLinea(ln.key, { cantidad: e.target.value })} className={inputCls} />
-                      </div>
-                      <div className="flex flex-col gap-1.5">
-                        <label className={labelCls}>P. venta</label>
-                        <input type="number" min="0" step="0.01" value={ln.precio_unitario_venta} onChange={(e) => actualizarLinea(ln.key, { precio_unitario_venta: e.target.value })} className={inputCls} />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setLineas((prev) => prev.length <= 1 ? prev : prev.filter((x) => x.key !== ln.key))}
-                        disabled={lineas.length <= 1}
-                        title="Quitar línea"
-                        className="h-10 w-10 flex items-center justify-center rounded-control border border-[var(--border)] bg-cream/60 text-ink-muted transition-colors disabled:cursor-not-allowed disabled:opacity-50 enabled:hover:bg-achiote-50 enabled:hover:text-achiote-600"
-                      >
-                        <Icon name="close" variant="dark" size={14} />
-                      </button>
-                      {pSel && (
-                        <span className="col-span-full text-[0.78rem] text-ink-muted">
-                          Unidad: {pSel.unidad_medida}
-                          {ln.id_bodega && (
-                            <> · Disponible en bodega: <strong className={disponible > 0 ? "text-market-600" : "text-achiote-600"}>{disponible}</strong></>
-                          )}
-                        </span>
-                      )}
+                <div className="flex gap-4 flex-wrap">
+                  <div className="flex-1 min-w-[200px] flex flex-col gap-1.5">
+                    <label className={labelCls}>Plazo para pagar (días)</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={PLAZO_MAXIMO_DIAS}
+                      value={plazoDias}
+                      onChange={(e) => setPlazoDias(e.target.value)}
+                      className={inputCls}
+                      aria-label="Plazo en días"
+                    />
+                    <div className="flex gap-1.5 flex-wrap">
+                      {PLAZOS_RAPIDOS.map((d) => (
+                        <button
+                          key={d}
+                          type="button"
+                          onClick={() => setPlazoDias(String(d))}
+                          className={`px-2.5 py-1 rounded-control border text-[0.78rem] font-semibold ${
+                            Number(plazoDias) === d ? "bg-market text-white border-market" : "border-[var(--border)] text-ink-muted hover:bg-cream"
+                          }`}
+                        >
+                          {d} días
+                        </button>
+                      ))}
                     </div>
-                  );
-                })}
+                  </div>
+                  <div className="flex-1 min-w-[200px] flex flex-col gap-1.5">
+                    <label className={labelCls}>Forma de pago del crédito</label>
+                    <select value={numeroCuotas} onChange={(e) => setNumeroCuotas(e.target.value)} className={inputCls} aria-label="Número de pagos">
+                      {OPCIONES_PAGOS.filter((n) => n <= CUOTAS_MAXIMAS).map((n) => (
+                        <option key={n} value={n}>{n === 1 ? "Pago único" : `${n} pagos`}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {errorCredito ? (
+                  <div className="text-[0.85rem] text-achiote-600 font-medium">{errorCredito}</div>
+                ) : planCuotas.length > 0 ? (
+                  <div className="flex flex-col gap-1" aria-label="Plan de pagos">
+                    <div className="text-[0.82rem] font-semibold text-ink-muted">Plan de pagos</div>
+                    {planCuotas.map((c) => (
+                      <div key={c.numero} className="flex justify-between text-[0.9rem] text-ink">
+                        <span>
+                          {planCuotas.length === 1 ? "Pago único" : `Pago ${c.numero}`} · vence {formatoFecha(c.fecha_vencimiento)}
+                        </span>
+                        <span className="font-semibold">Q{c.monto.toFixed(2)}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-[0.85rem] text-ink-muted">Agrega productos para ver el plan de pagos.</div>
+                )}
               </div>
-              <button
-                type="button"
-                onClick={() => setLineas((prev) => [...prev, nuevaLinea()])}
-                className="mt-3 px-3.5 py-2 rounded-control border border-market bg-transparent text-market-600 font-semibold text-[0.88rem] transition-transform active:scale-[0.97] hover:bg-market-50"
-              >
-                + Agregar producto
-              </button>
-            </div>
+            )}
+
+<div className="mt-2">
+  <div className="font-semibold text-[0.9rem] mb-3 text-ink">Productos</div>
+  <div className="flex flex-col gap-4">
+    {lineas.map((ln) => {
+      const pSel = ln.id_producto ? productoPorId.get(Number(ln.id_producto)) : undefined;
+      const disponible = stockDisponible(ln.id_producto, ln.id_bodega);
+      const presentaciones = presentacionesPorProducto[Number(ln.id_producto)] || [];
+      return (
+        <div
+          key={ln.key}
+          className="grid gap-x-2 gap-y-3 items-end"
+          // La 2ª columna (cantidad) necesita ancho extra: lleva los botones − / +
+          style={{ gridTemplateColumns: "minmax(0,1.4fr) minmax(0,1.15fr) minmax(0,1fr) minmax(0,1fr) auto" }}
+        >
+          {/* Fila 1: Producto + quitar */}
+          <div className="flex flex-col gap-1.5" style={{ gridColumn: "1 / span 4", gridRow: 1 }}>
+            <label className={labelCls}>Producto</label>
+            <ProductoAutocompletar
+              productos={productosActivos}
+              value={ln.id_producto}
+              onChange={(id) => onProductoChange(ln.key, id)}
+              className={inputCls}
+            />
+          </div>
+          <button
+            type="button"
+            style={{ gridColumn: 5, gridRow: 1 }}
+            onClick={() => setLineas((prev) => prev.length <= 1 ? prev : prev.filter((x) => x.key !== ln.key))}
+            disabled={lineas.length <= 1}
+            title="Quitar línea"
+            className="h-10 w-10 flex items-center justify-center rounded-control border border-[var(--border)] bg-cream/60 text-ink-muted transition-colors disabled:cursor-not-allowed disabled:opacity-50 enabled:hover:bg-achiote-50 enabled:hover:text-achiote-600"
+          >
+            <Icon name="close" variant="dark" size={14} />
+          </button>
+
+          {/* Fila 2: Bodega, Cantidad, Presentación, Precio */}
+          <div className="flex flex-col gap-1.5" style={{ gridColumn: 1, gridRow: 2 }}>
+            <label className={labelCls}>Bodega *</label>
+            <select
+              value={ln.id_bodega}
+              onChange={(e) => { actualizarLinea(ln.key, { id_bodega: e.target.value }); setError(null); setOkMsg(null); }}
+              className={inputCls}
+            >
+              <option value="">— Bodega —</option>
+              {bodegas.map((b) => <option key={b.id_bodega} value={b.id_bodega}>{b.nombre_bodega}</option>)}
+            </select>
+          </div>
+
+          <div className="flex flex-col gap-1.5" style={{ gridColumn: 2, gridRow: 2 }}>
+            <label className={labelCls}>Cantidad</label>
+            <CantidadInput
+              ariaLabel="Cantidad"
+              className={inputCls}
+              value={ln.cantidad}
+              onChange={(cantidad) => actualizarLinea(ln.key, { cantidad })}
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5" style={{ gridColumn: 3, gridRow: 2 }}>
+            <label className={labelCls}>Presentación</label>
+            <select
+              value={ln.id_presentacion}
+              onChange={(e) => actualizarLinea(ln.key, { id_presentacion: e.target.value })}
+              className={inputCls}
+              disabled={presentaciones.length === 0}
+              aria-label="Presentación"
+            >
+              <option value="">Unidad</option>
+              {presentaciones.map((pr) => (
+                <option key={pr.id_presentacion} value={pr.id_presentacion}>
+                  {pr.nombre_presentacion} (×{Number(pr.factor_conversion)})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex flex-col gap-1.5" style={{ gridColumn: 4, gridRow: 2 }}>
+            <label className={labelCls}>P. venta</label>
+            <input
+              type="number" min="0" step="0.01"
+              value={ln.precio_unitario_venta}
+              onChange={(e) => actualizarLinea(ln.key, { precio_unitario_venta: e.target.value })}
+              className={inputCls}
+            />
+          </div>
+
+          {/* Fila 3: info */}
+          {(pSel || (ln.id_presentacion && Number(ln.cantidad) > 0)) && (
+            <span className="col-span-full text-[0.78rem] text-ink-muted">
+              {pSel && <>Unidad: {pSel.unidad_medida}</>}
+              {ln.id_bodega && (
+                <> · Disponible en bodega: <strong className={disponible > 0 ? "text-market-600" : "text-achiote-600"}>{disponible}</strong></>
+              )}
+              {ln.id_presentacion && Number(ln.cantidad) > 0 && (
+                <> · = {(Number(ln.cantidad) * factorDeLinea(ln)).toLocaleString("es-GT")} unidades</>
+              )}
+            </span>
+          )}
+        </div>
+      );
+    })}
+  </div>
+  <button
+    type="button"
+    onClick={() => setLineas((prev) => [...prev, nuevaLinea()])}
+    className="mt-3 px-3.5 py-2 rounded-control border border-market bg-transparent text-market-600 font-semibold text-[0.88rem] transition-transform active:scale-[0.97] hover:bg-market-50"
+  >
+    + Agregar producto
+  </button>
+</div>
 
             <div className="flex justify-between items-center mt-2 pt-4 border-t border-[var(--border)]">
               <span className="font-bold text-ink">Total: Q{totalBorrador.toFixed(2)}</span>
@@ -571,7 +1021,19 @@ export default function VentasPage() {
           {okMsg && ventaDeshacer && (
             <div key={okMsg} className="mt-4 bg-market-50 border border-market/35 rounded-control px-4 py-3 text-market-600 font-medium flex items-center gap-3 flex-wrap animate-stamp">
               <span className="inline-flex w-5 h-5 rounded-full bg-market text-white items-center justify-center text-xs shrink-0">✓</span>
-              <span className="flex-1">{okMsg}</span>
+              <span className="flex-1">
+                {okMsg}
+                {creditoGenerado && (
+                  <>
+                    {" "}· vence {formatoFecha(creditoGenerado.fecha_limite_pago)}.
+                    {creditoGenerado.bloqueado && (
+                      <span className="block text-achiote-600 font-semibold mt-1">
+                        ⚠️ Este cliente alcanzó su límite de crédito y quedó bloqueado para nuevas compras.
+                      </span>
+                    )}
+                  </>
+                )}
+              </span>
               <button
                 type="button"
                 onClick={handleDeshacer}
@@ -599,6 +1061,14 @@ export default function VentasPage() {
                 {clientes.find((c) => String(c.id_cliente) === idCliente)?.nombre ?? "Cliente"} ·{" "}
                 {lineas.filter((l) => l.id_producto).length} producto(s) · Total: Q{totalBorrador.toFixed(2)}
               </p>
+              {condicionPago === "CREDITO" ? (
+                <p className="text-ink text-[0.88rem] mb-4 bg-market-50 border border-market/30 rounded-control px-3 py-2">
+                  <strong>A crédito</strong> · factura del {formatoFecha(fechaFacturaEfectiva)} · plazo de {plazoDias} días ·{" "}
+                  {Number(numeroCuotas) === 1 ? "pago único" : `${numeroCuotas} pagos`}. Se generará la factura y una cuenta por cobrar.
+                </p>
+              ) : (
+                <p className="text-ink-muted text-[0.88rem] mb-4">De contado: el cliente paga el total ahora.</p>
+              )}
               <div className="flex gap-2 justify-end">
                 <button
                   type="button"
@@ -649,7 +1119,11 @@ export default function VentasPage() {
                         <div className="text-[0.78rem] text-ink-muted">{v.correo_cliente}</div>
                       </td>
                       <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">{v.nombre_colaborador ?? "—"}</td>
-                      <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">{v.estado_venta}</td>
+                      <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">{v.condicion_pago === "CREDITO" ? `Crédito · ${v.estado_venta}` : v.estado_venta}
+                      {v.id_orden && v.estado_pedido && (
+                        <span className="block text-[0.75rem] text-ink-muted">Pedido: {ESTADOS_PEDIDO[v.estado_pedido] ?? v.estado_pedido}</span>
+                      )}
+                    </td>
                       <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">{v.tipo_venta}</td>
                       <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)] text-right font-semibold">Q{Number(v.total).toFixed(2)}</td>
                       <td className="px-3.5 py-2.5 text-[0.82rem] border-b border-[var(--border)] max-w-[320px]">

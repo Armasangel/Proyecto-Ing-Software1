@@ -2,17 +2,24 @@
 //
 // Paso 2 del proceso de ascenso a DUENO: valida el código de 6 dígitos que
 // se mandó en /solicitar y, si es correcto, recién ahí aplica el cambio de
-// tipo_usuario. Todo el chequeo del límite (MAX_DUENOS) y la aplicación del
+// tipo_usuario. Todo el chequeo del límite de dueños y la aplicación del
 // cambio ocurren dentro de una misma transacción con un advisory lock, para
 // que dos promociones confirmadas casi al mismo tiempo no se cuelen las dos
 // y dejen más dueños de los permitidos.
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
-import { isDuenoTipo, MAX_DUENOS, TIPOS_USUARIO } from "@/lib/roles";
+import { isDuenoTipo, TIPOS_USUARIO } from "@/lib/roles";
 import { apiError, tooManyRequestsError, unauthorizedError, validationError } from "@/lib/api-error";
 import { checkRateLimit, getClientIp } from "@/lib/api-rate-limit";
 import { compararCodigo, getMaxIntentos, verifyPromocionToken } from "@/lib/verificacion";
+import {
+  cupoLleno,
+  leerCupo,
+  mensajeLimiteAlcanzado,
+  respuestaSiLimiteAlcanzado,
+} from "@/lib/limites-usuarios";
+import { registrarAuditoria, TIPOS_EVENTO } from "@/lib/audit";
 import { getLogger } from "@/lib/logger";
 
 const log = getLogger("api/usuarios/promover-dueno/confirmar");
@@ -53,7 +60,7 @@ export async function POST(req: NextRequest) {
     await client.query("BEGIN");
 
     // Serializa entre sí todas las confirmaciones de promoción a dueño, para
-    // que el conteo contra MAX_DUENOS sea confiable aunque dos solicitudes
+    // que el conteo contra el límite configurado sea confiable aunque dos solicitudes
     // se confirmen casi al mismo tiempo.
     await client.query("SELECT pg_advisory_xact_lock(hashtext('promocion_dueno'))");
 
@@ -118,14 +125,11 @@ export async function POST(req: NextRequest) {
     // Revalidación final del límite, ya con el advisory lock tomado: si
     // otra promoción se coló entre el "solicitar" y este momento, se
     // rechaza acá aunque el código en sí sea correcto.
-    const conteo = await client.query<{ count: number }>(
-      `SELECT COUNT(*)::int AS count FROM usuario WHERE tipo_usuario = $1`,
-      [TIPOS_USUARIO.DUENO]
-    );
-    if (conteo.rows[0].count >= MAX_DUENOS) {
+    const cupo = await leerCupo(client, TIPOS_USUARIO.DUENO);
+    if (cupoLleno(cupo)) {
       await client.query("ROLLBACK");
       return validationError(
-        `Ya existen ${MAX_DUENOS} usuarios dueño, el máximo permitido. La promoción no se pudo aplicar.`
+        `${mensajeLimiteAlcanzado(TIPOS_USUARIO.DUENO, cupo.limite)} La promoción no se pudo aplicar.`
       );
     }
 
@@ -148,7 +152,8 @@ export async function POST(req: NextRequest) {
 
     const actualizado = await client.query(
       `UPDATE usuario
-       SET tipo_usuario = $1
+       SET tipo_usuario = $1,
+           sesion_version = sesion_version + 1
        WHERE id_usuario = $2
        RETURNING id_usuario, nombre, correo, tipo_usuario, estado_usuario, id_bodega, requiere_2fa`,
       [TIPOS_USUARIO.DUENO, fila.id_usuario_objetivo]
@@ -160,9 +165,22 @@ export async function POST(req: NextRequest) {
 
     await client.query("COMMIT");
 
+    registrarAuditoria({
+      id_usuario: fila.id_usuario_objetivo,
+      tipo_evento: TIPOS_EVENTO.PROMOCION_DUENO,
+      ip: getClientIp(req),
+      user_agent: req.headers.get("user-agent"),
+      detalle: {
+        desde: objetivoResult.rows[0].tipo_usuario,
+        hacia: TIPOS_USUARIO.DUENO,
+        solicitado_por: solicitante.id_usuario,
+        sesiones_revocadas: true,
+      },
+    });
+
     log.info(
       { id_usuario_objetivo: fila.id_usuario_objetivo, id_dueno_solicitante: solicitante.id_usuario },
-      "Usuario promovido a DUENO"
+      "Usuario promovido a DUENO; sesiones revocadas"
     );
 
     return NextResponse.json({ ok: true, usuario: actualizado.rows[0] });
@@ -173,7 +191,7 @@ export async function POST(req: NextRequest) {
       // Si el ROLLBACK también falla la conexión ya está en mal estado;
       // se libera igual en el finally y el pool la descarta.
     }
-    return apiError("PROMOVER-DUENO CONFIRMAR POST", error);
+    return respuestaSiLimiteAlcanzado(error) ?? apiError("PROMOVER-DUENO CONFIRMAR POST", error);
   } finally {
     client.release();
   }

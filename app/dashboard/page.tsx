@@ -101,7 +101,7 @@ export default function DashboardPage() {
               Reintentar
             </button>
             <div className="text-xs text-ink-muted max-w-[420px] leading-snug">
-              También puedes recargar la página. Si el problema continúa, contacta al administrador.
+              También puedes recargar la página. Si el problema continúa, contacta con el administrador.
             </div>
           </div>
         ) : (
@@ -150,14 +150,16 @@ export default function DashboardPage() {
           )}
           {stats.clientesBloqueados > 0 && (
             <div className="bg-achiote-50 border border-achiote/25 rounded-card px-5 py-4 flex items-center gap-3.5 flex-1 min-w-[200px]">
-              <span className="text-[1.1rem]">🔒</span>
+              <span className="text-achiote inline-flex">
+                <Icon name="lockout" />
+              </span>
               <div>
                 <div className="font-bold text-ink text-[0.88rem]">
                   {stats.clientesBloqueados} cliente{stats.clientesBloqueados !== 1 ? "s" : ""}{" "}
-                  bloqueado{stats.clientesBloqueados !== 1 ? "s" : ""} por deuda
+                  bloqueado{stats.clientesBloqueados !== 1 ? "s" : ""} por límite de crédito
                 </div>
-                <Link href="/deudas" className="text-[0.78rem] text-achiote-600 font-semibold no-underline mt-0.5 block hover:underline">
-                  Ver en Deudas →
+                <Link href="/cuentas-por-cobrar" className="text-[0.78rem] text-achiote-600 font-semibold no-underline mt-0.5 block hover:underline">
+                  Ver en Cuentas por cobrar →
                 </Link>
               </div>
             </div>

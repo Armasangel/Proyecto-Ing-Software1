@@ -12,6 +12,10 @@ jest.mock("@/lib/api-rate-limit", () => ({
 }));
 
 const mockPool = jest.requireMock("@/lib/db").pool as { query: jest.Mock };
+
+// Cumple lib/password-policy.ts: 12+ caracteres y fuera de la lista de
+// contraseñas comunes.
+const CONTRASENA_VALIDA = "Brindis-GT-2026!";
 const mockCheckRateLimit = checkRateLimit as jest.MockedFunction<typeof checkRateLimit>;
 
 const mockUsuarios = [
@@ -82,6 +86,69 @@ describe("GET /api/usuarios", () => {
     const query = mockPool.query.mock.calls.find((c: unknown[]) => (c[0] as string).includes("SELECT"));
     const sql = query?.[0] as string;
     expect(sql).toContain("tipo_usuario");
+  });
+
+  describe("cupos de dueño", () => {
+    /** Simula la base: la lista (posiblemente filtrada) y, aparte, el conteo real por tipo */
+    function mockBase(lista: unknown[], totales: { tipo_usuario: string; total: number }[], limite: number | null = 2, activos = totales.find(t => t.tipo_usuario === "DUENO")?.total ?? 0) {
+      mockPool.query.mockImplementation(async (sql: string) =>
+        sql.includes("limite_tipo_usuario") ? { rows: [{ configurado: true, limite, activos }] } : sql.includes("GROUP BY") ? { rows: totales } : { rows: lista }
+      );
+    }
+
+    it("respeta el límite configurable y cuenta solo dueños activos", async () => {
+      mockBase(mockUsuarios, [{ tipo_usuario: "DUENO", total: 6 }], 5, 3);
+      const res = await GET(createMockRequest("/api/usuarios", { user: testUserDueno }));
+      expect((await res.json()).cupos_dueno).toEqual({ usados: 3, maximo: 5, disponibles: 2 });
+    });
+
+    it("permite cupos sin límite", async () => {
+      mockBase(mockUsuarios, [{ tipo_usuario: "DUENO", total: 6 }], null, 6);
+      const res = await GET(createMockRequest("/api/usuarios", { user: testUserDueno }));
+      expect((await res.json()).cupos_dueno).toEqual({ usados: 6, maximo: null, disponibles: null });
+    });
+
+    it("informa cuántos cupos de dueño quedan", async () => {
+      mockBase(mockUsuarios, [
+        { tipo_usuario: "DUENO", total: 1 },
+        { tipo_usuario: "EMPLEADO", total: 4 },
+      ]);
+      const res = await GET(createMockRequest("/api/usuarios", { user: testUserDueno }));
+      const data = await res.json();
+      expect(data.cupos_dueno).toEqual({ usados: 1, maximo: 2, disponibles: 1 });
+      expect(data.totales_por_tipo).toEqual({ DUENO: 1, EMPLEADO: 4, BODEGUERO: 0 });
+    });
+
+    it("con 2 dueños no quedan cupos (y nunca da negativos)", async () => {
+      mockBase(mockUsuarios, [{ tipo_usuario: "DUENO", total: 3 }]);
+      const res = await GET(createMockRequest("/api/usuarios", { user: testUserDueno }));
+      const data = await res.json();
+      expect(data.cupos_dueno).toEqual({ usados: 3, maximo: 2, disponibles: 0 });
+    });
+
+    it("cuenta a todos los dueños aunque la lista esté filtrada", async () => {
+      // Filtro por EMPLEADO: la lista no trae ningún dueño, pero hay 2 en la base
+      mockBase([mockUsuarios[1]], [
+        { tipo_usuario: "DUENO", total: 2 },
+        { tipo_usuario: "EMPLEADO", total: 1 },
+      ]);
+      const res = await GET(createMockRequest("/api/usuarios?tipo=EMPLEADO&q=maria", { user: testUserDueno }));
+      const data = await res.json();
+
+      expect(data.usuarios).toHaveLength(1);
+      expect(data.cupos_dueno.disponibles).toBe(0);
+
+      const consultaTotales = mockPool.query.mock.calls.find((c: unknown[]) => (c[0] as string).includes("GROUP BY"));
+      expect(consultaTotales?.[0]).not.toContain("WHERE");
+      expect(consultaTotales?.[1]).toBeUndefined();
+    });
+
+    it("sin dueños registrados informa todos los cupos libres", async () => {
+      mockBase([], []);
+      const res = await GET(createMockRequest("/api/usuarios", { user: testUserDueno }));
+      const data = await res.json();
+      expect(data.cupos_dueno).toEqual({ usados: 0, maximo: 2, disponibles: 2 });
+    });
   });
 });
 
@@ -166,11 +233,46 @@ describe("POST /api/usuarios", () => {
     expect(data.error).toMatch(/25/);
   });
 
+  it("rechaza contraseñas que no cumplen la política", async () => {
+    const req = createMockRequest("/api/usuarios", {
+      method: "POST",
+      user: testUserDueno,
+      body: { nombre: "Nuevo", correo: "nuevo@tienda.com", contrasena: "123456", tipo_usuario: "EMPLEADO" },
+    });
+    const res = await POST(req);
+    const data = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(data.error).toMatch(/12 caracteres/i);
+    // No debe llegar a la base: se rechaza antes de hashear ni insertar.
+    expect(mockPool.query).not.toHaveBeenCalled();
+  });
+
+  it("rechaza contraseñas muy comunes", async () => {
+    const req = createMockRequest("/api/usuarios", {
+      method: "POST",
+      user: testUserDueno,
+      body: { nombre: "Nuevo", correo: "nuevo@tienda.com", contrasena: "password123456", tipo_usuario: "EMPLEADO" },
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+  });
+
+  it("rechaza contraseñas de más de 72 bytes", async () => {
+    const req = createMockRequest("/api/usuarios", {
+      method: "POST",
+      user: testUserDueno,
+      body: { nombre: "Nuevo", correo: "nuevo@tienda.com", contrasena: "a".repeat(80), tipo_usuario: "EMPLEADO" },
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+  });
+
   it("rejects creating a new user directly as DUENO", async () => {
     const req = createMockRequest("/api/usuarios", {
       method: "POST",
       user: testUserDueno,
-      body: { nombre: "Nuevo", correo: "nuevo@tienda.com", contrasena: "123456", tipo_usuario: "DUENO" },
+      body: { nombre: "Nuevo", correo: "nuevo@tienda.com", contrasena: CONTRASENA_VALIDA, tipo_usuario: "DUENO" },
     });
     const res = await POST(req);
     expect(res.status).toBe(400);
@@ -187,7 +289,7 @@ describe("POST /api/usuarios", () => {
     const req = createMockRequest("/api/usuarios", {
       method: "POST",
       user: testUserDueno,
-      body: { nombre: "Nuevo", correo: "nuevo@tienda.com", contrasena: "123456", tipo_usuario: "EMPLEADO" },
+      body: { nombre: "Nuevo", correo: "nuevo@tienda.com", contrasena: CONTRASENA_VALIDA, tipo_usuario: "EMPLEADO" },
     });
     const res = await POST(req);
     expect(res.status).toBe(201);

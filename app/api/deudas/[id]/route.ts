@@ -22,7 +22,7 @@ export async function PATCH(
   const { id } = await params;
   const id_deuda = Number(id);
   if (!Number.isInteger(id_deuda)) {
-    return validationError("Id de deuda inválido");
+    return validationError("Id de cuenta por cobrar inválido");
   }
 
   const client = await pool.connect();
@@ -30,12 +30,12 @@ export async function PATCH(
     await client.query("BEGIN");
 
     const actual = await client.query(
-      `SELECT estado_deuda, id_cliente FROM deuda WHERE id_deuda = $1 FOR UPDATE`,
+      `SELECT estado_deuda, id_cliente, id_venta FROM deuda WHERE id_deuda = $1 FOR UPDATE`,
       [id_deuda]
     );
     if (actual.rows.length === 0) {
       await client.query("ROLLBACK");
-      return validationError("La deuda no existe");
+      return validationError("La cuenta por cobrar no existe");
     }
 
     const nuevoEstado =
@@ -47,6 +47,16 @@ export async function PATCH(
       [nuevoEstado, id_deuda]
     );
 
+    // Si nació de una venta a crédito, la venta acompaña a la cuenta: pagada
+    // al saldarla y de vuelta a confirmada si se reabre.
+    const idVenta: number | null = actual.rows[0].id_venta ?? null;
+    if (idVenta) {
+      await client.query(
+        `UPDATE venta SET estado_venta = $1 WHERE id_venta = $2 AND estado_venta <> 'CANCELADO'`,
+        [nuevoEstado === "PAGADA" ? "PAGADO" : "CONFIRMADO", idVenta]
+      );
+    }
+
     // Si la deuda estaba vinculada a un cliente, pagarla o reabrirla puede
     // cambiar su deuda pendiente total y por lo tanto su bloqueo.
     let alerta: Awaited<ReturnType<typeof recalcularBloqueoCliente>> | null = null;
@@ -57,7 +67,7 @@ export async function PATCH(
     await client.query("COMMIT");
     log.info(
       { id_deuda, de: actual.rows[0].estado_deuda, a: nuevoEstado, usuario: usuario.id_usuario },
-      "Estado de deuda cambiado"
+      "Estado de cuenta por cobrar cambiado"
     );
     return NextResponse.json({ deuda: result.rows[0], alerta });
   } catch (error) {

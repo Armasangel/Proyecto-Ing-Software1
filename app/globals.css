@@ -10,6 +10,7 @@
 }
 
 :root {
+  color-scheme: light;
   /* ── Paleta Tienda San Miguel — cálida, inspirada en La Terminal ── */
   --bg:           #FBF7EF;
   --surface:      #ffffff;
@@ -37,6 +38,67 @@
   --sidebar-hover:   rgba(76, 154, 42, 0.14);
   --sidebar-active:  rgba(76, 154, 42, 0.22);
   --sidebar-border:  rgba(181, 172, 154, 0.16);
+
+  /* ── Estados (DEV-192) — antes estaban hardcodeados como hex sueltos en
+     deudas / historial-ventas / InventarioView. Se centralizan aquí con el
+     mismo valor que tenían, para no cambiar la apariencia. ── */
+  --success:        #52b788;
+  --success-strong: #2d6a4f;
+  --success-light:  #b7e4c7;
+  --danger:         #e63946;
+  --danger-strong:  #dc2626;
+  --info:           #91a7ff;
+  --info-bg:        #eff5ff;
+
+  /* Variantes semitransparentes de estado (badges / chips activos) */
+  --success-bg:     rgba(82, 183, 136, 0.20);
+  --success-border: rgba(82, 183, 136, 0.40);
+  --success-soft:   rgba(45, 106, 79, 0.35);
+  --info-chip:      rgba(145, 167, 255, 0.15);
+  --info-border:    rgba(145, 167, 255, 0.35);
+
+  /* Canales RGB para estados con opacidad variable */
+  --feedback-ok:    63 185 80;
+  --feedback-err:   248 81 73;
+  --feedback-warn:  232 160 69;
+  --feedback-info:  88 166 255;
+}
+
+/* ── DEV-194: Modo oscuro ──────────────────────────────────────────────────
+   Se activa agregando la clase dark al <html> (lo hacen ThemeToggle y el
+   script anti-parpadeo en layout.tsx). Solo se redefinen las variables de
+   tema; todos los componentes que usan var(--...) se oscurecen solos.
+   Paleta oscura cálida y profunda, tipo app de teléfono (no gris frío). */
+:root.dark {
+  color-scheme: dark;
+
+  --bg:           #14110B;
+  --surface:      #1E1A12;
+  --surface2:     #28221A;
+  --border:       #3A3327;
+  --accent:       #6DB33F;
+  --accent2:      #8FC65A;
+  --accent-light: #233017;
+  --warm:         #E8A33D;
+  --green:        #6DB33F;
+  --red:          #EC6A47;
+  --blue:         #6B93F0;
+  --text:         #EDE6D8;
+  --muted:        #A99E89;
+  --shadow:       0 8px 24px rgba(0, 0, 0, 0.55);
+
+  /* Sidebar: un paso más oscuro que el contenido para separarlo */
+  --sidebar-bg:      #100D08;
+  --sidebar-text:    #EDE6D8;
+  --sidebar-muted:   #A99E89;
+  --sidebar-hover:   rgba(109, 179, 63, 0.16);
+  --sidebar-active:  rgba(109, 179, 63, 0.26);
+  --sidebar-border:  rgba(169, 158, 137, 0.14);
+
+  /* Estados: los colores saturados sirven igual en oscuro; solo el fondo
+     informativo claro se reemplaza por una versión oscura. */
+  --info:           #8FB0FF;
+  --info-bg:        #1A2436;
 }
 
 body {
@@ -46,6 +108,7 @@ body {
   font-size: 15px;
   line-height: 1.6;
   min-height: 100vh;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 a {
@@ -60,9 +123,7 @@ a:hover {
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: var(--accent-light); border-radius: 3px; }
 
-/* DEV-118: al imprimir, solo se muestra el contenido marcado como
-   imprimible (la vista de detalle de factura); el resto de la página
-   (sidebar, topbar, overlay del modal, etc.) se oculta. */
+/* DEV-118: al imprimir, solo se muestra el contenido marcado como imprimible. */
 @media print {
   body * {
     visibility: hidden;
@@ -81,3 +142,28 @@ a:hover {
     display: none !important;
   }
 }
+
+/* ── DEV-194: remapeo de clases Tailwind con color fijo ────────────────────
+   Varias páginas usan utilidades de Tailwind con color fijo (bg-cream,
+   bg-white, text-ink…) que no siguen a las variables del tema. En modo
+   oscuro las reasignamos a las superficies/texto del tema. Solo afecta al
+   CONTENIDO; la barra lateral (siempre oscura) usa sus propias clases
+   (bg-sidebar, text-cream, text-white) y no se toca aquí. */
+:root.dark .bg-cream { background-color: var(--bg); }
+:root.dark .bg-cream-100 { background-color: var(--surface); }
+:root.dark .bg-cream\/60,
+:root.dark .bg-cream\/40,
+:root.dark .bg-cream\/30 { background-color: var(--surface2); }
+:root.dark .bg-white { background-color: var(--surface); }
+:root.dark .bg-market-50 { background-color: rgba(109, 179, 63, 0.14); }
+:root.dark .bg-achiote-50 { background-color: rgba(236, 106, 71, 0.14); }
+:root.dark .bg-mango-50 { background-color: rgba(232, 163, 61, 0.14); }
+
+:root.dark .text-ink { color: var(--text); }
+:root.dark .text-ink-muted { color: var(--muted); }
+:root.dark .text-ink-faint { color: var(--muted); }
+:root.dark .text-market,
+:root.dark .text-market-600 { color: var(--accent); }
+:root.dark .text-achiote,
+:root.dark .text-achiote-600 { color: var(--red); }
+:root.dark .text-mango-600 { color: var(--warm); }

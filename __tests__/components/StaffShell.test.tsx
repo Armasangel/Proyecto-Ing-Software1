@@ -57,19 +57,30 @@ describe("StaffShell", () => {
     expect(screen.getByText("Inventario")).toBeInTheDocument();
     expect(screen.getByText("Proveedores")).toBeInTheDocument();
     expect(screen.getByText("Historial ventas")).toBeInTheDocument();
-    expect(screen.getByText("Deudas")).toBeInTheDocument();
+    expect(screen.getByText("Cuentas por cobrar")).toBeInTheDocument();
     expect(screen.getAllByText("Dashboard").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("Facturación")).toBeInTheDocument();
     expect(screen.getByText("Reportes")).toBeInTheDocument();
   });
 
-  it("hides Ventas for DUENO user", () => {
+  it("shows Ventas (unified with the old Órdenes) for the DUENO too", () => {
     render(
       <StaffShell usuario={duenoUser} title="Dashboard">
         <p>Contenido</p>
       </StaffShell>
     );
-    expect(screen.queryByText("Ventas")).not.toBeInTheDocument();
+    expect(screen.getByText("Ventas")).toBeInTheDocument();
+    // La sección "Órdenes" ya no existe en el menú: sus pedidos cuelgan de Ventas.
+    expect(screen.queryByText("Órdenes")).not.toBeInTheDocument();
+  });
+
+  it("does not show Órdenes to the colaborador either", () => {
+    render(
+      <StaffShell usuario={empleadoUser} title="Ventas">
+        <p>Contenido</p>
+      </StaffShell>
+    );
+    expect(screen.queryByText("Órdenes")).not.toBeInTheDocument();
   });
 
   it("shows Ventas for EMPLEADO user and hides dueno-only items", () => {
@@ -82,7 +93,10 @@ describe("StaffShell", () => {
     expect(screen.queryByText("Inventario")).not.toBeInTheDocument();
     expect(screen.queryByText("Proveedores")).not.toBeInTheDocument();
     expect(screen.queryByText("Historial ventas")).not.toBeInTheDocument();
-    expect(screen.queryByText("Deudas")).not.toBeInTheDocument();
+    expect(screen.queryByText("Cuentas por cobrar")).not.toBeInTheDocument();
+    // Reportes es exclusivo del dueño: el colaborador lo pisaba y terminaba
+    // devuelto a /ventas por useDuenoSession.
+    expect(screen.queryByText("Reportes")).not.toBeInTheDocument();
   });
 
   it("shows the role badge for dueno", () => {

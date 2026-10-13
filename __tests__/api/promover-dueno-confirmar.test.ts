@@ -150,7 +150,7 @@ describe("POST /api/usuarios/promover-dueno/confirmar", () => {
     const client = makeClient();
     encadenar(client, [
       { rows: [filaSolicitud], rowCount: 1 }, // SELECT solicitud
-      { rows: [{ count: MAX_DUENOS }], rowCount: 1 }, // conteo de dueños
+      { rows: [{ configurado: true, limite: MAX_DUENOS, activos: MAX_DUENOS }], rowCount: 1 }, // conteo de dueños
     ]);
     mockBcrypt.compareSync.mockReturnValue(true);
     const token = signPromocionToken(55);
@@ -163,7 +163,7 @@ describe("POST /api/usuarios/promover-dueno/confirmar", () => {
     const client = makeClient();
     encadenar(client, [
       { rows: [filaSolicitud], rowCount: 1 }, // SELECT solicitud
-      { rows: [{ count: 1 }], rowCount: 1 }, // conteo de dueños (bajo el máximo)
+      { rows: [{ configurado: true, limite: MAX_DUENOS, activos: 1 }], rowCount: 1 }, // conteo de dueños (bajo el máximo)
       { rows: [{ tipo_usuario: "EMPLEADO", estado_usuario: true }], rowCount: 1 }, // SELECT objetivo FOR UPDATE
       {
         rows: [

@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { isDuenoTipo } from "@/lib/roles";
+import { getLogger } from "@/lib/logger";
+
+const log = getLogger("api/gestion-inventario/kardex");
 
 const TIPOS = ["ENTRADA", "SALIDA", "AJUSTE"] as const;
 type TipoMov = (typeof TIPOS)[number];
@@ -75,8 +78,9 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ movimientos: result.rows });
   } catch (error) {
+    log.error({ err: error }, "Fallo en la ruta");
     return NextResponse.json(
-      { error: "Error al consultar kardex", detalle: String(error) },
+      { error: "Error interno del servidor" },
       { status: 500 }
     );
   }

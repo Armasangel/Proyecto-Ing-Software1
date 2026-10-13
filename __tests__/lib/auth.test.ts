@@ -48,6 +48,7 @@ describe("signAuthToken / verifyAuthToken", () => {
     nombre: "Juan Pérez",
     correo: "juan@tienda.com",
     tipo_usuario: "DUENO",
+    sesion_version: 1,
   };
 
   it("produces a signed token", () => {

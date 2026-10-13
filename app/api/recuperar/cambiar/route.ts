@@ -11,14 +11,17 @@ import { pool } from "@/lib/db";
 import { apiError, tooManyRequestsError, validationError } from "@/lib/api-error";
 import { getLogger } from "@/lib/logger";
 import { checkRateLimit, getClientIp } from "@/lib/api-rate-limit";
-import { clearFailedLogins } from "@/lib/login-rate-limit";
+import { claveCuenta, claveIp, clearFailedLogins } from "@/lib/login-rate-limit";
+import { validarContrasena } from "@/lib/password-policy";
+import { enviarAvisoCambioContrasena } from "@/lib/mailer";
+import { revocarSesiones } from "@/lib/sesion";
+import { registrarAuditoria, TIPOS_EVENTO } from "@/lib/audit";
 import { verifyResetToken } from "@/lib/verificacion";
 
 const log = getLogger("api/recuperar/cambiar");
 
 const CAMBIAR_WINDOW_MS = 5 * 60 * 1000;
 const CAMBIAR_MAX_POR_IP = 5;
-const CONTRASENA_MIN_LENGTH = 6;
 
 export async function POST(req: NextRequest) {
   try {
@@ -37,8 +40,9 @@ export async function POST(req: NextRequest) {
       return validationError("El token y la nueva contraseña son obligatorios");
     }
 
-    if (nuevaContrasena.length < CONTRASENA_MIN_LENGTH) {
-      return validationError("La contraseña debe tener al menos 6 caracteres");
+    const errorContrasena = validarContrasena(nuevaContrasena);
+    if (errorContrasena) {
+      return validationError(errorContrasena);
     }
 
     const idUsuario = verifyResetToken(resetToken);
@@ -50,8 +54,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const usuarioResult = await pool.query<{ id_usuario: number }>(
-      `SELECT id_usuario FROM usuario WHERE id_usuario = $1 AND estado_usuario = TRUE`,
+    const usuarioResult = await pool.query<{ id_usuario: number; correo: string; nombre: string }>(
+      `SELECT id_usuario, correo, nombre FROM usuario WHERE id_usuario = $1 AND estado_usuario = TRUE`,
       [idUsuario]
     );
 
@@ -62,7 +66,10 @@ export async function POST(req: NextRequest) {
     const hash = bcrypt.hashSync(nuevaContrasena, 10);
 
     const actualizado = await pool.query(
-      `UPDATE usuario SET contrasena_hash = $1 WHERE id_usuario = $2`,
+      `UPDATE usuario
+          SET contrasena_hash = $1,
+              requiere_cambio_contrasena = FALSE
+        WHERE id_usuario = $2`,
       [hash, idUsuario]
     );
 
@@ -70,13 +77,35 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Usuario no encontrado" }, { status: 404 });
     }
 
-    // La contraseña cambió: ningún código pendiente tiene sentido. Se invalidan
-    // los de recuperación y los de 2FA (por si este usuario tenía un login a
-    // medio completar). También se limpia el bloqueo de login del IP actual
-    // para que el usuario pueda entrar de inmediato con la contraseña nueva.
     await pool.query(`DELETE FROM codigo_recuperacion WHERE id_usuario = $1`, [idUsuario]);
     await pool.query(`DELETE FROM codigo_verificacion WHERE id_usuario = $1`, [idUsuario]);
-    await clearFailedLogins(ip);
+    await clearFailedLogins(claveIp(ip));
+    await clearFailedLogins(claveCuenta(usuarioResult.rows[0].correo));
+
+    // Sesiones: cualquier sesión abierta queda invalidada al instante. 
+    await revocarSesiones(idUsuario);
+
+    // Unica señal que tiene el usuario de que alguien haya restablecido su contraseña.
+    try {
+      await enviarAvisoCambioContrasena(
+        usuarioResult.rows[0].correo,
+        usuarioResult.rows[0].nombre,
+        ip
+      );
+    } catch (mailError) {
+      log.error({ err: mailError, id_usuario: idUsuario }, "No se pudo enviar el aviso de cambio de contraseña");
+    }
+
+    registrarAuditoria({
+      id_usuario: idUsuario,
+      correo: usuarioResult.rows[0].correo,
+      tipo_evento: TIPOS_EVENTO.PASSWORD_CAMBIO,
+      ip,
+      user_agent: req.headers.get("user-agent"),
+      // "recuperacion" = llegó con código por correo (o el dueño la cambió);
+      // nunca se registra la contraseña en claro ni su hash.
+      detalle: { via: "recuperacion", sesiones_revocadas: true },
+    });
 
     log.info({ id_usuario: idUsuario, ip }, "Contraseña restablecida correctamente");
 
