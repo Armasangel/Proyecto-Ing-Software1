@@ -3,11 +3,13 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { StaffShell } from "@/components/StaffShell";
-import { useStaffSession } from "@/hooks/useStaffSession";
+import { useSession } from "@/hooks/useSession";
+import { ROLES_STAFF } from "@/lib/roles";
 import { Icon } from "@/components/Icon";
+import { formatDateLong, formatNumber } from "@/lib/format";
 
 export default function DashboardPage() {
-  const usuario = useStaffSession();
+  const usuario = useSession({ roles: ROLES_STAFF });
 
   const [stats, setStats] = useState({
     productos: 0,
@@ -79,11 +81,7 @@ export default function DashboardPage() {
     <StaffShell
       usuario={usuario}
       title="Dashboard"
-      subtitle={`Hola, ${usuario.nombre.split(" ")[0]} — ${new Date().toLocaleDateString("es-GT", {
-        weekday: "long",
-        day: "numeric",
-        month: "long",
-      })}`}
+      subtitle={`Hola, ${usuario.nombre.split(" ")[0]} — ${formatDateLong()}`}
     >
       {/* ── Stat cards ── */}
       <div className="grid gap-4 mb-8" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))" }}>
@@ -101,7 +99,7 @@ export default function DashboardPage() {
               Reintentar
             </button>
             <div className="text-xs text-ink-muted max-w-[420px] leading-snug">
-              También puedes recargar la página. Si el problema continúa, contacta con el administrador.
+              También puedes recargar la página. Si el problema continúa, contacta al administrador.
             </div>
           </div>
         ) : (
@@ -114,7 +112,7 @@ export default function DashboardPage() {
                 <Icon name={stat.icon} variant="dark" size={24} />
               </div>
               <div className={`font-head text-[2rem] font-extrabold leading-none ${stat.valueClass}`}>
-                {stat.value.toLocaleString("es-GT")}
+                {formatNumber(stat.value)}
               </div>
               <div className="text-[0.8rem] text-ink-muted font-medium">{stat.label}</div>
             </div>
@@ -150,16 +148,14 @@ export default function DashboardPage() {
           )}
           {stats.clientesBloqueados > 0 && (
             <div className="bg-achiote-50 border border-achiote/25 rounded-card px-5 py-4 flex items-center gap-3.5 flex-1 min-w-[200px]">
-              <span className="text-achiote inline-flex">
-                <Icon name="lockout" />
-              </span>
+              <span className="text-[1.1rem]">🔒</span>
               <div>
                 <div className="font-bold text-ink text-[0.88rem]">
                   {stats.clientesBloqueados} cliente{stats.clientesBloqueados !== 1 ? "s" : ""}{" "}
-                  bloqueado{stats.clientesBloqueados !== 1 ? "s" : ""} por límite de crédito
+                  bloqueado{stats.clientesBloqueados !== 1 ? "s" : ""} por deuda
                 </div>
-                <Link href="/cuentas-por-cobrar" className="text-[0.78rem] text-achiote-600 font-semibold no-underline mt-0.5 block hover:underline">
-                  Ver en Cuentas por cobrar →
+                <Link href="/deudas" className="text-[0.78rem] text-achiote-600 font-semibold no-underline mt-0.5 block hover:underline">
+                  Ver en Deudas →
                 </Link>
               </div>
             </div>

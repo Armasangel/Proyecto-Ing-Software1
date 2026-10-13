@@ -3,10 +3,8 @@
 import type { CSSProperties } from "react";
 import { useCallback, useEffect, useState } from "react";
 import { StaffShell } from "@/components/StaffShell";
-import { Icon } from "@/components/Icon";
-import { PanelAuditoria } from "@/components/PanelAuditoria";
-import { useDuenoSession } from "@/hooks/useDuenoSession";
-import { TIPOS_USUARIO } from "@/lib/roles";
+import { useSession } from "@/hooks/useSession";
+import { MAX_DUENOS, TIPOS_USUARIO, ROLES_DUENO } from "@/lib/roles";
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -23,17 +21,6 @@ type Usuario = {
 };
 
 type TipoUsuario = keyof typeof TIPOS_USUARIO;
-
-// Cupo de un tipo de usuario: límite configurado (null = sin límite) y activos hoy.
-type CupoTipo = {
-  tipo_usuario: string;
-  limite: number | null;
-  activos: number;
-};
-
-const LIMITE_MAXIMO = 500;
-/** Cupos de dueño tal como los calcula el servidor (cuenta dueños activos, sin filtros). */
-type CuposDueno = { usados: number; maximo: number | null; disponibles: number | null };
 
 const TIPO_META: Record<
   string,
@@ -79,13 +66,10 @@ const EMPTY_FORM = {
 // ─── Componente principal ─────────────────────────────────────────────────────
 
 export default function UsuariosPage() {
-  const usuario = useDuenoSession();
+  const usuario = useSession({ roles: ROLES_DUENO });
 
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [loading, setLoading] = useState(false);
-  // Totales reales que manda el servidor: los filtros de la tabla no deben cambiarlos.
-  const [totales, setTotales] = useState<Record<string, number> | null>(null);
-  const [cuposDueno, setCuposDueno] = useState<CuposDueno | null>(null);
   const [bodegas, setBodegas] = useState<{ id_bodega: number; nombre_bodega: string }[]>([]);
 
   // Filtros
@@ -120,20 +104,6 @@ export default function UsuariosPage() {
   const [promoLoading, setPromoLoading] = useState(false);
   const [promoError, setPromoError] = useState("");
 
-  // Cupo (límite vs. activos) por tipo de usuario
-  const [cupos, setCupos] = useState<Record<string, CupoTipo>>({});
-
-  // Modal cambiar límite de un tipo (proceso de 2 pasos con código por correo)
-  const [limTipo, setLimTipo] = useState<string | null>(null);
-  const [limValor, setLimValor] = useState("");
-  const [limSinLimite, setLimSinLimite] = useState(false);
-  const [limPaso, setLimPaso] = useState<"inicial" | "codigo">("inicial");
-  const [limToken, setLimToken] = useState("");
-  const [limCodigo, setLimCodigo] = useState("");
-  const [limCorreoEnmascarado, setLimCorreoEnmascarado] = useState("");
-  const [limLoading, setLimLoading] = useState(false);
-  const [limError, setLimError] = useState("");
-
   // Toast
   const [toast, setToast] = useState<{ msg: string; tipo: "ok" | "err" } | null>(null);
 
@@ -144,41 +114,22 @@ export default function UsuariosPage() {
 
   // ── Carga ──────────────────────────────────────────────────────────────────
 
-  const cargarCupos = useCallback(async () => {
-    try {
-      const r = await fetch("/api/usuarios/limites");
-      const d = await r.json();
-      if (r.ok) {
-        const porTipo: Record<string, CupoTipo> = {};
-        for (const c of (d.limites || []) as CupoTipo[]) porTipo[c.tipo_usuario] = c;
-        setCupos(porTipo);
-      }
-    } catch {
-      // Si falla, la UI sigue funcionando: el servidor igual aplica el límite.
-    }
-  }, []);
-
   const cargar = useCallback(async () => {
     setLoading(true);
-    cargarCupos();
     try {
       const params = new URLSearchParams();
       if (busqueda.trim()) params.set("q", busqueda.trim());
       if (filtroTipo) params.set("tipo", filtroTipo);
       const r = await fetch(`/api/usuarios?${params}`);
       const d = await r.json();
-      if (r.ok) {
-        setUsuarios(d.usuarios || []);
-        setTotales(d.totales_por_tipo ?? null);
-        setCuposDueno(d.cupos_dueno ?? null);
-      }
+      if (r.ok) setUsuarios(d.usuarios || []);
       else showToast(d.error || "Error al cargar usuarios", "err");
     } catch {
       showToast("Error de conexión", "err");
     } finally {
       setLoading(false);
     }
-  }, [busqueda, filtroTipo, cargarCupos]);
+  }, [busqueda, filtroTipo]);
 
   useEffect(() => {
     if (!usuario) return;
@@ -377,97 +328,6 @@ export default function UsuariosPage() {
     }
   };
 
-  // ── Límite de usuarios por tipo (2 pasos con código por correo) ───────────
-
-  const cupoLleno = (tipo: string): boolean => {
-    const c = cupos[tipo];
-    return !!c && c.limite !== null && c.activos >= c.limite;
-  };
-
-  const textoLimite = (tipo: string): string => {
-    const c = cupos[tipo];
-    if (!c) return "…";
-    return c.limite === null ? "Sin límite" : `Límite ${c.limite}`;
-  };
-
-  const abrirLimite = (tipo: string) => {
-    const c = cupos[tipo];
-    setLimTipo(tipo);
-    setLimValor(c && c.limite !== null ? String(c.limite) : "");
-    setLimSinLimite(!!c && c.limite === null);
-    setLimPaso("inicial");
-    setLimToken("");
-    setLimCodigo("");
-    setLimCorreoEnmascarado("");
-    setLimError("");
-  };
-
-  const cerrarLimite = () => {
-    if (limLoading) return;
-    setLimTipo(null);
-  };
-
-  const solicitarCambioLimite = async () => {
-    if (!limTipo) return;
-    const minimo = Math.max(1, cupos[limTipo]?.activos ?? 1);
-    const valor = Number(limValor);
-    if (!limSinLimite) {
-      if (!Number.isInteger(valor) || valor < minimo || valor > LIMITE_MAXIMO) {
-        setLimError(
-          `Ingresa un número entero entre ${minimo} y ${LIMITE_MAXIMO} (no puede ser menor que los usuarios activos).`
-        );
-        return;
-      }
-    }
-    setLimLoading(true);
-    setLimError("");
-    try {
-      const r = await fetch("/api/usuarios/limites/solicitar", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tipo_usuario: limTipo, max_usuarios: limSinLimite ? null : valor }),
-      });
-      const d = await r.json();
-      if (!r.ok) {
-        setLimError(d.error || "No se pudo enviar el código de confirmación");
-      } else {
-        setLimToken(d.token);
-        setLimCorreoEnmascarado(d.correo_enmascarado || "");
-        setLimPaso("codigo");
-      }
-    } catch {
-      setLimError("Error de conexión");
-    } finally {
-      setLimLoading(false);
-    }
-  };
-
-  const confirmarCambioLimite = async () => {
-    if (!limTipo) return;
-    setLimLoading(true);
-    setLimError("");
-    try {
-      const r = await fetch("/api/usuarios/limites/confirmar", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: limToken, codigo: limCodigo }),
-      });
-      const d = await r.json();
-      if (!r.ok) {
-        setLimError(d.error || "Código incorrecto");
-      } else {
-        const label = TIPO_META[limTipo]?.label ?? limTipo;
-        setLimTipo(null);
-        showToast(`Límite de ${label.toLowerCase()} actualizado ✓`, "ok");
-        cargar();
-      }
-    } catch {
-      setLimError("Error de conexión");
-    } finally {
-      setLimLoading(false);
-    }
-  };
-
   // ── Render ─────────────────────────────────────────────────────────────────
 
   if (!usuario)
@@ -481,19 +341,11 @@ export default function UsuariosPage() {
 
   const totalPorTipo = TIPOS_OPCIONES.slice(1).map((t) => ({
     ...t,
-    // Si el servidor aún no respondió, se cuenta lo que hay en la lista.
-    count: totales?.[t.value] ?? usuarios.filter((u) => u.tipo_usuario === t.value).length,
+    count: usuarios.filter((u) => u.tipo_usuario === t.value).length,
   }));
 
-  const cupoDuenoActual = cupos[TIPOS_USUARIO.DUENO];
-  const limiteDuenos = cupoDuenoActual ? cupoDuenoActual.limite : cuposDueno?.maximo ?? null;
-  const duenosUsados = cupoDuenoActual?.activos ?? cuposDueno?.usados ?? 0;
-  const limiteDuenosAlcanzado = limiteDuenos !== null && duenosUsados >= limiteDuenos;
-  const cuposResumen = limiteDuenos === null
-    ? "Sin límite de dueños activos"
-    : limiteDuenosAlcanzado
-      ? `Sin cupos de dueño (${duenosUsados} de ${limiteDuenos} en uso)`
-      : `${Math.max(0, limiteDuenos - duenosUsados)} de ${limiteDuenos} cupos de dueño disponibles`;
+  const totalDuenosActual = usuarios.filter((u) => u.tipo_usuario === TIPOS_USUARIO.DUENO).length;
+  const limiteDuenosAlcanzado = totalDuenosActual >= MAX_DUENOS;
 
   return (
     <StaffShell
@@ -520,29 +372,6 @@ export default function UsuariosPage() {
                 {t.count}
               </div>
               <div style={{ fontSize: "0.78rem", color: "var(--muted)" }}>{t.label}</div>
-              <div
-                style={{
-                  fontSize: "0.72rem",
-                  marginTop: "0.5rem",
-                  color: cupoLleno(t.value) ? "var(--red, #f85149)" : "var(--muted)",
-                  fontWeight: cupoLleno(t.value) ? 700 : 400,
-                }}
-              >
-                Activos: {cupos[t.value]?.activos ?? "…"} · {textoLimite(t.value)}
-                {cupoLleno(t.value) ? " (lleno)" : ""}
-              </div>
-              {t.value === TIPOS_USUARIO.DUENO && (cupoDuenoActual || cuposDueno) && (
-                <div data-testid="cupos-dueno">{cuposResumen}</div>
-              )}
-              <button
-                type="button"
-                onClick={() => abrirLimite(t.value)}
-                disabled={!cupos[t.value]}
-                style={{ ...s.btnLimite, color: meta.color }}
-                title="Cambiar el límite (pide verificación por correo)"
-              >
-                Cambiar límite
-              </button>
             </div>
           );
         })}
@@ -703,30 +532,29 @@ export default function UsuariosPage() {
                           title="Editar rol y estado"
                           disabled={esMismoUsuario}
                         >
-                          <Icon name="pencil" />
+                          ✏️
                         </button>
-                        {/* Con el cupo lleno el botón no se muestra: el aviso está en la tarjeta de Dueño */}
-                        {u.tipo_usuario !== TIPOS_USUARIO.DUENO && !limiteDuenosAlcanzado && (
+                        {u.tipo_usuario !== TIPOS_USUARIO.DUENO && (
                           <button
                             type="button"
                             onClick={() => abrirPromover(u)}
                             style={s.btnEdit}
-                            disabled={esMismoUsuario || !u.estado_usuario}
+                            disabled={esMismoUsuario || !u.estado_usuario || limiteDuenosAlcanzado}
                             title={
                               !u.estado_usuario
                                 ? "No se puede promover a un usuario inactivo"
+                                : limiteDuenosAlcanzado
+                                ? `Ya hay ${MAX_DUENOS} dueños (el máximo)`
                                 : "Promover a Dueño (requiere verificación por correo)"
                             }
                           >
-                            <Icon name="owner" />
+                            👑
                           </button>
                         )}
                         <button
                           type="button"
                           onClick={() => setConfirmToggle(u)}
-                          disabled={
-                            esMismoUsuario || toggling || (!u.estado_usuario && cupoLleno(u.tipo_usuario))
-                          }
+                          disabled={esMismoUsuario || toggling}
                           style={{
                             ...s.btnToggle,
                             background: u.estado_usuario
@@ -736,13 +564,7 @@ export default function UsuariosPage() {
                               ? "rgba(248,81,73,.25)"
                               : "rgba(63,185,80,.25)",
                           }}
-                          title={
-                            u.estado_usuario
-                              ? "Desactivar cuenta"
-                              : cupoLleno(u.tipo_usuario)
-                              ? `No se puede activar: el límite de ${(TIPO_META[u.tipo_usuario]?.label ?? "").toLowerCase()} está lleno`
-                              : "Activar cuenta"
-                          }
+                          title={u.estado_usuario ? "Desactivar cuenta" : "Activar cuenta"}
                         >
                           {u.estado_usuario ? "⏸" : "▶"}
                         </button>
@@ -793,7 +615,7 @@ export default function UsuariosPage() {
                   {Object.entries(TIPO_META).map(([val, meta]) => {
                     const activo = editTipo === val;
                     // Volverse dueño no pasa por este selector: requiere el
-                    // proceso de verificación por correo (botón de promover en la
+                    // proceso de verificación por correo (botón 👑 en la
                     // tabla). Si el usuario ya es dueño, sí se puede dejar
                     // seleccionado (no es un ascenso) o quitarle el rol.
                     const esAscensoADueno = val === TIPOS_USUARIO.DUENO && editando.tipo_usuario !== TIPOS_USUARIO.DUENO;
@@ -820,17 +642,13 @@ export default function UsuariosPage() {
                             </div>
                             <div style={{ fontSize: "0.72rem", color: "var(--muted)" }}>
                               {limiteDuenosAlcanzado
-                                ? `Ya hay ${limiteDuenos} dueños activos (el límite). Sube el límite o desactiva a alguno antes.`
+                                ? `Ya hay ${MAX_DUENOS} dueños (el máximo). Hay que quitarle el rol a alguno antes.`
                                 : "Requiere el proceso aparte de verificación por correo (botón 👑)."}
                             </div>
                           </div>
                         </div>
                       );
                     }
-
-                    // Pasarlo a un tipo cuyo cupo ya está lleno se rechaza en el
-                    // servidor; acá se deshabilita para que se vea por qué.
-                    const sinCupo = editEstado && editando.tipo_usuario !== val && cupoLleno(val);
 
                     return (
                       <label
@@ -843,18 +661,15 @@ export default function UsuariosPage() {
                           borderRadius: 10,
                           border: `1px solid ${activo ? meta.border : "var(--border)"}`,
                           background: activo ? meta.bg : "var(--surface2)",
-                          cursor: sinCupo ? "not-allowed" : "pointer",
-                          opacity: sinCupo ? 0.55 : 1,
+                          cursor: "pointer",
                           transition: "all .15s",
                         }}
-                        title={sinCupo ? `El límite de ${meta.label.toLowerCase()} está lleno` : undefined}
                       >
                         <input
                           type="radio"
                           name="tipo_usuario"
                           value={val}
                           checked={activo}
-                          disabled={sinCupo}
                           onChange={() => setEditTipo(val)}
                           style={{ accentColor: meta.color }}
                         />
@@ -869,7 +684,7 @@ export default function UsuariosPage() {
                             {meta.label}
                           </div>
                           <div style={{ fontSize: "0.72rem", color: "var(--muted)" }}>
-                            {sinCupo ? "Límite de usuarios alcanzado" : rolDescripcion(val)}
+                            {rolDescripcion(val)}
                           </div>
                         </div>
                       </label>
@@ -1125,42 +940,15 @@ export default function UsuariosPage() {
                   {Object.entries(TIPO_META)
                     // El rol de Dueño nunca se asigna al crear: solo se
                     // otorga después, a un usuario ya establecido, con el
-                    // proceso de verificación por correo (botón de promover).
+                    // proceso de verificación por correo (botón 👑).
                     .filter(([val]) => val !== TIPOS_USUARIO.DUENO)
                     .map(([val, meta]) => (
-                      <option key={val} value={val} disabled={cupoLleno(val)}>
+                      <option key={val} value={val}>
                         {meta.label}
-                        {cupoLleno(val) ? " (límite alcanzado)" : ""}
                       </option>
                     ))}
                 </select>
-                {cupoLleno(nuevoForm.tipo_usuario) && (
-                  <span style={{ fontSize: "0.75rem", color: "var(--red, #f85149)" }}>
-                    Ya se alcanzó el límite de este rol. Sube el límite desde las tarjetas de arriba o
-                    elige otro rol.
-                  </span>
-                )}
               </div>
-
-              {cuposDueno && (
-                <div
-                  role="note"
-                  data-testid="nota-cupos-dueno"
-                  style={{
-                    fontSize: "0.76rem",
-                    color: "var(--muted)",
-                    background: "var(--surface2)",
-                    border: "1px dashed var(--border)",
-                    borderRadius: 10,
-                    padding: "0.6rem 0.8rem",
-                  }}
-                >
-                  <strong style={{ color: limiteDuenosAlcanzado ? "var(--red)" : "var(--green)" }}>{cuposResumen}.</strong>{" "}
-                  {limiteDuenosAlcanzado
-                    ? "Para dar el rol de dueño a otra persona, sube el límite o desactiva a uno de los actuales."
-                    : "El rol de dueño no se asigna al crear la cuenta: crea el usuario y luego usa el botón de promover de la tabla."}
-                </div>
-              )}
 
               {nuevoForm.tipo_usuario === TIPOS_USUARIO.BODEGUERO && (
                 <div style={s.field}>
@@ -1290,116 +1078,6 @@ export default function UsuariosPage() {
         </div>
       )}
 
-      {/* ── Modal cambiar límite de usuarios (2 pasos con código por correo) ── */}
-      {limTipo && (
-        <div
-          style={s.overlay}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) cerrarLimite();
-          }}
-        >
-          <div style={{ ...s.modal, maxWidth: 440 }}>
-            <div style={s.modalHeader}>
-              <h2 style={s.modalTitle}>Límite de {(TIPO_META[limTipo]?.label ?? limTipo).toLowerCase()}s</h2>
-              <button type="button" onClick={cerrarLimite} style={s.closeBtn} disabled={limLoading}>
-                ✕
-              </button>
-            </div>
-            <div style={s.modalBody}>
-              <div style={s.userInfoBox}>
-                <div style={{ fontWeight: 700, color: "var(--text)" }}>
-                  Activos ahora: {cupos[limTipo]?.activos ?? 0}
-                </div>
-                <div style={{ fontSize: "0.82rem", color: "var(--muted)" }}>
-                  Configuración actual: {textoLimite(limTipo)}
-                </div>
-              </div>
-
-              {limPaso === "inicial" ? (
-                <>
-                  <div style={s.field}>
-                    <label style={s.label}>Máximo de usuarios activos</label>
-                    <input
-                      style={s.input}
-                      type="number"
-                      min={Math.max(1, cupos[limTipo]?.activos ?? 1)}
-                      max={LIMITE_MAXIMO}
-                      value={limValor}
-                      onChange={(e) => setLimValor(e.target.value)}
-                      disabled={limSinLimite}
-                      placeholder="Ej: 5"
-                      autoFocus
-                    />
-                  </div>
-                  <label
-                    style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.85rem", color: "var(--text)" }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={limSinLimite}
-                      onChange={(e) => setLimSinLimite(e.target.checked)}
-                    />
-                    Sin límite
-                  </label>
-                  {limTipo === TIPOS_USUARIO.DUENO && (
-                    <p style={{ color: "var(--muted)", fontSize: "0.8rem", lineHeight: 1.55 }}>
-                      Ojo: un Dueño tiene acceso total al sistema. Cada ascenso a Dueño sigue pidiendo su
-                      propia verificación por correo.
-                    </p>
-                  )}
-                  <p style={{ color: "var(--muted)", fontSize: "0.82rem", lineHeight: 1.6 }}>
-                    Por seguridad, antes de aplicar el cambio te mandamos un código de confirmación a{" "}
-                    <strong style={{ color: "var(--text)" }}>tu propio correo</strong>. Solo cuentan los
-                    usuarios activos.
-                  </p>
-                </>
-              ) : (
-                <>
-                  <p style={{ color: "var(--muted)", lineHeight: 1.65, fontSize: "0.88rem" }}>
-                    Te mandamos un código de 6 dígitos a{" "}
-                    <strong style={{ color: "var(--text)" }}>{limCorreoEnmascarado}</strong>. Ingrésalo para
-                    confirmar el nuevo límite (
-                    {limSinLimite ? "sin límite" : limValor}).
-                  </p>
-                  <div style={s.field}>
-                    <label style={s.label}>Código de verificación</label>
-                    <input
-                      style={{ ...s.input, letterSpacing: "0.3em", textAlign: "center", fontSize: "1.2rem" }}
-                      value={limCodigo}
-                      onChange={(e) => setLimCodigo(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                      placeholder="000000"
-                      inputMode="numeric"
-                      autoFocus
-                    />
-                  </div>
-                </>
-              )}
-
-              {limError && <div style={s.errorBox}>{limError}</div>}
-            </div>
-            <div style={s.modalFooter}>
-              <button type="button" onClick={cerrarLimite} style={s.btnSecondary} disabled={limLoading}>
-                Cancelar
-              </button>
-              {limPaso === "inicial" ? (
-                <button type="button" onClick={solicitarCambioLimite} style={s.btnPrimary} disabled={limLoading}>
-                  {limLoading ? "Enviando código…" : "Enviar código de confirmación"}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={confirmarCambioLimite}
-                  style={s.btnPrimary}
-                  disabled={limLoading || limCodigo.length !== 6}
-                >
-                  {limLoading ? "Confirmando…" : "Confirmar límite"}
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* ── Modal promover a dueño (2 pasos con código por correo) ── */}
       {promoviendo && (
         <div
@@ -1492,8 +1170,6 @@ export default function UsuariosPage() {
           {toast.msg}
         </div>
       )}
-
-      <PanelAuditoria />
     </StaffShell>
   );
 }
@@ -1609,16 +1285,6 @@ const s: Record<string, CSSProperties> = {
     fontSize: "0.88rem",
     color: "var(--text)",
     verticalAlign: "middle" as const,
-  },
-  btnLimite: {
-    marginTop: "0.6rem",
-    background: "transparent",
-    border: "1px solid var(--border)",
-    borderRadius: 8,
-    padding: "0.3rem 0.6rem",
-    fontSize: "0.72rem",
-    fontWeight: 600,
-    cursor: "pointer",
   },
   btnEdit: {
     background: "var(--surface2)",
@@ -1748,4 +1414,4 @@ const s: Record<string, CSSProperties> = {
     backdropFilter: "blur(8px)",
     boxShadow: "var(--shadow)",
   },
-};
+};

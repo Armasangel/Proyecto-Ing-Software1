@@ -1,6 +1,9 @@
 import {
   MAX_DUENOS,
   TIPOS_USUARIO,
+  ROLES_STAFF,
+  ROLES_DUENO,
+  ROLES_BODEGUERO,
   isStaffTipo,
   isDuenoTipo,
   isColaboradorTipo,
@@ -121,5 +124,18 @@ describe("staffVariantFromTipo", () => {
   it('returns "colaborador" as default for unknown roles', () => {
     expect(staffVariantFromTipo("ADMIN")).toBe("colaborador");
     expect(staffVariantFromTipo("")).toBe("colaborador");
+  });
+});
+
+describe("conjuntos de roles para useSession", () => {
+  it("ROLES_STAFF son dueño y colaborador, y coinciden con isStaffTipo", () => {
+    expect([...ROLES_STAFF]).toEqual(["DUENO", "EMPLEADO"]);
+    for (const tipo of Object.values(TIPOS_USUARIO)) {
+      expect((ROLES_STAFF as readonly string[]).includes(tipo)).toBe(isStaffTipo(tipo));
+    }
+  });
+  it("ROLES_DUENO y ROLES_BODEGUERO tienen un solo rol", () => {
+    expect([...ROLES_DUENO]).toEqual(["DUENO"]);
+    expect([...ROLES_BODEGUERO]).toEqual(["BODEGUERO"]);
   });
 });

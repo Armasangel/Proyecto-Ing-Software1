@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 import { useRouter } from "next/navigation";
-import { useBodegueroSession } from "@/hooks/useBodegueroSession";
+import { useSession } from "@/hooks/useSession";
+import { ROLES_BODEGUERO } from "@/lib/roles";
 import { Icon } from "@/components/Icon";
-import { ProductoAutocompletar } from "@/components/ProductoAutocompletar";
+import { formatDateTime, formatNumber, formatTime } from "@/lib/format";
 
 type Producto = {
   id_producto: number;
@@ -37,9 +38,6 @@ type Movimiento = {
 
 type TabKey = "pedidos" | "entrada" | "salida" | "traslado";
 
-// USO_INTERNO ya no se puede registrar (la tienda se modela como una bodega y
-// ese movimiento es un traslado), pero se conserva la etiqueta para que los
-// movimientos viejos sigan mostrándose bien en el historial.
 const MOTIVO_LABEL: Record<string, string> = {
   MERMA: "Merma / daño",
   USO_INTERNO: "Uso interno",
@@ -77,7 +75,7 @@ const COLUMNAS_PEDIDOS: { estado: Pedido["estado"]; titulo: string; siguiente?: 
 const PEDIDOS_POLL_MS = 6000;
 
 export default function BodegaPage() {
-  const usuario = useBodegueroSession();
+  const usuario = useSession({ roles: ROLES_BODEGUERO });
   const router = useRouter();
 
   const [tab, setTab] = useState<TabKey>("pedidos");
@@ -93,11 +91,7 @@ export default function BodegaPage() {
   const [idProducto, setIdProducto] = useState("");
   const [idPresentacion, setIdPresentacion] = useState(""); // "" = unidad base
   const [cantidad, setCantidad] = useState("");
-  // Sugerencias del selector de producto: 5 al azar (ver ProductoAutocompletar);
-  // el resto del catálogo aparece al escribir. Se vuelven a sortear al cambiar
-  // de pestaña y después de cada movimiento registrado.
-  const [productosSugeridos, setProductosSugeridos] = useState<Producto[]>([]);
-  const [versionSugeridos, setVersionSugeridos] = useState(0);
+  const [motivo, setMotivo] = useState<"MERMA" | "USO_INTERNO">("MERMA");
   const [idBodegaDestino, setIdBodegaDestino] = useState("");
   const [descripcion, setDescripcion] = useState("");
 
@@ -173,17 +167,6 @@ export default function BodegaPage() {
     cargarHistorial();
   }, [usuario, cargarHistorial]);
 
-  // En Salida y Traslado solo se sugieren productos con existencias en tu
-  // bodega (no se puede sacar lo que no hay); en Entrada, cualquiera.
-  useEffect(() => {
-    if (!usuario || tab === "pedidos") return;
-    const soloConStock = tab === "salida" || tab === "traslado";
-    fetch(`/api/productos/frecuentes?limit=5${soloConStock ? "&con_stock=1" : ""}`)
-      .then((r) => r.json())
-      .then((d) => setProductosSugeridos(d.productos || []))
-      .catch(() => setProductosSugeridos([]));
-  }, [usuario, tab, versionSugeridos]);
-
   useEffect(() => {
     setIdPresentacion("");
     if (!idProducto) {
@@ -202,6 +185,7 @@ export default function BodegaPage() {
     setCantidad("");
     setDescripcion("");
     setIdBodegaDestino("");
+    setMotivo("MERMA");
   };
 
   const handleLogout = async () => {
@@ -217,6 +201,10 @@ export default function BodegaPage() {
     }
     if (tab === "traslado" && !idBodegaDestino) {
       setMensaje({ texto: "Selecciona la bodega destino", tipo: "err" });
+      return;
+    }
+    if (tab === "salida" && motivo === "USO_INTERNO" && !descripcion.trim()) {
+      setMensaje({ texto: "Describe brevemente el uso interno", tipo: "err" });
       return;
     }
 
@@ -240,8 +228,7 @@ export default function BodegaPage() {
         body.descripcion = descripcion || undefined;
       } else if (tab === "salida") {
         url = "/api/inventario/salida";
-        // Única salida manual posible. Para pasar producto a la tienda se usa Traslado.
-        body.motivo = "MERMA";
+        body.motivo = motivo;
         body.descripcion = descripcion || undefined;
       } else {
         url = "/api/gestion-inventario/transferencia";
@@ -268,7 +255,6 @@ export default function BodegaPage() {
         setMensaje({ texto: "Movimiento registrado ✓", tipo: "ok" });
         limpiarFormulario();
         cargarHistorial();
-        setVersionSugeridos((v) => v + 1);
       }
     } catch {
       setMensaje({ texto: "Error de conexión", tipo: "err" });
@@ -341,7 +327,7 @@ export default function BodegaPage() {
                           <div style={s.pedidoCardHeader}>
                             <span style={{ fontWeight: 700 }}>Pedido #{p.id_orden}</span>
                             <span style={{ fontSize: "0.72rem", color: "var(--muted)" }}>
-                              {new Date(p.fecha_orden).toLocaleTimeString("es-GT", { hour: "2-digit", minute: "2-digit" })}
+                              {formatTime(p.fecha_orden)}
                             </span>
                           </div>
                           <div style={{ fontSize: "0.82rem", color: "var(--muted)", marginBottom: "0.4rem" }}>
@@ -352,7 +338,7 @@ export default function BodegaPage() {
                               .filter((pr) => pr.es_mi_bodega)
                               .map((pr) => (
                                 <div key={pr.id_detalle} style={{ fontSize: "0.85rem" }}>
-                                  <strong>{Number(pr.cantidad).toLocaleString("es-GT")}</strong>{" "}
+                                  <strong>{formatNumber(pr.cantidad)}</strong>{" "}
                                   {pr.unidad_medida} — {pr.nombre_producto}
                                 </div>
                               ))}
@@ -385,16 +371,14 @@ export default function BodegaPage() {
         {tab !== "pedidos" && <div style={s.card}>
           <div style={s.field}>
             <label style={s.label}>Producto</label>
-            <ProductoAutocompletar
-              productos={productos}
-              sugeridos={productosSugeridos}
-              value={idProducto}
-              onChange={setIdProducto}
-              style={s.input}
-              mensajeVacio={
-                tab === "entrada" ? "Escribe para buscar un producto" : "No hay productos con existencias en tu bodega"
-              }
-            />
+            <select style={s.input} value={idProducto} onChange={(e) => setIdProducto(e.target.value)}>
+              <option value="">Selecciona un producto…</option>
+              {productos.map((p) => (
+                <option key={p.id_producto} value={p.id_producto}>
+                  {p.nombre_producto} ({p.codigo_producto})
+                </option>
+              ))}
+            </select>
           </div>
 
           <div style={s.row}>
@@ -426,9 +410,23 @@ export default function BodegaPage() {
           </div>
 
           {tab === "salida" && (
-            <div style={{ ...s.field, color: "var(--muted)", fontSize: "0.82rem", lineHeight: 1.5 }}>
-              Motivo: <strong style={{ color: "var(--text)" }}>{MOTIVO_LABEL.MERMA}</strong>. Para pasar producto a
-              la tienda usa la pestaña Traslado.
+            <div style={s.field}>
+              <label style={s.label}>Motivo</label>
+              <div style={{ display: "flex", gap: "0.6rem" }}>
+                {(["MERMA", "USO_INTERNO"] as const).map((m) => (
+                  <label
+                    key={m}
+                    style={{
+                      ...s.radioPill,
+                      borderColor: motivo === m ? "var(--accent2)" : "var(--border)",
+                      background: motivo === m ? "rgba(34,197,94,.12)" : "var(--surface)",
+                    }}
+                  >
+                    <input type="radio" checked={motivo === m} onChange={() => setMotivo(m)} />
+                    {MOTIVO_LABEL[m]}
+                  </label>
+                ))}
+              </div>
             </div>
           )}
 
@@ -454,7 +452,7 @@ export default function BodegaPage() {
 
           <div style={s.field}>
             <label style={s.label}>
-              Descripción (opcional)
+              Descripción {tab === "salida" && motivo === "USO_INTERNO" ? "*" : "(opcional)"}
             </label>
             <input
               style={s.input}
@@ -497,7 +495,7 @@ export default function BodegaPage() {
                     }}
                   >
                     {m.tipo_movimiento === "SALIDA" ? "− " : "+ "}
-                    {Number(m.cantidad).toLocaleString("es-GT")} {m.unidad_medida}
+                    {formatNumber(m.cantidad)} {m.unidad_medida}
                   </span>{" "}
                   {m.nombre_producto}
                   {m.nombre_presentacion && (
@@ -511,7 +509,7 @@ export default function BodegaPage() {
                   {m.motivo ? MOTIVO_LABEL[m.motivo] + " — " : ""}
                   {m.descripcion || ""}
                   {" · "}
-                  {new Date(m.fecha_movimiento).toLocaleString("es-GT", { dateStyle: "short", timeStyle: "short" })}
+                  {formatDateTime(m.fecha_movimiento)}
                 </div>
               </div>
             ))}

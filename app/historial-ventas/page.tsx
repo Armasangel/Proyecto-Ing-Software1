@@ -1,12 +1,13 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { StaffShell } from "@/components/StaffShell";
-import { useStaffSession } from "@/hooks/useStaffSession";
+import { useSession } from "@/hooks/useSession";
 import { HISTORIAL_VENTAS_DEFAULT_LIMIT } from "@/lib/historial-ventas";
-import { TIPOS_USUARIO } from "@/lib/roles";
-import { filtrarClientesPorTexto } from "@/lib/clientes-busqueda";
+import { TIPOS_USUARIO, ROLES_STAFF } from "@/lib/roles";
+import { formatDateTime, formatMoney } from "@/lib/format";
 
 type LineaHistorial = {
   codigo_producto: string | null;
@@ -47,7 +48,7 @@ type ProductoOpt = {
 type ClienteOpt = {
   id_usuario: number;
   nombre: string;
-  correo: string | null;
+  correo: string;
 };
 
 type ProveedorOpt = {
@@ -64,54 +65,8 @@ const PERIODOS: { value: string; label: string }[] = [
   { value: "year", label: "Año" },
 ];
 
-/**
- * Clases Tailwind reutilizables (DEV-192). Reemplazan al antiguo objeto
- * `s: Record<string, CSSProperties>` y a los inline styles. Los colores salen
- * de los tokens del tema (surface, surface-soft, line, ink, success, info),
- * que a su vez mapean a las variables CSS de globals.css.
- */
-const cls = {
-  toolbar: "flex gap-3 flex-wrap items-center mb-5",
-  searchInput:
-    "flex-1 min-w-[200px] bg-surface-soft border border-line rounded-[10px] px-4 py-[0.65rem] text-ink text-[0.9rem] outline-none",
-  btnOutlineBase:
-    "bg-transparent border rounded-[10px] px-4 py-[0.65rem] cursor-pointer text-[0.88rem] font-semibold font-body",
-  btnPrimary:
-    "bg-success-strong text-white border-none rounded-[10px] px-[1.1rem] py-[0.55rem] font-semibold cursor-pointer text-[0.88rem]",
-  tableWrapper: "bg-surface border border-line rounded-control overflow-auto",
-  table: "w-full border-collapse",
-  th: "bg-surface-soft text-ink-muted text-[0.72rem] font-semibold tracking-[0.06em] uppercase px-4 py-3 text-left border-b border-line",
-  td: "px-4 py-3 text-[0.88rem] align-top",
-  code: "bg-surface-soft border border-line rounded px-[0.4rem] py-[0.12rem] text-[0.78rem] text-success-strong font-mono",
-  badgeEstado:
-    "inline-block text-[0.72rem] px-[0.55rem] py-[0.15rem] rounded-full border font-semibold",
-  tag: "text-[0.65rem] px-[0.35rem] py-[0.08rem] rounded-md bg-surface-soft text-ink-muted border border-line",
-  closeBtn: "bg-transparent border-none text-ink-muted text-[1.1rem] cursor-pointer",
-  label:
-    "text-[0.72rem] font-semibold uppercase tracking-[0.06em] text-ink-muted mt-2",
-  btnRow: "flex flex-wrap gap-[0.4rem]",
-  chipBase: "border rounded-lg px-[0.65rem] py-[0.4rem] text-[0.78rem] font-semibold",
-  rangeRow: "flex justify-between text-[0.78rem] text-ink-muted",
-  rangeVal: "tabular-nums",
-  dateLabel: "text-[0.72rem] text-ink-muted",
-  dateInput:
-    "bg-surface-soft border border-line rounded-[10px] px-[0.7rem] py-[0.55rem] text-ink text-[0.85rem] font-body [color-scheme:dark] outline-none",
-  btnPicker:
-    "w-full text-left bg-surface-soft border border-line rounded-[10px] px-[0.85rem] py-[0.65rem] text-ink text-[0.88rem] cursor-pointer",
-  linkBtn:
-    "bg-none border-none text-info text-[0.8rem] cursor-pointer text-left p-0 -mt-1",
-  listItem:
-    "w-full flex flex-col items-start gap-0.5 px-5 py-[0.65rem] border-b border-line bg-transparent text-ink cursor-pointer text-left",
-};
-
-/** Clases del badge de estado según el valor. Antes era estadoStyle() con hex. */
-function estadoClass(estado: string): string {
-  if (estado === "PAGADO")
-    return "bg-[var(--success-bg)] text-success border-[var(--success-border)]";
-  if (estado === "PENDIENTE")
-    return "bg-[var(--info-chip)] text-info border-[var(--info-border)]";
-  return "bg-surface-soft text-ink-muted border-line";
-}
+const ACCENT = "#2d6a4f";
+const ACCENT_SOFT = "rgba(45, 106, 79, 0.35)";
 
 function num(v: string | number | unknown): number {
   if (typeof v === "number") return v;
@@ -155,7 +110,7 @@ function buildHistorialParams(opts: {
 
 export default function HistorialVentasPage() {
   const router = useRouter();
-  const usuario = useStaffSession();
+  const usuario = useSession({ roles: ROLES_STAFF });
 
   const [ventas, setVentas] = useState<VentaHistorial[]>([]);
   const [pagination, setPagination] = useState<Pagination | null>(null);
@@ -353,8 +308,13 @@ export default function HistorialVentasPage() {
   }, [productosCat, pickerBusqueda]);
 
   const clientesPickerFiltrados = useMemo(() => {
-    if (!pickerBusqueda.trim()) return clientesCat;
-    return filtrarClientesPorTexto(clientesCat, pickerBusqueda);
+    const q = pickerBusqueda.trim().toLowerCase();
+    if (!q) return clientesCat;
+    return clientesCat.filter(
+      (c) =>
+        c.nombre.toLowerCase().includes(q) ||
+        c.correo.toLowerCase().includes(q)
+    );
   }, [clientesCat, pickerBusqueda]);
 
   const proveedoresPickerFiltrados = useMemo(() => {
@@ -368,7 +328,11 @@ export default function HistorialVentasPage() {
   }, [proveedoresCat, pickerBusqueda]);
 
   if (!usuario) {
-    return <p className="p-8 text-ink-muted font-body">Cargando…</p>;
+    return (
+      <p style={{ padding: "2rem", color: "var(--muted)", fontFamily: "var(--font-body)" }}>
+        Cargando…
+      </p>
+    );
   }
 
   if (usuario.tipo_usuario !== TIPOS_USUARIO.DUENO) {
@@ -390,86 +354,83 @@ export default function HistorialVentasPage() {
       title="Historial de ventas"
       subtitle="Consulta y filtra todas las ventas registradas"
     >
-      <div className={cls.toolbar}>
+      <div style={s.toolbar}>
         <input
           type="search"
           placeholder="Buscar por cliente, producto, proveedor, # venta…"
           value={busqueda}
           onChange={(e) => setBusqueda(e.target.value)}
-          className={cls.searchInput}
+          style={s.searchInput}
         />
         <button
           type="button"
           onClick={() => setPanelFiltros((x) => !x)}
-          className={`${cls.btnOutlineBase} ${
-            panelFiltros
-              ? "border-success-strong text-success-strong"
-              : "border-line text-ink-muted"
-          }`}
+          style={{
+            ...s.btnOutline,
+            borderColor: panelFiltros ? ACCENT : "var(--border)",
+            color: panelFiltros ? ACCENT : "var(--muted)",
+          }}
         >
           {panelFiltros ? "Ocultar filtros" : "Filtros"}
         </button>
       </div>
 
       {error && (
-        <p className="text-achiote mb-3 text-[0.9rem]">{error}</p>
+        <p style={{ color: "var(--red)", marginBottom: "0.75rem", fontSize: "0.9rem" }}>{error}</p>
       )}
 
-      <div className={cls.tableWrapper}>
-        <table className={cls.table}>
+      <div style={s.tableWrapper}>
+        <table style={s.table}>
           <thead>
             <tr>
-              <th className={cls.th}>#</th>
-              <th className={cls.th}>Fecha</th>
-              <th className={cls.th}>Cliente</th>
-              <th className={cls.th}>Resumen</th>
-              <th className={`${cls.th} text-right`}>Total</th>
-              <th className={cls.th}>Estado</th>
-              <th className={cls.th}>Tipo</th>
-              <th className={cls.th}>Colaborador</th>
+              <th style={s.th}>#</th>
+              <th style={s.th}>Fecha</th>
+              <th style={s.th}>Cliente</th>
+              <th style={s.th}>Resumen</th>
+              <th style={{ ...s.th, textAlign: "right" }}>Total</th>
+              <th style={s.th}>Estado</th>
+              <th style={s.th}>Tipo</th>
+              <th style={s.th}>Colaborador</th>
             </tr>
           </thead>
           <tbody>
             {cargando && ventas.length === 0 ? (
               <tr>
-                <td colSpan={8} className={`${cls.td} text-center text-ink-muted`}>
+                <td colSpan={8} style={{ ...s.td, textAlign: "center", color: "var(--muted)" }}>
                   Cargando…
                 </td>
               </tr>
             ) : ventas.length === 0 ? (
               <tr>
-                <td colSpan={8} className={`${cls.td} text-center text-ink-muted`}>
+                <td colSpan={8} style={{ ...s.td, textAlign: "center", color: "var(--muted)" }}>
                   No hay ventas con los filtros actuales.
                 </td>
               </tr>
             ) : (
               ventas.map((v) => (
-                <tr key={v.id_venta} className="border-b border-line">
-                  <td className={cls.td}>
-                    <code className={cls.code}>{v.id_venta}</code>
+                <tr key={v.id_venta} style={s.tr}>
+                  <td style={s.td}>
+                    <code style={s.code}>{v.id_venta}</code>
                   </td>
-                  <td className={`${cls.td} text-ink-muted whitespace-nowrap`}>
-                    {new Date(v.fecha_venta).toLocaleString("es-GT", {
-                      dateStyle: "short",
-                      timeStyle: "short",
-                    })}
+                  <td style={{ ...s.td, color: "var(--muted)", whiteSpace: "nowrap" }}>
+                    {formatDateTime(v.fecha_venta)}
                   </td>
-                  <td className={cls.td}>
-                    <div className="font-medium">{v.nombre_cliente}</div>
-                    <div className="text-[0.78rem] text-ink-muted">{v.correo_cliente}</div>
+                  <td style={s.td}>
+                    <div style={{ fontWeight: 500 }}>{v.nombre_cliente}</div>
+                    <div style={{ fontSize: "0.78rem", color: "var(--muted)" }}>{v.correo_cliente}</div>
                   </td>
-                  <td className={`${cls.td} max-w-[220px]`}>{resumenLineas(v)}</td>
-                  <td className={`${cls.td} text-right font-semibold`}>Q{num(v.total).toFixed(2)}</td>
-                  <td className={cls.td}>
-                    <span className={`${cls.badgeEstado} ${estadoClass(v.estado_venta)}`}>{v.estado_venta}</span>
+                  <td style={{ ...s.td, maxWidth: 220 }}>{resumenLineas(v)}</td>
+                  <td style={{ ...s.td, textAlign: "right", fontWeight: 600 }}>{formatMoney(num(v.total))}</td>
+                  <td style={s.td}>
+                    <span style={{ ...s.badgeEstado, ...estadoStyle(v.estado_venta) }}>{v.estado_venta}</span>
                   </td>
-                  <td className={cls.td}>
-                    <span className="text-[0.8rem] text-ink-muted">{v.tipo_venta}</span>
+                  <td style={s.td}>
+                    <span style={{ fontSize: "0.8rem", color: "var(--muted)" }}>{v.tipo_venta}</span>
                     {v.enlinea ? (
-                      <span className={`${cls.tag} ml-1.5`}>En línea</span>
+                      <span style={{ ...s.tag, marginLeft: 6 }}>En línea</span>
                     ) : null}
                   </td>
-                  <td className={`${cls.td} text-ink-muted`}>{v.nombre_colaborador ?? "—"}</td>
+                  <td style={{ ...s.td, color: "var(--muted)" }}>{v.nombre_colaborador ?? "—"}</td>
                 </tr>
               ))
             )}
@@ -477,19 +438,19 @@ export default function HistorialVentasPage() {
         </table>
       </div>
 
-      <div className="mt-4 flex gap-3 items-center">
+      <div style={{ marginTop: "1rem", display: "flex", gap: "0.75rem", alignItems: "center" }}>
         {pagination?.hasMore && (
           <button
             type="button"
             disabled={cargando || pagination.nextOffset == null}
             onClick={() => pagination.nextOffset != null && setOffset(pagination.nextOffset)}
-            className={cls.btnPrimary}
+            style={s.btnPrimary}
           >
             Cargar más
           </button>
         )}
         {cargando && ventas.length > 0 && (
-          <span className="text-ink-muted text-[0.85rem]">Actualizando…</span>
+          <span style={{ color: "var(--muted)", fontSize: "0.85rem" }}>Actualizando…</span>
         )}
       </div>
 
@@ -501,23 +462,46 @@ export default function HistorialVentasPage() {
             type="button"
             aria-label="Cerrar filtros"
             onClick={() => setPanelFiltros(false)}
-            className="fixed top-0 left-0 w-screen h-screen bg-black/50 border-none z-[99] cursor-pointer"
+            style={{
+              ...s.drawerBackdrop,
+              position: "fixed",
+              top: 0,
+              left: 0,
+              width: "100vw",
+              height: "100vh",
+              backgroundColor: "rgba(0, 0, 0, 0.5)", // Oscurece el fondo
+              border: "none",
+              zIndex: 99,
+            }}
           />
           {/* Drawer / Panel lateral */}
-          <aside className="fixed top-0 right-0 w-[320px] h-screen bg-surface text-ink border-l border-line shadow-[-4px_0_12px_rgba(0,0,0,0.3)] z-[100] overflow-y-auto flex flex-col font-body">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-line shrink-0">
-              <h2 className="m-0 font-head text-[1.05rem] font-bold">Filtros</h2>
-              <button type="button" onClick={() => setPanelFiltros(false)} className={cls.closeBtn}>
+          <aside
+            style={{
+              ...s.drawer,
+              position: "fixed",
+              top: 0,
+              right: 0, // O left: 0 si lo prefieres a la izquierda
+              width: "320px",
+              height: "100vh",
+              backgroundColor: "var(--surface, #ffffff)", // Usa un color opaco (p. ej. #1e1e1e o #ffffff)
+              color: "var(--text, #1e1e1e)", // Corregido typo de color
+              zIndex: 100,
+              boxShadow: "-4px 0 12px rgba(0, 0, 0, 0.3)",
+              overflowY: "auto",
+            }}
+          >
+            <div style={s.drawerHeader}>
+              <h2 style={s.drawerTitle}>Filtros</h2>
+              <button type="button" onClick={() => setPanelFiltros(false)} style={s.closeBtn}>
                 ✕
               </button>
             </div>
-            <div className="p-5 overflow-y-auto flex flex-col gap-[0.65rem]">
-              <label className={cls.label}>Periodo</label>
-              <div className={cls.btnRow}>
+            <div style={s.drawerBody}>
+              <label style={s.label}>Periodo</label>
+              <div style={s.btnRow}>
                 {PERIODOS.map((p) => {
                   const fechaActiva = Boolean(fechaDesde || fechaHasta);
                   const disabled = fechaActiva && p.value !== "";
-                  const activo = periodo === p.value;
                   return (
                     <button
                       key={p.value || "all"}
@@ -528,11 +512,14 @@ export default function HistorialVentasPage() {
                         setFechaHasta("");
                         setPeriodo(p.value);
                       }}
-                      className={`${cls.chipBase} ${
-                        activo
-                          ? "bg-[var(--success-soft)] border-success-strong text-success-light"
-                          : "bg-surface-soft border-line text-ink"
-                      } ${disabled ? "opacity-45 cursor-not-allowed" : "cursor-pointer"}`}
+                      style={{
+                        ...s.chip,
+                        background: periodo === p.value ? ACCENT_SOFT : "var(--surface2)",
+                        borderColor: periodo === p.value ? ACCENT : "var(--border)",
+                        color: periodo === p.value ? "#b7e4c7" : "var(--text)",
+                        opacity: disabled ? 0.45 : 1,
+                        cursor: disabled ? "not-allowed" : "pointer",
+                      }}
                     >
                       {p.label}
                     </button>
@@ -540,10 +527,17 @@ export default function HistorialVentasPage() {
                 })}
               </div>
 
-              <label className={cls.label}>Rango de fechas</label>
-              <div className={`flex gap-2 items-end ${periodo ? "opacity-45" : ""}`}>
-                <div className="flex-1 flex flex-col gap-[0.3rem]">
-                  <label htmlFor="fecha-desde" className={cls.dateLabel}>Desde</label>
+              <label style={s.label}>Rango de fechas</label>
+              <div
+                style={{
+                  display: "flex",
+                  gap: "0.5rem",
+                  alignItems: "flex-end",
+                  opacity: periodo ? 0.45 : 1,
+                }}
+              >
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                  <label htmlFor="fecha-desde" style={s.dateLabel}>Desde</label>
                   <input
                     id="fecha-desde"
                     type="date"
@@ -554,11 +548,11 @@ export default function HistorialVentasPage() {
                       setPeriodo("");
                       setFechaDesde(e.target.value);
                     }}
-                    className={cls.dateInput}
+                    style={s.dateInput}
                   />
                 </div>
-                <div className="flex-1 flex flex-col gap-[0.3rem]">
-                  <label htmlFor="fecha-hasta" className={cls.dateLabel}>Hasta</label>
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                  <label htmlFor="fecha-hasta" style={s.dateLabel}>Hasta</label>
                   <input
                     id="fecha-hasta"
                     type="date"
@@ -569,7 +563,7 @@ export default function HistorialVentasPage() {
                       setPeriodo("");
                       setFechaHasta(e.target.value);
                     }}
-                    className={cls.dateInput}
+                    style={s.dateInput}
                   />
                 </div>
               </div>
@@ -580,22 +574,22 @@ export default function HistorialVentasPage() {
                     setFechaDesde("");
                     setFechaHasta("");
                   }}
-                  className={cls.linkBtn}
+                  style={s.linkBtn}
                 >
                   Quitar filtro de fechas
                 </button>
               )}
 
-              <label className={cls.label}>Total venta (Q)</label>
+              <label style={s.label}>Total venta (Q)</label>
               {!rangosMontosListos ? (
-                <p className="text-ink-muted text-[0.85rem] m-0">
+                <p style={{ color: "var(--muted)", fontSize: "0.85rem", margin: 0 }}>
                   Cargando rango de totales…
                 </p>
               ) : (
                 <>
-                  <div className={cls.rangeRow}>
-                    <span className={cls.rangeVal}>Min: Q{(minTotal ?? 0).toFixed(2)}</span>
-                    <span className={cls.rangeVal}>Max: Q{(maxTotal ?? sliderMaxBound).toFixed(2)}</span>
+                  <div style={s.rangeRow}>
+                    <span style={s.rangeVal}>Min: {formatMoney(minTotal ?? 0)}</span>
+                    <span style={s.rangeVal}>Max: {formatMoney(maxTotal ?? sliderMaxBound)}</span>
                   </div>
                   <input
                     type="range"
@@ -604,7 +598,7 @@ export default function HistorialVentasPage() {
                     step={1}
                     value={Math.min(Math.max(minTotal ?? 0, sliderMinBound), sliderMaxBound)}
                     onChange={(e) => onMinSlider(Number(e.target.value))}
-                    className="w-full accent-success-strong"
+                    style={{ width: "100%", accentColor: ACCENT }}
                   />
                   <input
                     type="range"
@@ -613,43 +607,43 @@ export default function HistorialVentasPage() {
                     step={1}
                     value={Math.min(Math.max(maxTotal ?? sliderMaxBound, sliderMinBound), sliderMaxBound)}
                     onChange={(e) => onMaxSlider(Number(e.target.value))}
-                    className="w-full accent-success-strong mt-2"
+                    style={{ width: "100%", accentColor: ACCENT, marginTop: 8 }}
                   />
                 </>
               )}
 
-              <label className={cls.label}>Producto</label>
-              <button type="button" onClick={() => { setPicker("producto"); setPickerBusqueda(""); }} className={cls.btnPicker}>
+              <label style={s.label}>Producto</label>
+              <button type="button" onClick={() => { setPicker("producto"); setPickerBusqueda(""); }} style={s.btnPicker}>
                 {idProducto == null
                   ? "Todos los productos"
                   : `${nombreProductoSel?.codigo_producto ?? idProducto} — ${nombreProductoSel?.nombre_producto ?? ""}`}
               </button>
               {idProducto != null && (
-                <button type="button" onClick={() => setIdProducto(null)} className={cls.linkBtn}>
+                <button type="button" onClick={() => setIdProducto(null)} style={s.linkBtn}>
                   Quitar filtro
                 </button>
               )}
 
-              <label className={cls.label}>Cliente</label>
-              <button type="button" onClick={() => { setPicker("cliente"); setPickerBusqueda(""); }} className={cls.btnPicker}>
+              <label style={s.label}>Cliente</label>
+              <button type="button" onClick={() => { setPicker("cliente"); setPickerBusqueda(""); }} style={s.btnPicker}>
                 {idCliente == null
                   ? "Todos los clientes"
                   : `${nombreClienteSel?.nombre ?? idCliente}`}
               </button>
               {idCliente != null && (
-                <button type="button" onClick={() => setIdCliente(null)} className={cls.linkBtn}>
+                <button type="button" onClick={() => setIdCliente(null)} style={s.linkBtn}>
                   Quitar filtro
                 </button>
               )}
 
-              <label className={cls.label}>Proveedor</label>
-              <button type="button" onClick={() => { setPicker("proveedor"); setPickerBusqueda(""); }} className={cls.btnPicker}>
+              <label style={s.label}>Proveedor</label>
+              <button type="button" onClick={() => { setPicker("proveedor"); setPickerBusqueda(""); }} style={s.btnPicker}>
                 {idProveedor == null
                   ? "Todos los proveedores"
                   : nombreProveedorSel?.nombre_proveedor ?? idProveedor}
               </button>
               {idProveedor != null && (
-                <button type="button" onClick={() => setIdProveedor(null)} className={cls.linkBtn}>
+                <button type="button" onClick={() => setIdProveedor(null)} style={s.linkBtn}>
                   Quitar filtro
                 </button>
               )}
@@ -661,52 +655,85 @@ export default function HistorialVentasPage() {
       {/* Modal pickers */}
       {picker && (
         <div
-          className="fixed inset-0 w-screen h-screen bg-black/50 backdrop-blur-[4px] flex items-center justify-center z-[101] p-4"
+          style={{
+            ...s.overlay,
+            position: "fixed",
+            top: 0,
+            left: 0,
+            width: "100vw",
+            height: "100vh",
+            backgroundColor: "rgba(0, 0, 0, 0.5)", // Oscurece la pantalla de atrás
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 101, // Mayor que el drawer lateral (100)
+          }}
           role="presentation"
           onClick={() => setPicker(null)}
         >
           <div
-            className="bg-surface text-ink border border-line rounded-[12px] w-[90%] max-w-[480px] max-h-[80vh] shadow-[0_20px_25px_-5px_rgba(0,0,0,0.3)] flex flex-col overflow-hidden"
+            style={{
+              ...s.modal,
+              backgroundColor: "#ffffff", // Fondo blanco opaco
+              color: "#1a1a1a",           // Texto oscuro
+              borderRadius: "12px",
+              width: "90%",
+              maxWidth: "480px",
+              maxHeight: "80vh",
+              boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.3)",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+            }}
             role="dialog"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between p-5 border-b border-line shrink-0">
-              <h3 className="m-0 font-head text-base font-bold text-ink">
+            <div style={{ ...s.modalHeader, padding: "1.25rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <h3 style={{ ...s.modalTitle, margin: 0, color: "#1a1a1a" }}>
                 {picker === "producto" && "Elegir producto"}
                 {picker === "cliente" && "Elegir cliente"}
                 {picker === "proveedor" && "Elegir proveedor"}
               </h3>
               <button
                 type="button"
-                className="bg-transparent border-none text-ink text-[1.1rem] cursor-pointer"
+                style={{ ...s.closeBtn, color: "#1a1a1a", background: "transparent", border: "none", cursor: "pointer" }}
                 onClick={() => setPicker(null)}
               >
                 ✕
               </button>
             </div>
-            <div className="px-5 pb-4">
+            <div style={{ padding: "0 1.25rem 1rem" }}>
               <input
                 type="search"
                 placeholder="Filtrar lista…"
                 value={pickerBusqueda}
                 onChange={(e) => setPickerBusqueda(e.target.value)}
-                className={cls.searchInput}
+                style={{
+                  ...s.searchInput,
+                  backgroundColor: "#f4f4f5", // Fondo suave para el input
+                  color: "#1a1a1a",
+                  border: "1px solid #e4e4e7",
+                }}
               />
             </div>
-            <div className="overflow-y-auto max-h-[50vh] px-5 pb-5 pt-0">
+            <div style={{ ...s.modalList, overflowY: "auto", padding: "0 1.25rem 1.25rem" }}>
               {picker === "producto" &&
                 productosPickerFiltrados.map((p) => (
                   <button
                     key={p.id_producto}
                     type="button"
-                    className={cls.listItem}
+                    style={{
+                      ...s.listItem,
+                      backgroundColor: "transparent",
+                      color: "#1a1a1a",
+                    }}
                     onClick={() => {
                       setIdProducto(p.id_producto);
                       setPicker(null);
                     }}
                   >
-                    <span className="font-semibold block">{p.codigo_producto}</span>
-                    <span className="text-ink-muted text-[0.85rem]">{p.nombre_producto}</span>
+                    <span style={{ fontWeight: 600, display: "block" }}>{p.codigo_producto}</span>
+                    <span style={{ color: "#666666", fontSize: "0.85rem" }}>{p.nombre_producto}</span>
                   </button>
                 ))}
               {picker === "cliente" &&
@@ -714,14 +741,18 @@ export default function HistorialVentasPage() {
                   <button
                     key={c.id_usuario}
                     type="button"
-                    className={cls.listItem}
+                    style={{
+                      ...s.listItem,
+                      backgroundColor: "transparent",
+                      color: "#1a1a1a",
+                    }}
                     onClick={() => {
                       setIdCliente(c.id_usuario);
                       setPicker(null);
                     }}
                   >
-                    <span className="font-semibold block">{c.nombre}</span>
-                    <span className="text-ink-muted text-[0.85rem]">{c.correo}</span>
+                    <span style={{ fontWeight: 600, display: "block" }}>{c.nombre}</span>
+                    <span style={{ color: "#666666", fontSize: "0.85rem" }}>{c.correo}</span>
                   </button>
                 ))}
               {picker === "proveedor" &&
@@ -729,14 +760,18 @@ export default function HistorialVentasPage() {
                   <button
                     key={p.id_proveedor}
                     type="button"
-                    className={cls.listItem}
+                    style={{
+                      ...s.listItem,
+                      backgroundColor: "transparent",
+                      color: "#1a1a1a",
+                    }}
                     onClick={() => {
                       setIdProveedor(p.id_proveedor);
                       setPicker(null);
                     }}
                   >
-                    <span className="font-semibold block">{p.nombre_proveedor}</span>
-                    <span className="text-ink-muted text-[0.85rem]">NIT {p.nit_proveedor}</span>
+                    <span style={{ fontWeight: 600, display: "block" }}>{p.nombre_proveedor}</span>
+                    <span style={{ color: "#666666", fontSize: "0.85rem" }}>NIT {p.nit_proveedor}</span>
                   </button>
                 ))}
             </div>
@@ -746,3 +781,261 @@ export default function HistorialVentasPage() {
     </StaffShell>
   );
 }
+
+function estadoStyle(estado: string): CSSProperties {
+  if (estado === "PAGADO") return { background: "rgba(82,183,136,.2)", color: "#52b788", borderColor: "rgba(82,183,136,.4)" };
+  if (estado === "PENDIENTE") return { background: "rgba(145,167,255,.15)", color: "#91a7ff", borderColor: "rgba(145,167,255,.35)" };
+  return { background: "var(--surface2)", color: "var(--muted)", borderColor: "var(--border)" };
+}
+
+const s: Record<string, CSSProperties> = {
+  toolbar: {
+    display: "flex",
+    gap: "0.75rem",
+    flexWrap: "wrap",
+    alignItems: "center",
+    marginBottom: "1.25rem",
+  },
+  searchInput: {
+    flex: 1,
+    minWidth: 200,
+    background: "var(--surface2)",
+    border: "1px solid var(--border)",
+    borderRadius: 10,
+    padding: "0.65rem 1rem",
+    color: "var(--text)",
+    fontSize: "0.9rem",
+    outline: "none",
+  },
+  btnOutline: {
+    background: "transparent",
+    border: "1px solid var(--border)",
+    borderRadius: 10,
+    padding: "0.65rem 1rem",
+    cursor: "pointer",
+    fontSize: "0.88rem",
+    fontWeight: 600,
+    fontFamily: "var(--font-body)",
+  },
+  btnPrimary: {
+    background: ACCENT,
+    color: "#fff",
+    border: "none",
+    borderRadius: 10,
+    padding: "0.55rem 1.1rem",
+    fontWeight: 600,
+    cursor: "pointer",
+    fontSize: "0.88rem",
+  },
+  tableWrapper: {
+    background: "var(--surface)",
+    border: "1px solid var(--border)",
+    borderRadius: "var(--radius)",
+    overflow: "auto",
+  },
+  table: { width: "100%", borderCollapse: "collapse" },
+  th: {
+    background: "var(--surface2)",
+    color: "var(--muted)",
+    fontSize: "0.72rem",
+    fontWeight: 600,
+    letterSpacing: "0.06em",
+    textTransform: "uppercase",
+    padding: "0.75rem 1rem",
+    textAlign: "left",
+    borderBottom: "1px solid var(--border)",
+  },
+  tr: { borderBottom: "1px solid var(--border)" },
+  td: { padding: "0.75rem 1rem", fontSize: "0.88rem", verticalAlign: "top" },
+  code: {
+    background: "var(--surface2)",
+    border: "1px solid var(--border)",
+    borderRadius: 4,
+    padding: "0.12rem 0.4rem",
+    fontSize: "0.78rem",
+    color: ACCENT,
+    fontFamily: "monospace",
+  },
+  badgeEstado: {
+    display: "inline-block",
+    fontSize: "0.72rem",
+    padding: "0.15rem 0.55rem",
+    borderRadius: 99,
+    border: "1px solid",
+    fontWeight: 600,
+  },
+  tag: {
+    fontSize: "0.65rem",
+    padding: "0.08rem 0.35rem",
+    borderRadius: 6,
+    background: "var(--surface2)",
+    color: "var(--muted)",
+    border: "1px solid var(--border)",
+  },
+  drawerBackdrop: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(0,0,0,.45)",
+    zIndex: 150,
+    border: "none",
+    cursor: "pointer",
+  },
+  drawer: {
+    position: "fixed",
+    top: 0,
+    right: 0,
+    height: "100vh",
+    width: "min(400px, 100vw)",
+    background: "var(--surface)",
+    borderLeft: "1px solid var(--border)",
+    boxShadow: "-8px 0 32px rgba(0,0,0,.35)",
+    zIndex: 160,
+    display: "flex",
+    flexDirection: "column",
+    fontFamily: "var(--font-body)",
+  },
+  drawerHeader: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "1rem 1.25rem",
+    borderBottom: "1px solid var(--border)",
+    flexShrink: 0,
+  },
+  drawerTitle: {
+    margin: 0,
+    fontFamily: "var(--font-head)",
+    fontSize: "1.05rem",
+    fontWeight: 700,
+  },
+  closeBtn: {
+    background: "transparent",
+    border: "none",
+    color: "var(--muted)",
+    fontSize: "1.1rem",
+    cursor: "pointer",
+  },
+  drawerBody: {
+    padding: "1.25rem",
+    overflowY: "auto",
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.65rem",
+  },
+  label: {
+    fontSize: "0.72rem",
+    fontWeight: 600,
+    textTransform: "uppercase",
+    letterSpacing: "0.06em",
+    color: "var(--muted)",
+    marginTop: "0.5rem",
+  },
+  btnRow: { display: "flex", flexWrap: "wrap", gap: "0.4rem" },
+  chip: {
+    border: "1px solid var(--border)",
+    borderRadius: 8,
+    padding: "0.4rem 0.65rem",
+    fontSize: "0.78rem",
+    cursor: "pointer",
+    fontWeight: 600,
+  },
+  rangeRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    fontSize: "0.78rem",
+    color: "var(--muted)",
+  },
+  rangeVal: { fontVariantNumeric: "tabular-nums" },
+  dateLabel: {
+    fontSize: "0.72rem",
+    color: "var(--muted)",
+  },
+  dateInput: {
+    background: "var(--surface2)",
+    border: "1px solid var(--border)",
+    borderRadius: 10,
+    padding: "0.55rem 0.7rem",
+    color: "var(--text)",
+    fontSize: "0.85rem",
+    fontFamily: "var(--font-body)",
+    colorScheme: "dark",
+    outline: "none",
+  },
+  btnPicker: {
+    width: "100%",
+    textAlign: "left",
+    background: "var(--surface2)",
+    border: "1px solid var(--border)",
+    borderRadius: 10,
+    padding: "0.65rem 0.85rem",
+    color: "var(--text)",
+    fontSize: "0.88rem",
+    cursor: "pointer",
+  },
+  linkBtn: {
+    background: "none",
+    border: "none",
+    color: "#91a7ff",
+    fontSize: "0.8rem",
+    cursor: "pointer",
+    textAlign: "left",
+    padding: 0,
+    marginTop: "-0.25rem",
+  },
+  overlay: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(0,0,0,.65)",
+    backdropFilter: "blur(4px)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 200,
+    padding: "1rem",
+  },
+  modal: {
+    background: "var(--surface)",
+    border: "1px solid var(--border)",
+    borderRadius: 14,
+    width: "100%",
+    maxWidth: 480,
+    maxHeight: "85vh",
+    display: "flex",
+    flexDirection: "column",
+    overflow: "hidden",
+    boxShadow: "var(--shadow)",
+  },
+  modalHeader: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "1rem 1.25rem",
+    borderBottom: "1px solid var(--border)",
+    flexShrink: 0,
+  },
+  modalTitle: {
+    margin: 0,
+    fontFamily: "var(--font-head)",
+    fontSize: "1rem",
+    fontWeight: 700,
+  },
+  modalList: {
+    overflowY: "auto",
+    maxHeight: "50vh",
+    padding: "0.5rem 0",
+  },
+  listItem: {
+    width: "100%",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-start",
+    gap: 2,
+    padding: "0.65rem 1.25rem",
+    border: "none",
+    borderBottom: "1px solid var(--border)",
+    background: "transparent",
+    color: "var(--text)",
+    cursor: "pointer",
+    textAlign: "left",
+  },
+};

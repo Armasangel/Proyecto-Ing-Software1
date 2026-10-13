@@ -2,10 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { StaffShell } from "@/components/StaffShell";
-import { useStaffSession } from "@/hooks/useStaffSession";
-import { staffVariantFromTipo } from "@/lib/roles";
+import { useSession } from "@/hooks/useSession";
+import { staffVariantFromTipo, ROLES_STAFF } from "@/lib/roles";
 import { Icon } from "@/components/Icon";
 import { matchesQuery } from "@/lib/ui-table";
+import { formatMoney } from "@/lib/format";
 
 type Fila = {
   id_producto: number;
@@ -146,7 +147,7 @@ const s = {
 };
 
 export default function ProductosPage() {
-  const usuario = useStaffSession();
+  const usuario = useSession({ roles: ROLES_STAFF });
   const [filas, setFilas] = useState<Fila[]>([]);
   const [error, setError] = useState("");
   const [categorias, setCategorias] = useState<Categoria[]>([]);
@@ -660,8 +661,8 @@ export default function ProductosPage() {
                 <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">{p.nombre_producto}</td>
                 <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">{p.nombre_categoria}</td>
                 <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">{p.nombre_marca}</td>
-                <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)] text-right">Q{Number(p.precio_unitario).toFixed(2)}</td>
-                <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)] text-right">Q{Number(p.precio_mayoreo).toFixed(2)}</td>
+                <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)] text-right">{formatMoney(p.precio_unitario)}</td>
+                <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)] text-right">{formatMoney(p.precio_mayoreo)}</td>
                 <td className="px-3.5 py-2.5 text-[0.88rem] border-b border-[var(--border)]">
                   {p.estado_producto
                     ? <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold bg-market-50 text-market-600">Activo</span>

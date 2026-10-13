@@ -17,6 +17,14 @@ export const MAX_DUENOS = 2;
 
 export type TipoUsuarioDb = (typeof TIPOS_USUARIO)[keyof typeof TIPOS_USUARIO];
 
+/**
+ * Conjuntos de roles para `useSession({ roles })`. Son constantes (referencia
+ * estable) para no recrear el array en cada render.
+ */
+export const ROLES_STAFF = [TIPOS_USUARIO.DUENO, TIPOS_USUARIO.EMPLEADO] as const;
+export const ROLES_DUENO = [TIPOS_USUARIO.DUENO] as const;
+export const ROLES_BODEGUERO = [TIPOS_USUARIO.BODEGUERO] as const;
+
 /** Dueño o colaborador de tienda (no incluye bodeguero, que tiene su propio panel). */
 export function isStaffTipo(tipo: string): boolean {
   return tipo === TIPOS_USUARIO.DUENO || tipo === TIPOS_USUARIO.EMPLEADO;

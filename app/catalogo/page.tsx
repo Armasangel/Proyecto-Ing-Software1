@@ -1,11 +1,12 @@
 "use client";
 
 import { StaffShell } from "@/components/StaffShell";
-import { useDuenoSession } from "@/hooks/useDuenoSession";
+import { useSession } from "@/hooks/useSession";
+import { ROLES_DUENO } from "@/lib/roles";
 import { InventarioCatalogo } from "@/components/inventario-catalogo/InventarioCatalogo";
 
 export default function CatalogoPage() {
-  const usuario = useDuenoSession();
+  const usuario = useSession({ roles: ROLES_DUENO });
 
   if (!usuario) return <div style={{ padding: "2rem", color: "var(--muted)" }}>Cargando…</div>;
 

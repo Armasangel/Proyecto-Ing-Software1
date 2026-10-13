@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { StaffShell } from "@/components/StaffShell";
-import { useStaffSession } from "@/hooks/useStaffSession";
+import { useSession } from "@/hooks/useSession";
+import { ROLES_STAFF } from "@/lib/roles";
 import { matchesQuery, paginar, PaginationBar, type PageSize } from "@/lib/ui-table";
 
 type Proveedor = {
@@ -28,7 +29,7 @@ const inputClsToolbar =
   "px-3.5 py-2.5 rounded-control border border-[var(--border)] bg-cream/60 text-ink text-sm outline-none focus:ring-2 focus:ring-market/40";
 
 export default function ProveedoresPage() {
-  const usuario = useStaffSession();
+  const usuario = useSession({ roles: ROLES_STAFF });
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
   const [editando, setEditando] = useState<number | null>(null);
   const [creando, setCreando] = useState(false);
@@ -81,7 +82,7 @@ export default function ProveedoresPage() {
   if (usuario.tipo_usuario !== "DUENO") {
     return (
       <StaffShell usuario={usuario} title="Gestión de Proveedores" subtitle="">
-        <p className="text-ink-muted">No tienes permiso para ver esta página.</p>
+        <p className="text-ink-muted">No tenés permiso para ver esta página.</p>
       </StaffShell>
     );
   }
@@ -131,7 +132,7 @@ export default function ProveedoresPage() {
     <StaffShell
       usuario={usuario}
       title="Gestión de Proveedores"
-      subtitle="Administra los proveedores de la tienda"
+      subtitle="Administrá los proveedores de la tienda"
     >
       {mensaje && (
         <p key={mensaje} className="text-market-600 mb-4 font-semibold animate-toast-in">
