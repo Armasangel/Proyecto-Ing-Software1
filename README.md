@@ -467,15 +467,15 @@ una vista propia tras el login (`lib/roles.ts` → `postLoginPath`):
 | Módulo | Ruta | Dueño | Colaborador | Bodeguero |
 |---|---|:---:|:---:|:---:|
 | Dashboard (KPIs) | `/dashboard` | ✅ | ✅ | — |
-| Ventas | `/ventas` | — | ✅ | — |
-| Órdenes de compra | `/ordenes` | ✅ | ✅ | — |
+| Ventas | `/ventas` | ✅ | ✅ | — |
+| Pedidos de entrega | `/ordenes` | ✅ | ✅ | — |
 | Facturación | `/facturacion` | ✅ | ✅ | — |
 | Reportes / Estadísticas | `/reportes` | ✅ | — | — |
 | Inventario / bodegas / kardex | `/inventario` | ✅ | — | — |
 | Catálogo de productos | `/catalogo` | ✅ | — | — |
 | Productos (maestro) | `/productos` | ✅ | — | — |
 | Historial de ventas | `/historial-ventas` | ✅ | — | — |
-| Deudas | `/deudas` | ✅ | — | — |
+| Cuentas por cobrar (deudas) | `/cuentas-por-cobrar` | ✅ | — | — |
 | Proveedores | `/proveedores` | ✅ | — | — |
 | Usuarios | `/usuarios` | ✅ | — | — |
 | Bitácora de acceso | `/usuarios` (panel) | ✅ | — | — |
@@ -486,6 +486,14 @@ una vista propia tras el login (`lib/roles.ts` → `postLoginPath`):
 | Kardex de su bodega | `/bodega` → Entrada/Salida/Traslado | — | — | ✅ |
 | Mi cuenta (cambiar contraseña, sesiones) | `/mi-cuenta` | ✅ | ✅ | ✅ |
 
+> **`/ventas` es de los dos.** Dueño y colaborador registran ventas desde la
+> misma pantalla (`useStaffSession`); los pedidos de entrega que genera una
+> venta con entrega a domicilio se siguen en `/ordenes`, que cuelga de Ventas
+> en el menú y no tiene entrada propia.
+
+> **`/catalogos` y `/productos` no tienen entrada en el menú:** se llegan por
+> URL y el catálogo ya se recorre desde las pestañas de `/inventario`.
+
 > **El bodeguero** entra directo a `/bodega` y solo ve su bodega asignada
 > (`id_bodega`): es el único rol que no usa el `StaffShell` con sidebar, así
 > que su panel resuelve "Mi cuenta" con el mismo botón fantasma del logout.
@@ -493,10 +501,10 @@ una vista propia tras el login (`lib/roles.ts` → `postLoginPath`):
 > por tipo de usuario. El dueño y el colaborador tienen su propio sidebar;
 > el bodeguero llega a la misma pantalla desde la cabecera de su panel.
 
-> **Accesos que se redirigen:** `/ventas` manda al dueño a `/dashboard` y
-> `/bodega` manda a cualquier rol que no sea bodeguero de vuelta a su vista
-> (`useBodegueroSession`). Por eso no aparecen en el menú lateral de esos
-> roles.
+> **Accesos que se redirigen:** `/reportes` (y el resto de módulos de dueño)
+> mandan al colaborador de vuelta a `/ventas` vía `useDuenoSession`, por eso
+> no salen en su menú; `/bodega` hace lo propio con cualquier rol que no sea
+> bodeguero (`useBodegueroSession`).
 
 > **Pendiente de seguridad:** el RNF 8.3 pide restringir el acceso financiero
 > (facturación, deudas) al dueño. En la interfaz ya no se ve nada de eso en el
@@ -528,9 +536,10 @@ una vista propia tras el login (`lib/roles.ts` → `postLoginPath`):
 - [x] Historial de ventas con filtros y paginación
 - [x] Gestión de clientes (minorista / mayorista) con límite de deuda y bloqueo automático
 
-### Deudas y órdenes
-- [x] Deudas por productos o monto libre, con alertas y bloqueo por límite
-- [x] Órdenes de compra con estados y detalle
+### Cuentas por cobrar y pedidos
+- [x] Cuentas por cobrar por productos o monto libre, con alertas, límites y bloqueo automático
+- [x] Reglas de pago por condición del cliente, con vista de plan de pagos y seniority de cuotas
+- [x] Pedidos de entrega generados desde Ventas, con estados y seguimiento
 
 ### Reportes
 - [x] Dashboard con KPIs (productos, ventas, pendientes, proveedores, clientes bloqueados)
@@ -549,8 +558,8 @@ una vista propia tras el login (`lib/roles.ts` → `postLoginPath`):
 │   │   ├── productos/        → Productos
 │   │   ├── ventas/           → Ventas (+ recientes)
 │   │   ├── facturacion/      → Facturas
-│   │   ├── deudas/           → Deudas
-│   │   ├── ordenes/          → Órdenes de compra
+│   │   ├── deudas/           → Cuentas por cobrar (la API conserva /api/deudas)
+│   │   ├── ordenes/          → Pedidos de entrega
 │   │   ├── gestion-inventario/ → Kardex, ajustes, transferencias, stock mínimo
 │   │   ├── estadisticas/     → Reportes analíticos
 │   │   ├── clientes/ bodegas/ categorias/ marcas/ proveedores/ precios/
@@ -559,11 +568,11 @@ una vista propia tras el login (`lib/roles.ts` → `postLoginPath`):
 │   ├── inventario/           → Stock, entradas, transferencias, ajustes y bodegas
 │   ├── catalogo/             → Catálogo de productos (solo dueño)
 │   ├── productos/            → Catálogo maestro (precios y estados)
-│   ├── ventas/               → Registro de ventas (colaborador)
+│   ├── ventas/               → Registro de ventas (dueño y colaborador)
 │   ├── facturacion/          → Emisión de facturas por venta
 │   ├── historial-ventas/     → Consulta y filtros de ventas
-│   ├── deudas/               → Control de deudas y deudores
-│   ├── ordenes/              → Órdenes de compra
+│   ├── cuentas-por-cobrar/   → Cuentas por cobrar y deudores (solo dueño)
+│   ├── ordenes/              → Pedidos de entrega (se crean desde Ventas)
 │   ├── proveedores/          → Gestión de proveedores
 │   ├── reportes/             → Estadísticas y reportes del negocio
 │   ├── usuarios/             → Gestión de usuarios y roles
