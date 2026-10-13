@@ -6,6 +6,7 @@ import { StaffShell } from "@/components/StaffShell";
 import { useStaffSession } from "@/hooks/useStaffSession";
 import { isStaffTipo } from "@/lib/roles";
 import { Icon } from "@/components/Icon";
+import { CantidadInput } from "@/components/CantidadInput";
 import { ProductoAutocompletar } from "@/components/ProductoAutocompletar";
 import Link from "next/link";
 import { CUOTAS_MAXIMAS, PLAZO_MAXIMO_DIAS, generarCuotas, sumarDias, validarCondicionesCredito } from "@/lib/credito";
@@ -899,7 +900,8 @@ export default function VentasPage() {
         <div
           key={ln.key}
           className="grid gap-x-2 gap-y-3 items-end"
-          style={{ gridTemplateColumns: "minmax(0,1.4fr) minmax(0,0.8fr) minmax(0,1fr) minmax(0,1fr) auto" }}
+          // La 2ª columna (cantidad) necesita ancho extra: lleva los botones − / +
+          style={{ gridTemplateColumns: "minmax(0,1.4fr) minmax(0,1.15fr) minmax(0,1fr) minmax(0,1fr) auto" }}
         >
           {/* Fila 1: Producto + quitar */}
           <div className="flex flex-col gap-1.5" style={{ gridColumn: "1 / span 4", gridRow: 1 }}>
@@ -937,11 +939,11 @@ export default function VentasPage() {
 
           <div className="flex flex-col gap-1.5" style={{ gridColumn: 2, gridRow: 2 }}>
             <label className={labelCls}>Cantidad</label>
-            <input
-              type="number" min="0.001" step="0.001"
-              value={ln.cantidad}
-              onChange={(e) => actualizarLinea(ln.key, { cantidad: e.target.value })}
+            <CantidadInput
+              ariaLabel="Cantidad"
               className={inputCls}
+              value={ln.cantidad}
+              onChange={(cantidad) => actualizarLinea(ln.key, { cantidad })}
             />
           </div>
 
