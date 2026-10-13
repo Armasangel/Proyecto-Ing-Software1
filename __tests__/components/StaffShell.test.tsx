@@ -93,14 +93,7 @@ describe("StaffShell", () => {
     expect(screen.queryByText("Inventario")).not.toBeInTheDocument();
     expect(screen.queryByText("Proveedores")).not.toBeInTheDocument();
     expect(screen.queryByText("Historial ventas")).not.toBeInTheDocument();
-<<<<<<< HEAD
-    expect(screen.queryByText("Deudas")).not.toBeInTheDocument();
-    // Reportes es exclusivo del dueño: el colaborador lo pisaba y terminaba
-    // devuelto a /ventas por useDuenoSession.
-    expect(screen.queryByText("Reportes")).not.toBeInTheDocument();
-=======
     expect(screen.queryByText("Cuentas por cobrar")).not.toBeInTheDocument();
->>>>>>> develop
   });
 
   it("shows the role badge for dueno", () => {
