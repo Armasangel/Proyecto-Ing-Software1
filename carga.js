@@ -30,8 +30,16 @@ const bytesDeudas = new Counter('bytes_deudas');
 // host.docker.internal para alcanzar el host de Windows/Mac.
 const BASE_URL = __ENV.BASE_URL || 'http://host.docker.internal:3001';
 
+// Las credenciales se pasan por variables de entorno de k6:
+// En Docker: -e K6_DUENO_CORREO=... -e K6_DUENO_PASSWORD=...
+if (!__ENV.K6_DUENO_CORREO || !__ENV.K6_DUENO_PASSWORD) {
+  throw new Error(
+    'Faltan K6_DUENO_CORREO y K6_DUENO_PASSWORD. Define ambas variables antes de correr la carga.'
+  );
+}
+
 const USUARIOS = {
-  DUENO: { correo: 'dueno@tienda.com', password: 'password123' },
+  DUENO: { correo: __ENV.K6_DUENO_CORREO, password: __ENV.K6_DUENO_PASSWORD },
 };
 
 // Rampa por defecto del informe. Se puede achicar para un smoke test:

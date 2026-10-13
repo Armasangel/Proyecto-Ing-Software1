@@ -29,7 +29,7 @@ export default function RecuperarPage() {
 
   const titulos: Record<typeof paso, string> = {
     correo: "Recuperar contraseña",
-    codigo: "Verificá tu identidad",
+    codigo: "Verifica tu identidad",
     nueva: "Nueva contraseña",
   };
 

@@ -50,7 +50,7 @@ export async function POST(
     // puede deshacer cualquiera (por si necesita corregir algo).
     if (usuario.tipo_usuario === TIPOS_USUARIO.EMPLEADO && venta.id_empleado !== usuario.id_usuario) {
       await client.query("ROLLBACK");
-      return NextResponse.json({ error: "Solo podés deshacer tus propias ventas" }, { status: 403 });
+      return NextResponse.json({ error: "Solo puedes deshacer tus propias ventas" }, { status: 403 });
     }
 
     if (venta.estado_venta === "CANCELADO") {
@@ -64,7 +64,7 @@ export async function POST(
       await client.query("ROLLBACK");
       return NextResponse.json(
         {
-          error: `Ya pasaron más de ${VENTANA_DESHACER_MINUTOS} minutos desde esta venta — para anularla, cambiá su estado manualmente en Reportes.`,
+          error: `Ya pasaron más de ${VENTANA_DESHACER_MINUTOS} minutos desde esta venta — para anularla, cambia su estado manualmente en Reportes.`,
         },
         { status: 400 }
       );

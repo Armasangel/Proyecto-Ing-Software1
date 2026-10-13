@@ -1,11 +1,9 @@
 // middleware.ts
 //
 // Corre en el RUNTIME DE NODE.JS (config.runtime = "nodejs", estable desde
-// Next.js 15.5). A diferencia del Edge runtime, acá se puede importar
-// jsonwebtoken, la pool? no — SOLO utilidades ligeras y el logger pino.
+// Next.js 15.5).
 //
-// Además de la autenticación (que antes usaba Web Crypto para Edge), este
-// middleware loggea la ENTRADA de cada request HTTP (método, path, IP,
+// Además de la autenticación, este middleware loggea la ENTRADA de cada request HTTP (método, path, IP,
 // usuario) con pino. El matcher incluye `/api/:path*` para que el logging
 // también cubra las rutas de API.
 //
@@ -17,6 +15,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { AUTH_COOKIE, verifyAuthToken } from "@/lib/auth";
+import { esSesionValida } from "@/lib/sesion";
 import { getLogger } from "@/lib/logger";
 
 const log = getLogger("middleware");
@@ -37,6 +36,7 @@ const PROTECTED_PREFIXES = [
   "/facturacion",
   "/catalogo",
   "/proveedores",
+  "/mi-cuenta",
 ];
 
 function getClientIp(req: NextRequest): string {
@@ -46,6 +46,27 @@ function getClientIp(req: NextRequest): string {
     if (first) return first;
   }
   return req.headers.get("x-real-ip")?.trim() || "unknown";
+}
+
+/**
+ * Se usa para las rutas de API: en vez de devolver un 401 propio (lo que
+ * obligaría a cada handler a conocer las reglas de revocación), se reescribe
+ * el request como si el cliente no tuviera cookie. Así `getUsuarioFromRequest`
+ * devuelve null y cada ruta conserva exactamente su respuesta habitual.
+ */
+function requestSinCookieAuth(request: NextRequest): Headers {
+  const headers = new Headers(request.headers);
+  const raw = headers.get("cookie");
+  if (raw) {
+    const limpio = raw
+      .split(";")
+      .map((parte) => parte.trim())
+      .filter((parte) => parte && !parte.startsWith(`${AUTH_COOKIE}=`))
+      .join("; ");
+    if (limpio) headers.set("cookie", limpio);
+    else headers.delete("cookie");
+  }
+  return headers;
 }
 
 export async function middleware(request: NextRequest) {
@@ -78,14 +99,18 @@ export async function middleware(request: NextRequest) {
   const needsAuth = PROTECTED_PREFIXES.some(
     (p) => pathname === p || pathname.startsWith(`${p}/`)
   );
-  if (!needsAuth) return NextResponse.next();
+
+  const esApi = pathname === "/api" || pathname.startsWith("/api/");
+
+  if (!needsAuth && !esApi) return NextResponse.next();
 
   const token = request.cookies.get(AUTH_COOKIE)?.value;
-
-  // Sin cookie → redirigir a login
   if (!token) {
-    log.warn({ path: pathname, ip }, "Acceso a ruta protegida sin sesión");
-    return NextResponse.redirect(new URL("/login", request.url));
+    if (needsAuth) {
+      log.warn({ path: pathname, ip }, "Acceso a ruta protegida sin sesión");
+      return NextResponse.redirect(new URL("/login", request.url));
+    }
+    return NextResponse.next();
   }
 
   // Verifica JWT (firma + expiración). `verifyAuthToken` falla cerrado
@@ -93,9 +118,31 @@ export async function middleware(request: NextRequest) {
   const usuario = verifyAuthToken(token);
   if (!usuario) {
     log.warn({ path: pathname, ip }, "Token inválido o expirado en ruta protegida");
-    const response = NextResponse.redirect(new URL("/login", request.url));
-    response.cookies.set(AUTH_COOKIE, "", { path: "/", maxAge: 0 });
-    return response;
+    if (!esApi) {
+      const response = NextResponse.redirect(new URL("/login", request.url));
+      response.cookies.set(AUTH_COOKIE, "", { path: "/", maxAge: 0 });
+      return response;
+    }
+    return NextResponse.next({ request: { headers: requestSinCookieAuth(request) } });
+  }
+
+  const sesionVigente = await esSesionValida(usuario.id_usuario, usuario.sesion_version);
+
+  if (!sesionVigente) {
+    log.warn(
+      { path: pathname, ip, id_usuario: usuario.id_usuario },
+      "Sesión revocada: versión obsoleta o usuario deshabilitado"
+    );
+
+    if (!esApi) {
+      const response = NextResponse.redirect(new URL("/login", request.url));
+      response.cookies.set(AUTH_COOKIE, "", { path: "/", maxAge: 0 });
+      return response;
+    }
+
+    // En API no se manda Set-Cookie: el handler de login escribe su propia
+    // cookie y un borrado desde acá competiría con ella.
+    return NextResponse.next({ request: { headers: requestSinCookieAuth(request) } });
   }
 
   log.debug(
@@ -131,6 +178,8 @@ export const config = {
     "/catalogo/:path*",
     "/proveedores",
     "/proveedores/:path*",
+    "/mi-cuenta",
+    "/mi-cuenta/:path*",
     "/api",
     "/api/:path*",
   ],

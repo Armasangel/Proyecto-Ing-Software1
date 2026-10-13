@@ -3,6 +3,8 @@
 import type { CSSProperties } from "react";
 import { useCallback, useEffect, useState } from "react";
 import { StaffShell } from "@/components/StaffShell";
+import { Icon } from "@/components/Icon";
+import { PanelAuditoria } from "@/components/PanelAuditoria";
 import { useDuenoSession } from "@/hooks/useDuenoSession";
 import { TIPOS_USUARIO } from "@/lib/roles";
 
@@ -30,6 +32,8 @@ type CupoTipo = {
 };
 
 const LIMITE_MAXIMO = 500;
+/** Cupos de dueño tal como los calcula el servidor (cuenta dueños activos, sin filtros). */
+type CuposDueno = { usados: number; maximo: number | null; disponibles: number | null };
 
 const TIPO_META: Record<
   string,
@@ -79,6 +83,9 @@ export default function UsuariosPage() {
 
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [loading, setLoading] = useState(false);
+  // Totales reales que manda el servidor: los filtros de la tabla no deben cambiarlos.
+  const [totales, setTotales] = useState<Record<string, number> | null>(null);
+  const [cuposDueno, setCuposDueno] = useState<CuposDueno | null>(null);
   const [bodegas, setBodegas] = useState<{ id_bodega: number; nombre_bodega: string }[]>([]);
 
   // Filtros
@@ -160,7 +167,11 @@ export default function UsuariosPage() {
       if (filtroTipo) params.set("tipo", filtroTipo);
       const r = await fetch(`/api/usuarios?${params}`);
       const d = await r.json();
-      if (r.ok) setUsuarios(d.usuarios || []);
+      if (r.ok) {
+        setUsuarios(d.usuarios || []);
+        setTotales(d.totales_por_tipo ?? null);
+        setCuposDueno(d.cupos_dueno ?? null);
+      }
       else showToast(d.error || "Error al cargar usuarios", "err");
     } catch {
       showToast("Error de conexión", "err");
@@ -470,11 +481,19 @@ export default function UsuariosPage() {
 
   const totalPorTipo = TIPOS_OPCIONES.slice(1).map((t) => ({
     ...t,
-    count: usuarios.filter((u) => u.tipo_usuario === t.value).length,
+    // Si el servidor aún no respondió, se cuenta lo que hay en la lista.
+    count: totales?.[t.value] ?? usuarios.filter((u) => u.tipo_usuario === t.value).length,
   }));
 
-  const limiteDuenosAlcanzado = cupoLleno(TIPOS_USUARIO.DUENO);
-  const limiteDuenos = cupos[TIPOS_USUARIO.DUENO]?.limite ?? null;
+  const cupoDuenoActual = cupos[TIPOS_USUARIO.DUENO];
+  const limiteDuenos = cupoDuenoActual ? cupoDuenoActual.limite : cuposDueno?.maximo ?? null;
+  const duenosUsados = cupoDuenoActual?.activos ?? cuposDueno?.usados ?? 0;
+  const limiteDuenosAlcanzado = limiteDuenos !== null && duenosUsados >= limiteDuenos;
+  const cuposResumen = limiteDuenos === null
+    ? "Sin límite de dueños activos"
+    : limiteDuenosAlcanzado
+      ? `Sin cupos de dueño (${duenosUsados} de ${limiteDuenos} en uso)`
+      : `${Math.max(0, limiteDuenos - duenosUsados)} de ${limiteDuenos} cupos de dueño disponibles`;
 
   return (
     <StaffShell
@@ -512,6 +531,9 @@ export default function UsuariosPage() {
                 Activos: {cupos[t.value]?.activos ?? "…"} · {textoLimite(t.value)}
                 {cupoLleno(t.value) ? " (lleno)" : ""}
               </div>
+              {t.value === TIPOS_USUARIO.DUENO && (cupoDuenoActual || cuposDueno) && (
+                <div data-testid="cupos-dueno">{cuposResumen}</div>
+              )}
               <button
                 type="button"
                 onClick={() => abrirLimite(t.value)}
@@ -681,23 +703,22 @@ export default function UsuariosPage() {
                           title="Editar rol y estado"
                           disabled={esMismoUsuario}
                         >
-                          ✏️
+                          <Icon name="pencil" />
                         </button>
-                        {u.tipo_usuario !== TIPOS_USUARIO.DUENO && (
+                        {/* Con el cupo lleno el botón no se muestra: el aviso está en la tarjeta de Dueño */}
+                        {u.tipo_usuario !== TIPOS_USUARIO.DUENO && !limiteDuenosAlcanzado && (
                           <button
                             type="button"
                             onClick={() => abrirPromover(u)}
                             style={s.btnEdit}
-                            disabled={esMismoUsuario || !u.estado_usuario || limiteDuenosAlcanzado}
+                            disabled={esMismoUsuario || !u.estado_usuario}
                             title={
                               !u.estado_usuario
                                 ? "No se puede promover a un usuario inactivo"
-                                : limiteDuenosAlcanzado
-                                ? `Ya hay ${limiteDuenos} dueños activos (el límite). Sube el límite en la tarjeta "Dueño" o desactiva a alguno.`
                                 : "Promover a Dueño (requiere verificación por correo)"
                             }
                           >
-                            {limiteDuenosAlcanzado ? "🔒" : "👑"}
+                            <Icon name="owner" />
                           </button>
                         )}
                         <button
@@ -772,7 +793,7 @@ export default function UsuariosPage() {
                   {Object.entries(TIPO_META).map(([val, meta]) => {
                     const activo = editTipo === val;
                     // Volverse dueño no pasa por este selector: requiere el
-                    // proceso de verificación por correo (botón 👑 en la
+                    // proceso de verificación por correo (botón de promover en la
                     // tabla). Si el usuario ya es dueño, sí se puede dejar
                     // seleccionado (no es un ascenso) o quitarle el rol.
                     const esAscensoADueno = val === TIPOS_USUARIO.DUENO && editando.tipo_usuario !== TIPOS_USUARIO.DUENO;
@@ -1104,7 +1125,7 @@ export default function UsuariosPage() {
                   {Object.entries(TIPO_META)
                     // El rol de Dueño nunca se asigna al crear: solo se
                     // otorga después, a un usuario ya establecido, con el
-                    // proceso de verificación por correo (botón 👑).
+                    // proceso de verificación por correo (botón de promover).
                     .filter(([val]) => val !== TIPOS_USUARIO.DUENO)
                     .map(([val, meta]) => (
                       <option key={val} value={val} disabled={cupoLleno(val)}>
@@ -1120,6 +1141,26 @@ export default function UsuariosPage() {
                   </span>
                 )}
               </div>
+
+              {cuposDueno && (
+                <div
+                  role="note"
+                  data-testid="nota-cupos-dueno"
+                  style={{
+                    fontSize: "0.76rem",
+                    color: "var(--muted)",
+                    background: "var(--surface2)",
+                    border: "1px dashed var(--border)",
+                    borderRadius: 10,
+                    padding: "0.6rem 0.8rem",
+                  }}
+                >
+                  <strong style={{ color: limiteDuenosAlcanzado ? "var(--red)" : "var(--green)" }}>{cuposResumen}.</strong>{" "}
+                  {limiteDuenosAlcanzado
+                    ? "Para dar el rol de dueño a otra persona, sube el límite o desactiva a uno de los actuales."
+                    : "El rol de dueño no se asigna al crear la cuenta: crea el usuario y luego usa el botón de promover de la tabla."}
+                </div>
+              )}
 
               {nuevoForm.tipo_usuario === TIPOS_USUARIO.BODEGUERO && (
                 <div style={s.field}>
@@ -1451,6 +1492,8 @@ export default function UsuariosPage() {
           {toast.msg}
         </div>
       )}
+
+      <PanelAuditoria />
     </StaffShell>
   );
 }

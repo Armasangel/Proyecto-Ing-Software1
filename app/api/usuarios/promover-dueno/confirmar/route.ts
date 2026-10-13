@@ -19,6 +19,7 @@ import {
   mensajeLimiteAlcanzado,
   respuestaSiLimiteAlcanzado,
 } from "@/lib/limites-usuarios";
+import { registrarAuditoria, TIPOS_EVENTO } from "@/lib/audit";
 import { getLogger } from "@/lib/logger";
 
 const log = getLogger("api/usuarios/promover-dueno/confirmar");
@@ -59,7 +60,7 @@ export async function POST(req: NextRequest) {
     await client.query("BEGIN");
 
     // Serializa entre sí todas las confirmaciones de promoción a dueño, para
-    // que el conteo contra MAX_DUENOS sea confiable aunque dos solicitudes
+    // que el conteo contra el límite configurado sea confiable aunque dos solicitudes
     // se confirmen casi al mismo tiempo.
     await client.query("SELECT pg_advisory_xact_lock(hashtext('promocion_dueno'))");
 
@@ -151,7 +152,8 @@ export async function POST(req: NextRequest) {
 
     const actualizado = await client.query(
       `UPDATE usuario
-       SET tipo_usuario = $1
+       SET tipo_usuario = $1,
+           sesion_version = sesion_version + 1
        WHERE id_usuario = $2
        RETURNING id_usuario, nombre, correo, tipo_usuario, estado_usuario, id_bodega, requiere_2fa`,
       [TIPOS_USUARIO.DUENO, fila.id_usuario_objetivo]
@@ -163,9 +165,22 @@ export async function POST(req: NextRequest) {
 
     await client.query("COMMIT");
 
+    registrarAuditoria({
+      id_usuario: fila.id_usuario_objetivo,
+      tipo_evento: TIPOS_EVENTO.PROMOCION_DUENO,
+      ip: getClientIp(req),
+      user_agent: req.headers.get("user-agent"),
+      detalle: {
+        desde: objetivoResult.rows[0].tipo_usuario,
+        hacia: TIPOS_USUARIO.DUENO,
+        solicitado_por: solicitante.id_usuario,
+        sesiones_revocadas: true,
+      },
+    });
+
     log.info(
       { id_usuario_objetivo: fila.id_usuario_objetivo, id_dueno_solicitante: solicitante.id_usuario },
-      "Usuario promovido a DUENO"
+      "Usuario promovido a DUENO; sesiones revocadas"
     );
 
     return NextResponse.json({ ok: true, usuario: actualizado.rows[0] });

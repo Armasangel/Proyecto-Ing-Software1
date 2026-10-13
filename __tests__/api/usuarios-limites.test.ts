@@ -215,7 +215,7 @@ describe("alta de usuario con el límite alcanzado (trigger de la BD)", () => {
       createMockRequest("/api/usuarios", {
         method: "POST",
         user: testUserDueno,
-        body: { nombre: "Ana", correo: "ana@tienda.com", contrasena: "secreto1", tipo_usuario: "EMPLEADO" },
+        body: { nombre: "Ana", correo: "ana@tienda.com", contrasena: "Brindis-GT-2026!", tipo_usuario: "EMPLEADO" },
       })
     );
     expect(res.status).toBe(409);

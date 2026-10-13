@@ -9,11 +9,12 @@ import { Icon } from "@/components/Icon";
 import { ProductoAutocompletar } from "@/components/ProductoAutocompletar";
 import Link from "next/link";
 import { CUOTAS_MAXIMAS, PLAZO_MAXIMO_DIAS, generarCuotas, sumarDias, validarCondicionesCredito } from "@/lib/credito";
+import { etiquetaCliente, filtrarClientesPorTexto } from "@/lib/clientes-busqueda";
 
 type Cliente = {
   id_cliente: number;
   nombre: string;
-  correo: string;
+  correo: string | null;
   tipo_cliente: string;
   telefono?: string | null;
   limite_deuda?: string | null;
@@ -282,11 +283,8 @@ export default function VentasPage() {
   }, [clientes]);
 
   const clientesSugeridos = useMemo(() => {
-    const q = busquedaCliente.trim().toLowerCase();
-    if (q === "") return clientesDestacados;
-    return clientes
-      .filter((c) => c.nombre.toLowerCase().includes(q) || c.correo.toLowerCase().includes(q))
-      .slice(0, 8);
+    if (busquedaCliente.trim() === "") return clientesDestacados;
+    return filtrarClientesPorTexto(clientes, busquedaCliente).slice(0, 8);
   }, [busquedaCliente, clientes, clientesDestacados]);
 
   const stockDisponible = useCallback((idProducto: string, idBodega: string): number => {
@@ -396,7 +394,7 @@ export default function VentasPage() {
 
   function seleccionarCliente(c: Cliente) {
     onClienteChange(String(c.id_cliente));
-    setBusquedaCliente(`${c.nombre} (${c.correo})`);
+    setBusquedaCliente(etiquetaCliente(c));
     setSugerenciasClienteAbiertas(false);
   }
 
@@ -619,7 +617,7 @@ export default function VentasPage() {
                         }}
                         className="px-3 py-2 text-[0.88rem] text-ink cursor-pointer hover:bg-cream/60 border-b border-[var(--border)] last:border-b-0 flex justify-between items-center gap-2"
                       >
-                        <span>{c.nombre} ({c.correo})</span>
+                        <span>{etiquetaCliente(c)}</span>
                         {!!c.total_ventas && (
                           <span className="text-[0.72rem] text-ink-muted whitespace-nowrap">
                             {c.total_ventas} venta{c.total_ventas === 1 ? "" : "s"}
