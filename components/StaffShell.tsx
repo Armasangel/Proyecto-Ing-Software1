@@ -87,14 +87,15 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
   const navVisible = NAV.filter((item) => {
     if (item.href === "/ventas") return isColaboradorTipo(usuario.tipo_usuario);
     if (
-      ["/inventario", "/historial-ventas", "/proveedores", "/deudas", "/usuarios"].includes(
+      ["/inventario", "/historial-ventas", "/proveedores", "/deudas", "/usuarios", "/reportes"].includes(
         item.href
       )
     ) {
       return isDuenoTipo(usuario.tipo_usuario);
     }
-    // "/ordenes" (y cualquier otra ruta no listada arriba) queda visible
-    // tanto para dueño como para colaborador, igual que permite la API.
+    // "/ordenes" y "/facturacion" (y cualquier otra ruta no listada arriba)
+    // quedan visibles tanto para dueño como para colaborador, igual que
+    // permite la API.
     return true;
   });
 
