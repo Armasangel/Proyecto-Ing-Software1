@@ -83,34 +83,35 @@ const clienteFormVacio = {
   deuda_inicial: "",
 };
 
-const inputStyle: React.CSSProperties = {
-  padding: "0.3rem 0.6rem",
-  borderRadius: 14,
-  border: "1px solid var(--border)",
-  width: "100%",
-  background: "var(--surface)",
-  color: "var(--text)",
+/**
+ * Clases Tailwind reutilizables (DEV-192). Reemplazan a los antiguos helpers
+ * inputStyle / badgeStyle / tabBtnStyle y a los inline styles. Los colores
+ * salen de los tokens del tema (surface, surface-soft, line, ink, market,
+ * success, danger, warning), que mapean a las variables CSS de globals.css.
+ */
+const cls = {
+  input: "px-[0.6rem] py-[0.3rem] rounded-[14px] border border-line bg-surface text-ink",
+  td: "p-3",             // celdas de tabla (0.75rem)
+  tdSm: "p-[0.4rem]",    // celdas de la tabla de detalle (0.4rem)
+  badgeBloqueado: "ml-1.5 text-[0.72rem] text-white bg-danger px-1.5 py-px rounded-lg",
 };
 
-const badgeStyle = (bg: string): React.CSSProperties => ({
-  marginLeft: 6,
-  fontSize: "0.72rem",
-  color: "#fff",
-  background: bg,
-  padding: "1px 6px",
-  borderRadius: 8,
-});
+/** Clases del pill de pestaña Acumulado/Próximas. Antes era tabBtnStyle(). */
+const tabPillClass = (activo: boolean): string =>
+  `px-[0.9rem] py-[0.35rem] rounded-full cursor-pointer text-[0.82rem] font-semibold border ${
+    activo ? "border-success bg-success text-white" : "border-line bg-transparent text-ink"
+  }`;
 
-function diasRestantes(fecha: string | null): { texto: string; color: string } {
-  if (!fecha) return { texto: "Sin fecha límite", color: "var(--muted)" };
+function diasRestantes(fecha: string | null): { texto: string; cls: string } {
+  if (!fecha) return { texto: "Sin fecha límite", cls: "text-ink-muted" };
   const hoy = new Date();
   hoy.setHours(0, 0, 0, 0);
   const limite = new Date(`${fecha}T00:00:00`);
   const dias = Math.round((limite.getTime() - hoy.getTime()) / 86400000);
-  if (dias < 0) return { texto: `Vencida hace ${Math.abs(dias)} día(s)`, color: "#e63946" };
-  if (dias === 0) return { texto: "Vence hoy", color: "#e63946" };
-  if (dias <= 3) return { texto: `Vence en ${dias} día(s)`, color: "#e08e0b" };
-  return { texto: `Vence en ${dias} día(s)`, color: "var(--muted)" };
+  if (dias < 0) return { texto: `Vencida hace ${Math.abs(dias)} día(s)`, cls: "text-danger" };
+  if (dias === 0) return { texto: "Vence hoy", cls: "text-danger" };
+  if (dias <= 3) return { texto: `Vence en ${dias} día(s)`, cls: "text-warning" };
+  return { texto: `Vence en ${dias} día(s)`, cls: "text-ink-muted" };
 }
 
 function diasRestantesNum(fecha: string | null): number | null {
@@ -139,30 +140,18 @@ function SaldoCubierto({ d }: { d: Deuda }) {
   const pct = Math.max(0, Math.min(100, Number(d.porcentaje_cubierto) || 0));
   const saldo = Number(d.saldo_pendiente);
   if (d.estado_deuda === "PAGADA") {
-    return <span style={{ color: "#52b788", fontWeight: 600, fontSize: "0.82rem" }}>Cubierto al 100%</span>;
+    return <span className="text-success font-semibold text-[0.82rem]">Cubierto al 100%</span>;
   }
   return (
     <div>
-      <div style={{ fontSize: "0.8rem", marginBottom: 3 }}>
+      <div className="text-[0.8rem] mb-[3px]">
         <strong>Q{saldo.toFixed(2)}</strong>
-        <span style={{ color: "var(--muted)" }}> pendiente · {pct}%</span>
+        <span className="text-ink-muted"> pendiente · {pct}%</span>
       </div>
-      <div
-        style={{
-          height: 6,
-          borderRadius: 999,
-          background: "var(--border)",
-          overflow: "hidden",
-        }}
-      >
+      <div className="h-1.5 rounded-full bg-line overflow-hidden">
         <div
-          style={{
-            height: "100%",
-            width: `${pct}%`,
-            borderRadius: 999,
-            background: "var(--accent)",
-            transition: "width 200ms ease",
-          }}
+          className="h-full rounded-full bg-market transition-[width] duration-200 ease-linear"
+          style={{ width: `${pct}%` }}
         />
       </div>
     </div>
@@ -192,21 +181,9 @@ function FormPago({
   onCancelar: () => void;
 }) {
   return (
-    <div
-      style={{
-        background: "var(--surface2)",
-        border: "1px solid var(--border)",
-        borderRadius: 14,
-        padding: "0.9rem 1rem",
-        display: "flex",
-        flexWrap: "wrap",
-        gap: 10,
-        alignItems: "flex-end",
-        maxWidth: 560,
-      }}
-    >
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <label style={{ fontSize: "0.75rem", color: "var(--muted)" }}>Monto a abonar (saldo: Q{saldo.toFixed(2)})</label>
+    <div className="bg-surface-soft border border-line rounded-[14px] px-4 py-[0.9rem] flex flex-wrap gap-2.5 items-end max-w-[560px]">
+      <div className="flex flex-col gap-1">
+        <label className="text-[0.75rem] text-ink-muted">Monto a abonar (saldo: Q{saldo.toFixed(2)})</label>
         <input
           type="number"
           min="0.01"
@@ -215,28 +192,15 @@ function FormPago({
           value={monto}
           onChange={(e) => setMonto(e.target.value)}
           placeholder="0.00"
-          style={{
-            padding: "0.4rem 0.6rem",
-            borderRadius: 10,
-            border: "1px solid var(--border)",
-            background: "var(--surface)",
-            width: 130,
-            fontSize: "0.88rem",
-          }}
+          className="px-[0.6rem] py-[0.4rem] rounded-[10px] border border-line bg-surface w-[130px] text-[0.88rem]"
         />
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <label style={{ fontSize: "0.75rem", color: "var(--muted)" }}>Método</label>
+      <div className="flex flex-col gap-1">
+        <label className="text-[0.75rem] text-ink-muted">Método</label>
         <select
           value={metodo}
           onChange={(e) => setMetodo(e.target.value)}
-          style={{
-            padding: "0.4rem 0.6rem",
-            borderRadius: 10,
-            border: "1px solid var(--border)",
-            background: "var(--surface)",
-            fontSize: "0.88rem",
-          }}
+          className="px-[0.6rem] py-[0.4rem] rounded-[10px] border border-line bg-surface text-[0.88rem]"
         >
           <option value="EFECTIVO">Efectivo</option>
           <option value="TRANSFERENCIA">Transferencia</option>
@@ -246,15 +210,7 @@ function FormPago({
       <button
         type="button"
         onClick={() => setMonto(saldo.toFixed(2))}
-        style={{
-          padding: "0.4rem 0.7rem",
-          borderRadius: 10,
-          border: "1px solid var(--accent)",
-          background: "transparent",
-          color: "var(--accent2)",
-          fontSize: "0.78rem",
-          cursor: "pointer",
-        }}
+        className="px-[0.7rem] py-[0.4rem] rounded-[10px] border border-market bg-transparent text-[var(--accent2)] text-[0.78rem] cursor-pointer"
       >
         Abonar todo
       </button>
@@ -262,37 +218,19 @@ function FormPago({
         type="button"
         onClick={onGuardar}
         disabled={guardando}
-        style={{
-          padding: "0.45rem 1rem",
-          borderRadius: 10,
-          border: "none",
-          background: "var(--accent)",
-          color: "#000000",
-          fontSize: "0.85rem",
-          fontWeight: 600,
-          cursor: guardando ? "default" : "pointer",
-          opacity: guardando ? 0.7 : 1,
-        }}
+        className={`px-4 py-[0.45rem] rounded-[10px] border-none bg-market text-black text-[0.85rem] font-semibold ${guardando ? "cursor-default opacity-70" : "cursor-pointer"}`}
       >
         {guardando ? "Guardando…" : "Guardar pago"}
       </button>
       <button
         type="button"
         onClick={onCancelar}
-        style={{
-          padding: "0.45rem 0.9rem",
-          borderRadius: 10,
-          border: "1px solid var(--border)",
-          background: "transparent",
-          color: "var(--muted)",
-          fontSize: "0.85rem",
-          cursor: "pointer",
-        }}
+        className="px-[0.9rem] py-[0.45rem] rounded-[10px] border border-line bg-transparent text-ink-muted text-[0.85rem] cursor-pointer"
       >
         Cancelar
       </button>
       {error && (
-        <div style={{ width: "100%", color: "#e63946", fontSize: "0.8rem" }}>{error}</div>
+        <div className="w-full text-danger text-[0.8rem]">{error}</div>
       )}
     </div>
   );
@@ -677,13 +615,13 @@ export default function DeudasPage() {
   );
 
   if (!usuario) {
-    return <p style={{ padding: "2rem", color: "var(--muted)" }}>Cargando…</p>;
+    return <p className="p-8 text-ink-muted">Cargando…</p>;
   }
 
   if (usuario.tipo_usuario !== "DUENO") {
     return (
       <StaffShell usuario={usuario} title="Deudas" subtitle="">
-        <p style={{ color: "var(--muted)" }}>No tienes permiso para ver esta página.</p>
+        <p className="text-ink-muted">No tienes permiso para ver esta página.</p>
       </StaffShell>
     );
   }
@@ -824,38 +762,30 @@ export default function DeudasPage() {
 
   function formularioClienteNuevo(onCreado: (nuevo: Cliente) => void) {
     return (
-      <div
-        style={{
-          padding: "0.75rem",
-          border: "1px dashed var(--border)",
-          borderRadius: 14,
-          marginTop: "0.5rem",
-          marginBottom: "0.5rem",
-        }}
-      >
-        <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
+      <div className="p-3 border border-dashed border-line rounded-[14px] my-2">
+        <div className="flex gap-2 mb-2">
           <input
-            style={inputStyle}
+            className={`${cls.input} w-full`}
             placeholder="Nombre *"
             value={formCliente.nombre}
             onChange={(e) => setFormCliente({ ...formCliente, nombre: e.target.value })}
           />
           <input
-            style={inputStyle}
+            className={`${cls.input} w-full`}
             placeholder="Teléfono"
             value={formCliente.telefono}
             onChange={(e) => setFormCliente({ ...formCliente, telefono: e.target.value })}
           />
         </div>
-        <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
+        <div className="flex gap-2 mb-2">
           <input
-            style={inputStyle}
+            className={`${cls.input} w-full`}
             placeholder="Correo (opcional)"
             value={formCliente.correo}
             onChange={(e) => setFormCliente({ ...formCliente, correo: e.target.value })}
           />
           <select
-            style={inputStyle}
+            className={`${cls.input} w-full`}
             value={formCliente.tipo_cliente}
             onChange={(e) => setFormCliente({ ...formCliente, tipo_cliente: e.target.value })}
           >
@@ -863,56 +793,48 @@ export default function DeudasPage() {
             <option value="MAYORISTA">Mayorista</option>
           </select>
         </div>
-        <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
-          <div style={{ flex: 1 }}>
-            <label style={{ display: "block", marginBottom: 4, fontSize: "0.8rem" }}>
+        <div className="flex gap-2 mb-2">
+          <div className="flex-1">
+            <label className="block mb-1 text-[0.8rem]">
               Límite de deuda (opcional)
             </label>
             <input
               type="number"
               min={0}
               step="0.01"
-              style={inputStyle}
+              className={`${cls.input} w-full`}
               placeholder="Sin límite"
               value={formCliente.limite_deuda}
               onChange={(e) => setFormCliente({ ...formCliente, limite_deuda: e.target.value })}
             />
           </div>
-          <div style={{ flex: 1 }}>
-            <label style={{ display: "block", marginBottom: 4, fontSize: "0.8rem" }}>
+          <div className="flex-1">
+            <label className="block mb-1 text-[0.8rem]">
               Deuda que ya tenía (opcional)
             </label>
             <input
               type="number"
               min={0}
               step="0.01"
-              style={inputStyle}
+              className={`${cls.input} w-full`}
               placeholder="Q0.00"
               value={formCliente.deuda_inicial}
               onChange={(e) => setFormCliente({ ...formCliente, deuda_inicial: e.target.value })}
             />
           </div>
         </div>
-        <p style={{ fontSize: "0.75rem", color: "var(--muted)", marginTop: -4, marginBottom: "0.5rem" }}>
+        <p className="text-[0.75rem] text-ink-muted -mt-1 mb-2">
           Si ya te debía algo se registra de una vez como deuda pendiente — y si eso ya supera el
           límite que le pongas, queda bloqueado desde ya.
         </p>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div className="flex gap-2">
           <button
             onClick={async () => {
               const nuevo = await crearCliente();
               if (nuevo) onCreado(nuevo);
             }}
             disabled={guardandoCliente}
-            style={{
-              padding: "0.3rem 0.8rem",
-              borderRadius: 14,
-              background: "#52b788",
-              color: "#fff",
-              border: "none",
-              cursor: guardandoCliente ? "default" : "pointer",
-              fontSize: "0.85rem",
-            }}
+            className={`px-[0.8rem] py-[0.3rem] rounded-[14px] bg-success text-white border-none text-[0.85rem] ${guardandoCliente ? "cursor-default" : "cursor-pointer"}`}
           >
             {guardandoCliente ? "Creando…" : "Crear cliente"}
           </button>
@@ -921,14 +843,7 @@ export default function DeudasPage() {
               setCreandoCliente(false);
               setFormCliente(clienteFormVacio);
             }}
-            style={{
-              padding: "0.3rem 0.8rem",
-              borderRadius: 14,
-              background: "var(--border)",
-              border: "none",
-              cursor: "pointer",
-              fontSize: "0.85rem",
-            }}
+            className="px-[0.8rem] py-[0.3rem] rounded-[14px] bg-line border-none cursor-pointer text-[0.85rem]"
           >
             Cancelar
           </button>
@@ -937,17 +852,6 @@ export default function DeudasPage() {
     );
   }
 
-  const tabBtnStyle = (activo: boolean): React.CSSProperties => ({
-    padding: "0.35rem 0.9rem",
-    borderRadius: 999,
-    border: activo ? "1px solid #52b788" : "1px solid var(--border)",
-    background: activo ? "#52b788" : "transparent",
-    color: activo ? "#fff" : "var(--text)",
-    cursor: "pointer",
-    fontSize: "0.82rem",
-    fontWeight: 600,
-  });
-
   return (
     <StaffShell
       usuario={usuario}
@@ -955,27 +859,18 @@ export default function DeudasPage() {
       subtitle="Registra y controla las deudas pendientes"
     >
       {mensaje && (
-        <p style={{ color: "#52b788", marginBottom: "1rem", fontWeight: 600 }}>{mensaje}</p>
+        <p className="text-success mb-4 font-semibold">{mensaje}</p>
       )}
       {error && (
-        <p style={{ color: "#e63946", marginBottom: "1rem", fontWeight: 600 }}>{error}</p>
+        <p className="text-danger mb-4 font-semibold">{error}</p>
       )}
       {alertaBloqueo && (
-        <p
-          style={{
-            color: "#fff",
-            background: alertaBloqueo.startsWith("⚠️") ? "#e63946" : "#52b788",
-            padding: "0.6rem 1rem",
-            borderRadius: 14,
-            marginBottom: "1rem",
-            fontWeight: 600,
-          }}
-        >
+        <p className={`text-white px-4 py-[0.6rem] rounded-[14px] mb-4 font-semibold ${alertaBloqueo.startsWith("⚠️") ? "bg-danger" : "bg-success"}`}>
           {alertaBloqueo}
         </p>
       )}
 
-      <div style={{ display: "flex", gap: 4, marginBottom: "1.5rem", borderBottom: "1px solid var(--border)" }}>
+      <div className="flex gap-1 mb-6 border-b border-line">
         {(
           [
             { id: "deudas", label: "Deudas" },
@@ -990,15 +885,9 @@ export default function DeudasPage() {
               setError("");
               setMensaje("");
             }}
-            style={{
-              padding: "0.6rem 1.1rem",
-              border: "none",
-              background: "transparent",
-              cursor: "pointer",
-              fontWeight: 600,
-              color: tab === t.id ? "var(--text)" : "var(--muted)",
-              borderBottom: tab === t.id ? "2px solid #52b788" : "2px solid transparent",
-            }}
+            className={`px-[1.1rem] py-[0.6rem] border-none bg-transparent cursor-pointer font-semibold border-b-2 ${
+              tab === t.id ? "text-ink border-success" : "text-ink-muted border-transparent"
+            }`}
           >
             {t.label}
           </button>
@@ -1014,41 +903,24 @@ export default function DeudasPage() {
                 setMensaje("");
                 setError("");
               }}
-              style={{
-                marginBottom: "1.5rem",
-                padding: "0.5rem 1.2rem",
-                borderRadius: 14,
-                background: "#52b788",
-                color: "#fff",
-                border: "none",
-                cursor: "pointer",
-                fontWeight: 600,
-              }}
+              className="mb-6 px-[1.2rem] py-2 rounded-[14px] bg-success text-white border-none cursor-pointer font-semibold"
             >
               + Nueva deuda
             </button>
           )}
 
           {creando && (
-            <div
-              style={{
-                marginBottom: "1.5rem",
-                padding: "1rem",
-                border: "1px solid var(--border)",
-                borderRadius: 14,
-                maxWidth: 600,
-              }}
-            >
-              <h3 style={{ marginBottom: "1rem" }}>Nueva deuda</h3>
+            <div className="mb-6 p-4 border border-line rounded-[14px] max-w-[600px]">
+              <h3 className="mb-4">Nueva deuda</h3>
 
-              <div style={{ marginBottom: "0.75rem" }}>
-                <label style={{ display: "block", marginBottom: 4, fontSize: "0.85rem" }}>
+              <div className="mb-3">
+                <label className="block mb-1 text-[0.85rem]">
                   Cliente *
                 </label>
-                <div style={{ display: "flex", gap: "0.5rem" }}>
-                  <div style={{ position: "relative", flex: 1, isolation: "isolate" }}>
+                <div className="flex gap-2">
+                  <div className="relative flex-1 isolate">
                     <input
-                      style={inputStyle}
+                      className={`${cls.input} w-full`}
                       placeholder="Escribe el nombre para buscar…"
                       value={busquedaCliente}
                       onChange={(e) => {
@@ -1060,23 +932,9 @@ export default function DeudasPage() {
                       onBlur={() => setTimeout(() => setSugerenciasAbiertas(false), 150)}
                     />
                     {sugerenciasAbiertas && busquedaCliente.trim() !== "" && (
-                      <div
-                        style={{
-                          position: "absolute",
-                          top: "calc(100% + 2px)",
-                          left: 0,
-                          right: 0,
-                          background: "#ffffff",
-                          border: "1px solid var(--border)",
-                          borderRadius: 14,
-                          zIndex: 100,
-                          maxHeight: 200,
-                          overflowY: "auto",
-                          boxShadow: "0 8px 20px rgba(80,60,20,0.22)",
-                        }}
-                      >
+                      <div className="absolute top-[calc(100%+2px)] left-0 right-0 bg-surface border border-line rounded-[14px] z-[100] max-h-[200px] overflow-y-auto shadow-[0_8px_20px_rgba(80,60,20,0.22)]">
                         {clientesFiltrados.length === 0 && (
-                          <div style={{ padding: "0.5rem 0.7rem", fontSize: "0.85rem", color: "var(--muted)", background: "#ffffff" }}>
+                          <div className="px-[0.7rem] py-2 text-[0.85rem] text-ink-muted bg-surface">
                             Sin resultados — probá &quot;+ Cliente nuevo&quot;.
                           </div>
                         )}
@@ -1093,13 +951,7 @@ export default function DeudasPage() {
                               e.preventDefault();
                               seleccionarCliente(c);
                             }}
-                            style={{
-                              padding: "0.45rem 0.7rem",
-                              cursor: "pointer",
-                              fontSize: "0.85rem",
-                              borderBottom: "1px solid var(--border)",
-                              background: "#ffffff",
-                            }}
+                            className="px-[0.7rem] py-[0.45rem] cursor-pointer text-[0.85rem] border-b border-line bg-surface"
                           >
                             {c.nombre} {c.estado_cliente ? "" : "(bloqueado)"}
                           </div>
@@ -1109,20 +961,12 @@ export default function DeudasPage() {
                   </div>
                   <button
                     onClick={() => setCreandoCliente((v) => !v)}
-                    style={{
-                      padding: "0.3rem 0.8rem",
-                      borderRadius: 14,
-                      background: "var(--border)",
-                      border: "none",
-                      cursor: "pointer",
-                      fontSize: "0.8rem",
-                      whiteSpace: "nowrap",
-                    }}
+                    className="px-[0.8rem] py-[0.3rem] rounded-[14px] bg-line border-none cursor-pointer text-[0.8rem] whitespace-nowrap"
                   >
                     + Cliente nuevo
                   </button>
                 </div>
-                <p style={{ fontSize: "0.78rem", color: "var(--muted)", marginTop: 4 }}>
+                <p className="text-[0.78rem] text-ink-muted mt-1">
                   Toda deuda queda asociada a un cliente registrado; si supera su límite, se le
                   bloquean compras y pedidos.
                 </p>
@@ -1135,7 +979,7 @@ export default function DeudasPage() {
                   })}
 
                 {clienteSeleccionado && (
-                  <p style={{ fontSize: "0.82rem", marginTop: 4 }}>
+                  <p className="text-[0.82rem] mt-1">
                     {clienteSeleccionado.telefono && <>Tel: {clienteSeleccionado.telefono} · </>}
                     Deuda pendiente actual: Q{deudaPendienteDe(clienteSeleccionado.id_cliente).toFixed(2)}
                     {clienteSeleccionado.limite_deuda && (
@@ -1145,38 +989,38 @@ export default function DeudasPage() {
                 )}
               </div>
 
-              <div style={{ display: "flex", gap: "0.75rem", marginBottom: "0.75rem" }}>
-                <div style={{ flex: 1 }}>
-                  <label style={{ display: "block", marginBottom: 4, fontSize: "0.85rem" }}>
+              <div className="flex gap-3 mb-3">
+                <div className="flex-1">
+                  <label className="block mb-1 text-[0.85rem]">
                     Fecha de inicio
                   </label>
                   <input
                     type="date"
-                    style={inputStyle}
+                    className={`${cls.input} w-full`}
                     value={form.fecha_inicio}
                     onChange={(e) => setForm({ ...form, fecha_inicio: e.target.value })}
                   />
                 </div>
-                <div style={{ flex: 1 }}>
-                  <label style={{ display: "block", marginBottom: 4, fontSize: "0.85rem" }}>
+                <div className="flex-1">
+                  <label className="block mb-1 text-[0.85rem]">
                     Fecha límite de pago (opcional)
                   </label>
                   <input
                     type="date"
-                    style={inputStyle}
+                    className={`${cls.input} w-full`}
                     value={form.fecha_limite_pago}
                     onChange={(e) => setForm({ ...form, fecha_limite_pago: e.target.value })}
                   />
                 </div>
               </div>
 
-              <label style={{ display: "block", marginBottom: 4, fontSize: "0.85rem" }}>
+              <label className="block mb-1 text-[0.85rem]">
                 Productos *
               </label>
               {lineas.map((linea, idx) => (
-                <div key={idx} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
+                <div key={idx} className="flex gap-2 mb-2">
                   <select
-                    style={inputStyle}
+                    className={`${cls.input} w-full`}
                     value={linea.id_producto}
                     onChange={(e) => actualizarLinea(idx, "id_producto", e.target.value)}
                   >
@@ -1197,13 +1041,7 @@ export default function DeudasPage() {
                   {lineas.length > 1 && (
                     <button
                       onClick={() => quitarLinea(idx)}
-                      style={{
-                        padding: "0 0.6rem",
-                        borderRadius: 14,
-                        background: "var(--border)",
-                        border: "none",
-                        cursor: "pointer",
-                      }}
+                      className="px-[0.6rem] py-0 rounded-[14px] bg-line border-none cursor-pointer"
                     >
                       ✕
                     </button>
@@ -1212,47 +1050,25 @@ export default function DeudasPage() {
               ))}
               <button
                 onClick={agregarLinea}
-                style={{
-                  marginTop: "0.25rem",
-                  marginBottom: "1rem",
-                  padding: "0.3rem 0.8rem",
-                  borderRadius: 14,
-                  background: "transparent",
-                  border: "1px dashed var(--border)",
-                  cursor: "pointer",
-                  fontSize: "0.85rem",
-                }}
+                className="mt-1 mb-4 px-[0.8rem] py-[0.3rem] rounded-[14px] bg-transparent border border-dashed border-line cursor-pointer text-[0.85rem]"
               >
                 + Agregar producto
               </button>
 
-              <p style={{ fontWeight: 700, marginBottom: "1rem" }}>
+              <p className="font-bold mb-4">
                 Total: Q{totalPreview().toFixed(2)}
               </p>
 
-              <div style={{ display: "flex", gap: 8 }}>
+              <div className="flex gap-2">
                 <button
                   onClick={crearDeuda}
-                  style={{
-                    padding: "0.4rem 1rem",
-                    borderRadius: 14,
-                    background: "#52b788",
-                    color: "#fff",
-                    border: "none",
-                    cursor: "pointer",
-                  }}
+                  className="px-4 py-[0.4rem] rounded-[14px] bg-success text-white border-none cursor-pointer"
                 >
                   Guardar deuda
                 </button>
                 <button
                   onClick={cerrarFormularioDeuda}
-                  style={{
-                    padding: "0.4rem 1rem",
-                    borderRadius: 14,
-                    background: "var(--border)",
-                    border: "none",
-                    cursor: "pointer",
-                  }}
+                  className="px-4 py-[0.4rem] rounded-[14px] bg-line border-none cursor-pointer"
                 >
                   Cancelar
                 </button>
@@ -1260,38 +1076,30 @@ export default function DeudasPage() {
             </div>
           )}
 
-          <div style={{ display: "flex", gap: 6, marginBottom: "1rem" }}>
-            <button style={tabBtnStyle(vista === "acumulado")} onClick={() => setVista("acumulado")}>
+          <div className="flex gap-1.5 mb-4">
+            <button className={tabPillClass(vista === "acumulado")} onClick={() => setVista("acumulado")}>
               Acumulado por cliente
             </button>
-            <button style={tabBtnStyle(vista === "vencimiento")} onClick={() => setVista("vencimiento")}>
+            <button className={tabPillClass(vista === "vencimiento")} onClick={() => setVista("vencimiento")}>
               Próximas a vencer
             </button>
           </div>
 
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              alignItems: "center",
-              gap: "0.75rem",
-              marginBottom: "1rem",
-            }}
-          >
+          <div className="flex flex-wrap items-center gap-3 mb-4">
             <input
               type="search"
               value={qDeudas}
               onChange={(e) => setQDeudas(e.target.value)}
               placeholder="Buscar por nombre o teléfono…"
               aria-label="Buscar en deudas"
-              style={{ ...inputStyle, flex: "1 1 220px", minWidth: 200, width: "auto" }}
+              className={`${cls.input} flex-[1_1_220px] min-w-[200px] w-auto`}
             />
             {vista === "vencimiento" && (
               <select
                 value={filtroVencimiento}
                 onChange={(e) => setFiltroVencimiento(e.target.value as FiltroVencimiento)}
                 aria-label="Filtrar por vencimiento"
-                style={{ ...inputStyle, width: "auto", minWidth: 190 }}
+                className={`${cls.input} w-auto min-w-[190px]`}
               >
                 <option value="todas">Todos los vencimientos</option>
                 <option value="vencidas">Vencidas</option>
@@ -1299,17 +1107,7 @@ export default function DeudasPage() {
                 <option value="sin_fecha">Sin fecha límite</option>
               </select>
             )}
-            <label
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "0.4rem",
-                fontSize: "0.85rem",
-                color: "var(--muted)",
-                cursor: "pointer",
-                whiteSpace: "nowrap",
-              }}
-            >
+            <label className="flex items-center gap-[0.4rem] text-[0.85rem] text-ink-muted cursor-pointer whitespace-nowrap">
               <input
                 type="checkbox"
                 checked={soloBloqueados}
@@ -1320,60 +1118,48 @@ export default function DeudasPage() {
           </div>
 
           {vista === "acumulado" && (
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-[0.9rem]">
                 <thead>
-                  <tr style={{ borderBottom: "2px solid var(--border)", textAlign: "left" }}>
-                    <th style={{ padding: "0.75rem" }}>Persona</th>
-                    <th style={{ padding: "0.75rem" }}>Estado</th>
-                    <th style={{ padding: "0.75rem" }}>Deuda pendiente acumulada</th>
-                    <th style={{ padding: "0.75rem" }}></th>
+                  <tr className="border-b-2 border-line text-left">
+                    <th className={cls.td}>Persona</th>
+                    <th className={cls.td}>Estado</th>
+                    <th className={cls.td}>Deuda pendiente acumulada</th>
+                    <th className={cls.td}></th>
                   </tr>
                 </thead>
                 <tbody>
                   {gruposPage.slice.map((g) => (
                     <Fragment key={g.key}>
-                      <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                        <td style={{ padding: "0.75rem" }}>
+                      <tr className="border-b border-line">
+                        <td className={cls.td}>
                           {g.label}
                           {g.telefono && (
-                            <div style={{ color: "var(--muted)", fontSize: "0.78rem" }}>{g.telefono}</div>
+                            <div className="text-ink-muted text-[0.78rem]">{g.telefono}</div>
                           )}
                         </td>
-                        <td style={{ padding: "0.75rem" }}>
+                        <td className={cls.td}>
                           {g.id_cliente === null ? (
-                            <span style={{ color: "var(--muted)" }}>Sin vincular</span>
+                            <span className="text-ink-muted">Sin vincular</span>
                           ) : (
-                            <span
-                              style={{
-                                color: g.cliente_puede_comprar ? "#52b788" : "#e63946",
-                                fontWeight: 600,
-                              }}
-                            >
+                            <span className={`font-semibold ${g.cliente_puede_comprar ? "text-success" : "text-danger"}`}>
                               {g.cliente_puede_comprar ? "Activo" : "Bloqueado"}
                             </span>
                           )}
                         </td>
-                        <td style={{ padding: "0.75rem", fontWeight: 600 }}>
+                        <td className={`${cls.td} font-semibold`}>
                           Q{g.totalPendiente.toFixed(2)}
                           {g.limite_deuda !== null && (
-                            <span style={{ color: "var(--muted)", fontWeight: 400 }}>
+                            <span className="text-ink-muted font-normal">
                               {" "}
                               / límite Q{g.limite_deuda.toFixed(2)}
                             </span>
                           )}
                         </td>
-                        <td style={{ padding: "0.75rem" }}>
+                        <td className={cls.td}>
                           <button
                             onClick={() => toggleExpandido(g.key)}
-                            style={{
-                              padding: "0.3rem 0.8rem",
-                              borderRadius: 14,
-                              background: "var(--border)",
-                              border: "none",
-                              cursor: "pointer",
-                              fontSize: "0.8rem",
-                            }}
+                            className="px-[0.8rem] py-[0.3rem] rounded-[14px] bg-line border-none cursor-pointer text-[0.8rem]"
                           >
                             {expandidos.has(g.key) ? "Ocultar detalle" : "Detalle"}
                           </button>
@@ -1381,66 +1167,53 @@ export default function DeudasPage() {
                       </tr>
                       {expandidos.has(g.key) && (
                         <tr key={`${g.key}-detalle`}>
-                          <td colSpan={4} style={{ padding: "0 0.75rem 1rem" }}>
-                            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
+                          <td colSpan={4} className="px-3 pt-0 pb-4">
+                            <table className="w-full border-collapse text-[0.82rem]">
                               <thead>
-                                <tr style={{ color: "var(--muted)", textAlign: "left" }}>
-                                  <th style={{ padding: "0.4rem" }}>Fecha inicio</th>
-                                  <th style={{ padding: "0.4rem" }}>Fecha límite</th>
-                                  <th style={{ padding: "0.4rem" }}>Productos</th>
-                                  <th style={{ padding: "0.4rem" }}>Monto</th>
-                                  <th style={{ padding: "0.4rem" }}>Saldo / cubierto</th>
-                                  <th style={{ padding: "0.4rem" }}>Estado</th>
-                                  <th style={{ padding: "0.4rem" }}></th>
+                                <tr className="text-ink-muted text-left">
+                                  <th className={cls.tdSm}>Fecha inicio</th>
+                                  <th className={cls.tdSm}>Fecha límite</th>
+                                  <th className={cls.tdSm}>Productos</th>
+                                  <th className={cls.tdSm}>Monto</th>
+                                  <th className={cls.tdSm}>Saldo / cubierto</th>
+                                  <th className={cls.tdSm}>Estado</th>
+                                  <th className={cls.tdSm}></th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {g.deudas.map((d) => (
                                   <Fragment key={d.id_deuda}>
-                                    <tr style={{ borderTop: "1px solid var(--border)" }}>
-                                    <td style={{ padding: "0.4rem" }}>
+                                    <tr className="border-t border-line">
+                                    <td className={cls.tdSm}>
                                       {new Date(d.fecha_inicio).toLocaleDateString("es-GT")}
                                     </td>
-                                    <td style={{ padding: "0.4rem" }}>
+                                    <td className={cls.tdSm}>
                                       {d.fecha_limite_pago
                                         ? new Date(d.fecha_limite_pago).toLocaleDateString("es-GT")
                                         : "—"}
                                     </td>
-                                    <td style={{ padding: "0.4rem", color: "var(--muted)" }}>
+                                    <td className={`${cls.tdSm} text-ink-muted`}>
                                       {d.productos.length > 0
                                         ? d.productos.map((p) => `${p.nombre_producto} x${p.cantidad}`).join(", ")
                                         : "—"}
                                     </td>
-                                    <td style={{ padding: "0.4rem", fontWeight: 600 }}>
+                                    <td className={`${cls.tdSm} font-semibold`}>
                                       Q{Number(d.monto_total).toFixed(2)}
                                     </td>
-                                    <td style={{ padding: "0.4rem", minWidth: 140 }}>
+                                    <td className={`${cls.tdSm} min-w-[140px]`}>
                                       <SaldoCubierto d={d} />
                                     </td>
-                                    <td style={{ padding: "0.4rem" }}>
-                                      <span
-                                        style={{
-                                          color: d.estado_deuda === "PAGADA" ? "#52b788" : "#e63946",
-                                          fontWeight: 600,
-                                        }}
-                                      >
+                                    <td className={cls.tdSm}>
+                                      <span className={`font-semibold ${d.estado_deuda === "PAGADA" ? "text-success" : "text-danger"}`}>
                                         {d.estado_deuda === "PAGADA" ? "Pagada" : "Pendiente"}
                                       </span>
                                     </td>
-                                    <td style={{ padding: "0.4rem" }}>
-                                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                                    <td className={cls.tdSm}>
+                                      <div className="flex gap-1.5 flex-wrap">
                                         {d.estado_deuda === "PENDIENTE" && (
                                           <button
                                             onClick={() => abrirPago(d.id_deuda)}
-                                            style={{
-                                              padding: "0.25rem 0.6rem",
-                                              borderRadius: 14,
-                                              background: "var(--accent)",
-                                              color: "#000000",
-                                              border: "none",
-                                              cursor: "pointer",
-                                              fontSize: "0.75rem",
-                                            }}
+                                            className="px-[0.6rem] py-1 rounded-[14px] bg-market text-black border-none cursor-pointer text-[0.75rem]"
                                           >
                                             Registrar pago
                                           </button>
@@ -1448,16 +1221,7 @@ export default function DeudasPage() {
                                         <button
                                           onClick={() => cambiarEstado(d.id_deuda)}
                                           disabled={cambiandoId === d.id_deuda}
-                                          style={{
-                                            padding: "0.25rem 0.6rem",
-                                            borderRadius: 14,
-                                            background: d.estado_deuda === "PAGADA" ? "#e63946" : "#52b788",
-                                            color: "#fff",
-                                            border: "none",
-                                            cursor: cambiandoId === d.id_deuda ? "default" : "pointer",
-                                            opacity: cambiandoId === d.id_deuda ? 0.6 : 1,
-                                            fontSize: "0.75rem",
-                                          }}
+                                          className={`px-[0.6rem] py-1 rounded-[14px] text-white border-none text-[0.75rem] ${d.estado_deuda === "PAGADA" ? "bg-danger" : "bg-success"} ${cambiandoId === d.id_deuda ? "cursor-default opacity-60" : "cursor-pointer"}`}
                                         >
                                           {cambiandoId === d.id_deuda
                                             ? "…"
@@ -1470,7 +1234,7 @@ export default function DeudasPage() {
                                     </tr>
                                     {pagandoId === d.id_deuda && (
                                       <tr>
-                                        <td colSpan={7} style={{ padding: "0.5rem 0.4rem 0.9rem" }}>
+                                        <td colSpan={7} className="pt-2 px-[0.4rem] pb-[0.9rem]">
                                           <FormPago
                                             saldo={Number(d.saldo_pendiente)}
                                             monto={montoPago}
@@ -1496,7 +1260,7 @@ export default function DeudasPage() {
                   ))}
                   {gruposPage.slice.length === 0 && (
                     <tr>
-                      <td colSpan={4} style={{ padding: "1.5rem", textAlign: "center", color: "var(--muted)" }}>
+                      <td colSpan={4} className="p-6 text-center text-ink-muted">
                         {qDeudas.trim() || soloBloqueados
                           ? "Ningún resultado para esa búsqueda o filtro."
                           : "No hay deudas registradas."}
@@ -1517,73 +1281,56 @@ export default function DeudasPage() {
           )}
 
           {vista === "vencimiento" && (
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-[0.9rem]">
                 <thead>
-                  <tr style={{ borderBottom: "2px solid var(--border)", textAlign: "left" }}>
-                    <th style={{ padding: "0.75rem" }}>Persona</th>
-                    <th style={{ padding: "0.75rem" }}>Monto</th>
-                    <th style={{ padding: "0.75rem" }}>Saldo / cubierto</th>
-                    <th style={{ padding: "0.75rem" }}>Fecha límite</th>
-                    <th style={{ padding: "0.75rem" }}>Vencimiento</th>
-                    <th style={{ padding: "0.75rem" }}>Acciones</th>
+                  <tr className="border-b-2 border-line text-left">
+                    <th className={cls.td}>Persona</th>
+                    <th className={cls.td}>Monto</th>
+                    <th className={cls.td}>Saldo / cubierto</th>
+                    <th className={cls.td}>Fecha límite</th>
+                    <th className={cls.td}>Vencimiento</th>
+                    <th className={cls.td}>Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
                   {vencimientoPage.slice.map((d) => {
                     const rest = diasRestantes(d.fecha_limite_pago);
                     return (
-                      <>
-                        <tr key={d.id_deuda} style={{ borderBottom: "1px solid var(--border)" }}>
-                          <td style={{ padding: "0.75rem" }}>
+                      <Fragment key={d.id_deuda}>
+                        <tr className="border-b border-line">
+                          <td className={cls.td}>
                             {d.nombre_deudor}
                             {d.id_cliente !== null && d.cliente_puede_comprar === false && (
-                              <span style={badgeStyle("#e63946")}>bloqueado</span>
+                              <span className={cls.badgeBloqueado}>bloqueado</span>
                             )}
                           </td>
-                          <td style={{ padding: "0.75rem", fontWeight: 600 }}>
+                          <td className={`${cls.td} font-semibold`}>
                             Q{Number(d.monto_total).toFixed(2)}
                           </td>
-                          <td style={{ padding: "0.75rem", minWidth: 140 }}>
+                          <td className={`${cls.td} min-w-[140px]`}>
                             <SaldoCubierto d={d} />
                           </td>
-                          <td style={{ padding: "0.75rem", color: "var(--muted)" }}>
+                          <td className={`${cls.td} text-ink-muted`}>
                             {d.fecha_limite_pago
                               ? new Date(d.fecha_limite_pago).toLocaleDateString("es-GT")
                               : "—"}
                           </td>
-                          <td style={{ padding: "0.75rem", color: rest.color, fontWeight: 600 }}>
+                          <td className={`${cls.td} font-semibold ${rest.cls}`}>
                             {rest.texto}
                           </td>
-                          <td style={{ padding: "0.75rem" }}>
-                            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          <td className={cls.td}>
+                            <div className="flex gap-1.5 flex-wrap">
                               <button
                                 onClick={() => abrirPago(d.id_deuda)}
-                                style={{
-                                  padding: "0.3rem 0.8rem",
-                                  borderRadius: 14,
-                                  background: "var(--accent)",
-                                  color: "#fff",
-                                  border: "none",
-                                  cursor: "pointer",
-                                  fontSize: "0.8rem",
-                                }}
+                                className="px-[0.8rem] py-[0.3rem] rounded-[14px] bg-market text-white border-none cursor-pointer text-[0.8rem]"
                               >
                                 Registrar pago
                               </button>
                               <button
                                 onClick={() => cambiarEstado(d.id_deuda)}
                                 disabled={cambiandoId === d.id_deuda}
-                                style={{
-                                  padding: "0.3rem 0.8rem",
-                                  borderRadius: 14,
-                                  background: "#52b788",
-                                  color: "#fff",
-                                  border: "none",
-                                  cursor: cambiandoId === d.id_deuda ? "default" : "pointer",
-                                  opacity: cambiandoId === d.id_deuda ? 0.6 : 1,
-                                  fontSize: "0.8rem",
-                                }}
+                                className={`px-[0.8rem] py-[0.3rem] rounded-[14px] bg-success text-white border-none text-[0.8rem] ${cambiandoId === d.id_deuda ? "cursor-default opacity-60" : "cursor-pointer"}`}
                               >
                                 {cambiandoId === d.id_deuda ? "Guardando…" : "Marcar pagada"}
                               </button>
@@ -1592,7 +1339,7 @@ export default function DeudasPage() {
                         </tr>
                         {pagandoId === d.id_deuda && (
                           <tr>
-                            <td colSpan={6} style={{ padding: "0.5rem 0.75rem 1rem" }}>
+                            <td colSpan={6} className="pt-2 px-3 pb-4">
                               <FormPago
                                 saldo={Number(d.saldo_pendiente)}
                                 monto={montoPago}
@@ -1607,12 +1354,12 @@ export default function DeudasPage() {
                             </td>
                           </tr>
                         )}
-                      </>
+                      </Fragment>
                     );
                   })}
                   {vencimientoPage.slice.length === 0 && (
                     <tr>
-                      <td colSpan={6} style={{ padding: "1.5rem", textAlign: "center", color: "var(--muted)" }}>
+                      <td colSpan={6} className="p-6 text-center text-ink-muted">
                         No hay deudas pendientes.
                       </td>
                     </tr>
@@ -1634,7 +1381,7 @@ export default function DeudasPage() {
 
       {tab === "limites" && (
         <>
-          <p style={{ color: "var(--muted)", marginBottom: "1rem", maxWidth: 640 }}>
+          <p className="text-ink-muted mb-4 max-w-[640px]">
             Define el límite de deuda de cada cliente. Al llegar (o superar) ese monto en deudas
             pendientes, el cliente queda bloqueado automáticamente para comprar o hacer pedidos —
             se desbloquea solo cuando su deuda pendiente vuelve a bajar del límite.
@@ -1643,55 +1390,27 @@ export default function DeudasPage() {
           {!creandoCliente && (
             <button
               onClick={() => setCreandoCliente(true)}
-              style={{
-                marginBottom: "1rem",
-                padding: "0.4rem 1rem",
-                borderRadius: 14,
-                background: "#52b788",
-                color: "#fff",
-                border: "none",
-                cursor: "pointer",
-                fontWeight: 600,
-                fontSize: "0.85rem",
-              }}
+              className="mb-4 px-4 py-[0.4rem] rounded-[14px] bg-success text-white border-none cursor-pointer font-semibold text-[0.85rem]"
             >
               + Nuevo cliente
             </button>
           )}
           {creandoCliente && (
-            <div style={{ maxWidth: 560 }}>
+            <div className="max-w-[560px]">
               {formularioClienteNuevo(() => setCreandoCliente(false))}
             </div>
           )}
 
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              alignItems: "center",
-              gap: "0.75rem",
-              marginBottom: "1rem",
-            }}
-          >
+          <div className="flex flex-wrap items-center gap-3 mb-4">
             <input
               type="search"
               value={qLimites}
               onChange={(e) => setQLimites(e.target.value)}
               placeholder="Buscar cliente por nombre, teléfono o correo…"
               aria-label="Buscar clientes"
-              style={{ ...inputStyle, flex: "1 1 260px", minWidth: 220, width: "auto" }}
+              className={`${cls.input} flex-[1_1_260px] min-w-[220px] w-auto`}
             />
-            <label
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "0.4rem",
-                fontSize: "0.85rem",
-                color: "var(--muted)",
-                cursor: "pointer",
-                whiteSpace: "nowrap",
-              }}
-            >
+            <label className="flex items-center gap-[0.4rem] text-[0.85rem] text-ink-muted cursor-pointer whitespace-nowrap">
               <input
                 type="checkbox"
                 checked={soloBloqueados}
@@ -1701,62 +1420,50 @@ export default function DeudasPage() {
             </label>
           </div>
 
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-[0.9rem]">
               <thead>
-                <tr style={{ borderBottom: "2px solid var(--border)", textAlign: "left" }}>
-                  <th style={{ padding: "0.75rem" }}>Cliente</th>
-                  <th style={{ padding: "0.75rem" }}>Estado</th>
-                  <th style={{ padding: "0.75rem" }}>Deuda pendiente</th>
-                  <th style={{ padding: "0.75rem" }}>Límite de deuda (Q)</th>
-                  <th style={{ padding: "0.75rem" }}></th>
+                <tr className="border-b-2 border-line text-left">
+                  <th className={cls.td}>Cliente</th>
+                  <th className={cls.td}>Estado</th>
+                  <th className={cls.td}>Deuda pendiente</th>
+                  <th className={cls.td}>Límite de deuda (Q)</th>
+                  <th className={cls.td}></th>
                 </tr>
               </thead>
               <tbody>
                 {clientesPage.slice.map((c) => (
-                  <tr key={c.id_cliente} style={{ borderBottom: "1px solid var(--border)" }}>
-                    <td style={{ padding: "0.75rem" }}>
+                  <tr key={c.id_cliente} className="border-b border-line">
+                    <td className={cls.td}>
                       {c.nombre}
                       {c.telefono && (
-                        <div style={{ color: "var(--muted)", fontSize: "0.78rem" }}>{c.telefono}</div>
+                        <div className="text-ink-muted text-[0.78rem]">{c.telefono}</div>
                       )}
                     </td>
-                    <td style={{ padding: "0.75rem" }}>
-                      <span
-                        style={{
-                          color: c.estado_cliente ? "#52b788" : "#e63946",
-                          fontWeight: 600,
-                        }}
-                      >
+                    <td className={cls.td}>
+                      <span className={`font-semibold ${c.estado_cliente ? "text-success" : "text-danger"}`}>
                         {c.estado_cliente ? "Activo" : "Bloqueado"}
                       </span>
                     </td>
-                    <td style={{ padding: "0.75rem" }}>Q{deudaPendienteDe(c.id_cliente).toFixed(2)}</td>
-                    <td style={{ padding: "0.75rem" }}>
+                    <td className={cls.td}>Q{deudaPendienteDe(c.id_cliente).toFixed(2)}</td>
+                    <td className={cls.td}>
                       <input
                         type="number"
                         min={0}
                         step="0.01"
                         placeholder="Sin límite"
-                        style={{ ...inputStyle, width: 130 }}
+                        className={`${cls.input} w-[130px]`}
                         value={limitesEditando[c.id_cliente] ?? ""}
                         onChange={(e) =>
                           setLimitesEditando((prev) => ({ ...prev, [c.id_cliente]: e.target.value }))
                         }
                       />
                     </td>
-                    <td style={{ padding: "0.75rem" }}>
+                    <td className={cls.td}>
                       <button
                         onClick={() => guardarLimite(c.id_cliente)}
                         disabled={guardandoLimiteId === c.id_cliente}
-                        style={{
-                          padding: "0.3rem 0.8rem",
-                          borderRadius: 14,
-                          background: "var(--border)",
-                          border: "none",
-                          cursor: guardandoLimiteId === c.id_cliente ? "default" : "pointer",
-                          fontSize: "0.8rem",
-                        }}
+                        className={`px-[0.8rem] py-[0.3rem] rounded-[14px] bg-line border-none text-[0.8rem] ${guardandoLimiteId === c.id_cliente ? "cursor-default" : "cursor-pointer"}`}
                       >
                         {guardandoLimiteId === c.id_cliente ? "Guardando…" : "Guardar"}
                       </button>
@@ -1765,7 +1472,7 @@ export default function DeudasPage() {
                 ))}
                 {clientesPage.slice.length === 0 && (
                   <tr>
-                    <td colSpan={5} style={{ padding: "1.5rem", textAlign: "center", color: "var(--muted)" }}>
+                    <td colSpan={5} className="p-6 text-center text-ink-muted">
                       {qLimites.trim() || soloBloqueados
                         ? "Ningún resultado para esa búsqueda o filtro."
                         : "No hay clientes registrados."}
@@ -1787,56 +1494,42 @@ export default function DeudasPage() {
       )}
 
       {tab === "notificaciones" && (
-        <div style={{ maxWidth: 560 }}>
-          <h3 style={{ marginBottom: "0.4rem" }}>Recordatorios automáticos de deuda</h3>
-          <p style={{ color: "var(--muted)", fontSize: "0.88rem", lineHeight: 1.6, marginBottom: "1.25rem" }}>
+        <div className="max-w-[560px]">
+          <h3 className="mb-[0.4rem]">Recordatorios automáticos de deuda</h3>
+          <p className="text-ink-muted text-[0.88rem] leading-[1.6] mb-5">
             Cuando está activo, el sistema revisa cada hora si algún cliente con deuda pendiente y
             correo registrado no ha recibido un recordatorio en los últimos días que configures acá,
             y le manda uno automáticamente por correo.
           </p>
 
           {notifConfig === null ? (
-            <p style={{ color: "var(--muted)" }}>Cargando…</p>
+            <p className="text-ink-muted">Cargando…</p>
           ) : (
-            <div
-              style={{
-                border: "1px solid var(--border)",
-                borderRadius: 14,
-                padding: "1.25rem",
-                display: "flex",
-                flexDirection: "column",
-                gap: "1.1rem",
-              }}
-            >
-              <label style={{ display: "flex", alignItems: "center", gap: "0.6rem", cursor: "pointer" }}>
+            <div className="border border-line rounded-[14px] p-5 flex flex-col gap-[1.1rem]">
+              <label className="flex items-center gap-[0.6rem] cursor-pointer">
                 <input
                   type="checkbox"
                   checked={notifConfig.activo}
                   disabled={notifGuardando}
                   onChange={(e) => guardarNotifConfig({ activo: e.target.checked })}
                 />
-                <span style={{ fontWeight: 600 }}>
+                <span className="font-semibold">
                   Envío automático {notifConfig.activo ? "activado" : "desactivado"}
                 </span>
               </label>
 
               <div>
-                <label style={{ display: "block", fontWeight: 600, marginBottom: "0.4rem", fontSize: "0.88rem" }}>
+                <label className="block font-semibold mb-[0.4rem] text-[0.88rem]">
                   Recordar cada (días)
                 </label>
-                <div style={{ display: "flex", gap: "0.6rem", alignItems: "center" }}>
+                <div className="flex gap-[0.6rem] items-center">
                   <input
                     type="number"
                     min={1}
                     max={365}
                     value={notifIntervaloInput}
                     onChange={(e) => setNotifIntervaloInput(e.target.value)}
-                    style={{
-                      width: 100,
-                      padding: "0.5rem 0.7rem",
-                      borderRadius: 10,
-                      border: "1px solid var(--border)",
-                    }}
+                    className="w-[100px] px-[0.7rem] py-2 rounded-[10px] border border-line"
                   />
                   <button
                     type="button"
@@ -1846,54 +1539,38 @@ export default function DeudasPage() {
                       Number(notifIntervaloInput) === notifConfig.intervalo_dias
                     }
                     onClick={() => guardarNotifConfig({ intervalo_dias: Number(notifIntervaloInput) })}
-                    style={{
-                      padding: "0.5rem 1rem",
-                      borderRadius: 10,
-                      border: "1px solid var(--border)",
-                      background: "var(--surface2)",
-                      cursor: "pointer",
-                      fontWeight: 600,
-                    }}
+                    className="px-4 py-2 rounded-[10px] border border-line bg-surface-soft cursor-pointer font-semibold"
                   >
                     {notifGuardando ? "Guardando…" : "Guardar"}
                   </button>
                 </div>
-                <p style={{ color: "var(--muted)", fontSize: "0.78rem", marginTop: "0.4rem" }}>
+                <p className="text-ink-muted text-[0.78rem] mt-[0.4rem]">
                   A cada cliente con deuda pendiente se le vuelve a recordar cuando pasan al menos
                   este número de días desde su último recordatorio (o desde nunca, si es la primera vez).
                 </p>
               </div>
 
-              <div style={{ borderTop: "1px solid var(--border)", paddingTop: "1rem" }}>
+              <div className="border-t border-line pt-4">
                 <button
                   type="button"
                   onClick={ejecutarNotifAhora}
                   disabled={notifEjecutando || !notifConfig.activo}
                   title={!notifConfig.activo ? "Activa el envío automático primero" : undefined}
-                  style={{
-                    padding: "0.55rem 1.2rem",
-                    borderRadius: 14,
-                    background: "#52b788",
-                    color: "#fff",
-                    border: "none",
-                    cursor: notifConfig.activo ? "pointer" : "not-allowed",
-                    fontWeight: 600,
-                    opacity: notifConfig.activo ? 1 : 0.6,
-                  }}
+                  className={`px-[1.2rem] py-[0.55rem] rounded-[14px] bg-success text-white border-none font-semibold ${notifConfig.activo ? "cursor-pointer opacity-100" : "cursor-not-allowed opacity-60"}`}
                 >
                   {notifEjecutando ? "Enviando…" : "Enviar ahora"}
                 </button>
-                <p style={{ color: "var(--muted)", fontSize: "0.78rem", marginTop: "0.5rem" }}>
+                <p className="text-ink-muted text-[0.78rem] mt-2">
                   Fuerza una corrida inmediata (sin esperar a la revisión automática). Solo les
                   llegará a quienes ya les tocaba según el intervalo de arriba.
                 </p>
               </div>
 
               {notifMensaje && (
-                <p style={{ color: "#52b788", fontWeight: 600, margin: 0 }}>{notifMensaje}</p>
+                <p className="text-success font-semibold m-0">{notifMensaje}</p>
               )}
               {notifError && (
-                <p style={{ color: "#e63946", fontWeight: 600, margin: 0 }}>{notifError}</p>
+                <p className="text-danger font-semibold m-0">{notifError}</p>
               )}
             </div>
           )}
