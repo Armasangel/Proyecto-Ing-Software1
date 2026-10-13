@@ -3,6 +3,7 @@ import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { isStaffTipo, TIPOS_USUARIO } from "@/lib/roles";
 import { getLogger } from "@/lib/logger";
+import { recalcularBloqueoCliente } from "@/lib/deuda-alertas";
 
 const log = getLogger("api/ventas/[id]/anular");
 
@@ -35,7 +36,7 @@ export async function POST(
     await client.query("BEGIN");
 
     const ventaRes = await client.query(
-      `SELECT id_venta, id_empleado, estado_venta, fecha_venta
+      `SELECT id_venta, id_empleado, estado_venta, fecha_venta, id_cliente
        FROM venta WHERE id_venta = $1 FOR UPDATE`,
       [id_venta]
     );
@@ -65,6 +66,23 @@ export async function POST(
         {
           error: `Ya pasaron más de ${VENTANA_DESHACER_MINUTOS} minutos desde esta venta — para anularla, cambia su estado manualmente en Reportes.`,
         },
+        { status: 400 }
+      );
+    }
+
+    // Venta a crédito: su cuenta por cobrar se retira junto con la venta, pero
+    // solo si todavía no se cobró nada (si ya hay abonos, hay que revertirlos
+    // primero para no perder el registro del dinero recibido).
+    const deudaRes = await client.query(
+      `SELECT d.id_deuda,
+              (SELECT COUNT(*)::int FROM pago_deuda pd WHERE pd.id_deuda = d.id_deuda) AS pagos
+         FROM deuda d WHERE d.id_venta = $1 FOR UPDATE`,
+      [id_venta]
+    );
+    if (deudaRes.rowCount && deudaRes.rows[0].pagos > 0) {
+      await client.query("ROLLBACK");
+      return NextResponse.json(
+        { error: "Esta venta a crédito ya tiene pagos registrados en su cuenta por cobrar, no se puede deshacer." },
         { status: 400 }
       );
     }
@@ -101,6 +119,17 @@ export async function POST(
     }
 
     await client.query(`UPDATE venta SET estado_venta = 'CANCELADO' WHERE id_venta = $1`, [id_venta]);
+    // Si era una venta con entrega, su pedido de bodega también se cancela.
+    await client.query(
+      `UPDATE orden SET estado = 'CANCELADO' WHERE id_venta = $1 AND estado <> 'ENTREGADO'`,
+      [id_venta]
+    );
+
+    if (deudaRes.rowCount) {
+      // deuda_producto y cuota_credito se borran en cascada.
+      await client.query(`DELETE FROM deuda WHERE id_deuda = $1`, [deudaRes.rows[0].id_deuda]);
+      await recalcularBloqueoCliente(client, venta.id_cliente);
+    }
 
     await client.query("COMMIT");
     log.info({ id_venta, usuario: usuario.id_usuario }, "Venta deshecha (anulada)");

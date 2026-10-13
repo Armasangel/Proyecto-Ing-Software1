@@ -2,6 +2,7 @@ import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Icon } from "@/components/Icon";
 import { matchesQuery, paginar, PaginationBar, PAGE_SIZES_COMPACT, type PageSize } from "@/lib/ui-table";
+import { ProductoAutocompletar } from "@/components/ProductoAutocompletar";
 
 const MIS_ITEMS = [
   {label: "editar", icon: "pencil"},
@@ -558,10 +559,12 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
             </div>
             <div style={s.field}>
               <label style={s.label}>Producto *</label>
-              <select value={entradaForm.id_producto} onChange={e => { setEntradaForm(f => ({ ...f, id_producto: e.target.value })); setEntradaError(null); setEntradaResultado(null); }} style={s.select}>
-                <option value="">— Selecciona —</option>
-                {productos.map(p => <option key={p.id_producto} value={p.id_producto}>[{p.codigo_producto}] {p.nombre_producto}</option>)}
-              </select>
+              <ProductoAutocompletar
+                productos={productos}
+                value={entradaForm.id_producto}
+                onChange={id => { setEntradaForm(f => ({ ...f, id_producto: id })); setEntradaError(null); setEntradaResultado(null); }}
+                style={s.select}
+              />
               {productoSeleccionado && <span style={{ fontSize: "0.78rem", color: "var(--muted)" }}>Unidad: <strong style={{ color: "var(--text)" }}>{productoSeleccionado.unidad_medida}</strong></span>}
             </div>
             <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
@@ -625,10 +628,12 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
             </div>
             <div style={s.field}>
               <label style={s.label}>Producto</label>
-              <select value={xfer.id_producto} onChange={e => setXfer(x => ({ ...x, id_producto: e.target.value }))} style={s.select}>
-                <option value="">— Selecciona —</option>
-                {productos.map(p => <option key={p.id_producto} value={p.id_producto}>[{p.codigo_producto}] {p.nombre_producto}</option>)}
-              </select>
+              <ProductoAutocompletar
+                productos={productos}
+                value={xfer.id_producto}
+                onChange={id => setXfer(x => ({ ...x, id_producto: id }))}
+                style={s.select}
+              />
             </div>
             <div style={s.field}>
               <label style={s.label}>Cantidad</label>
@@ -656,10 +661,12 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
             </div>
             <div style={s.field}>
               <label style={s.label}>Producto</label>
-              <select value={adj.id_producto} onChange={e => setAdj(a => ({ ...a, id_producto: e.target.value }))} style={s.select}>
-                <option value="">— Selecciona —</option>
-                {productos.map(p => <option key={p.id_producto} value={p.id_producto}>[{p.codigo_producto}] {p.nombre_producto}</option>)}
-              </select>
+              <ProductoAutocompletar
+                productos={productos}
+                value={adj.id_producto}
+                onChange={id => setAdj(a => ({ ...a, id_producto: id }))}
+                style={s.select}
+              />
             </div>
             <div style={s.field}>
               <label style={s.label}>Nueva cantidad (stock físico)</label>

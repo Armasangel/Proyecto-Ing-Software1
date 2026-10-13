@@ -27,7 +27,7 @@ export function VentasTab({ data }: { data: EstadisticasData }) {
         <StatCard icon="money-bag" label="Ingresos totales" value={q(data.resumen.ingresos_totales)} sub={comp ? `antes: ${q(comp.ingresos_anteriores)}` : undefined} delta={deltaIngresos} />
         <StatCard icon="ticket" label="Venta promedio" value={q(data.resumen.ticket_promedio)} sub="lo que se vende en cada venta" />
         <StatCard icon="close" label="Canceladas" value={data.resumen.ventas_canceladas.toLocaleString("es-GT")} sub="no cuentan en los ingresos" />
-        <ProgressCard icon="money-bag" label="Ventas fiadas" value={`${k.ventas.pct_ventas_credito}%`} pct={k.ventas.pct_ventas_credito} sub={`${k.ventas.ventas_credito} venta${k.ventas.ventas_credito !== 1 ? "s" : ""} · ${q(k.ventas.monto_credito)} sin cobrar de inmediato`} />
+        <ProgressCard icon="money-bag" label="Ventas al crédito" value={`${k.ventas.pct_ventas_credito}%`} pct={k.ventas.pct_ventas_credito} sub={`${k.ventas.ventas_credito} venta${k.ventas.ventas_credito !== 1 ? "s" : ""} · ${q(k.ventas.monto_credito)} sin cobrar de inmediato`} />
         <StatCard icon="shopping-cart" label="Ventas por terminar" value={k.operacion.ventas_pendientes.toLocaleString("es-GT")} sub={`${q(k.operacion.monto_ventas_pendientes)} sin cobrar o entregar`} />
       </div>
 

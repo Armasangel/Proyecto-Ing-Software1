@@ -39,6 +39,7 @@ function setup(datos: Respuesta) {
   server.use(
     rest.get("/api/sesion", (_req, res, ctx) => res(ctx.json({ usuario: yo }))),
     rest.get("/api/usuarios", (_req, res, ctx) => res(ctx.json(datos))),
+    rest.get("/api/usuarios/limites", (_req, res, ctx) => res(ctx.json({ limites: [{ tipo_usuario: "DUENO", limite: datos.cupos_dueno.maximo, activos: datos.cupos_dueno.usados }] }))),
     rest.get("/api/bodegas/simple", (_req, res, ctx) => res(ctx.json([]))),
   );
 }
@@ -122,6 +123,6 @@ describe("Usuarios: cupos de dueño", () => {
 
     const nota = await screen.findByTestId("nota-cupos-dueno");
     expect(nota).toHaveTextContent("Sin cupos de dueño (2 de 2 en uso)");
-    expect(nota).toHaveTextContent("primero hay que quitárselo a uno de los actuales");
+    expect(nota).toHaveTextContent("sube el límite o desactiva a uno de los actuales");
   });
 });

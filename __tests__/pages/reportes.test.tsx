@@ -93,8 +93,8 @@ describe("Reportes (EstadisticasPage)", () => {
     render(<EstadisticasPage />);
 
     expect(await screen.findByRole("tab", { name: "Ventas", selected: true })).toBeInTheDocument();
-    expect(screen.getByText("Ventas fiadas")).toBeInTheDocument();
-    expect(screen.getByRole("progressbar", { name: "Ventas fiadas" })).toHaveAttribute("aria-valuenow", "25");
+    expect(screen.getByText("Ventas al crédito")).toBeInTheDocument();
+    expect(screen.getByRole("progressbar", { name: "Ventas al crédito" })).toHaveAttribute("aria-valuenow", "25");
     expect(screen.getByText("Ventas por terminar")).toBeInTheDocument();
     expect(screen.getByText("Cómo se vendió")).toBeInTheDocument();
     expect(screen.getByText("Minorista · 30 · Q3,000.00")).toBeInTheDocument();
@@ -183,7 +183,7 @@ describe("Reportes (EstadisticasPage)", () => {
     expect(screen.getByRole("progressbar", { name: "Fiado cobrado" })).toHaveAttribute("aria-valuenow", "70");
     expect(screen.getByText("Deudor 5")).toBeInTheDocument();
     expect(screen.queryByText("Deudor 6")).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Ver todas las deudas/ })).toHaveAttribute("href", "/deudas");
+    expect(screen.getByRole("link", { name: /Ver cuentas por cobrar/ })).toHaveAttribute("href", "/cuentas-por-cobrar");
   });
 
   it("no muestra el enlace «Ver todas» si hay 5 deudores o menos", async () => {
@@ -195,7 +195,7 @@ describe("Reportes (EstadisticasPage)", () => {
     render(<EstadisticasPage />);
     await user.click(await screen.findByRole("tab", { name: "Clientes y deudas" }));
 
-    expect(screen.queryByRole("link", { name: /Ver todas las deudas/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Ver cuentas por cobrar/ })).not.toBeInTheDocument();
   });
 
   it("los periodos fijos se aplican al tocarlos, sin botón Aplicar", async () => {
@@ -238,6 +238,6 @@ describe("Reportes (EstadisticasPage)", () => {
 
     expect(pedidos).toHaveLength(antes);
     const panel = screen.getByRole("tabpanel");
-    expect(within(panel).getByText("Ventas fiadas")).toBeInTheDocument();
+    expect(within(panel).getByText("Ventas al crédito")).toBeInTheDocument();
   });
 });

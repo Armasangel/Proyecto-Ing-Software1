@@ -156,10 +156,10 @@ export default function DashboardPage() {
               <div>
                 <div className="font-bold text-ink text-[0.88rem]">
                   {stats.clientesBloqueados} cliente{stats.clientesBloqueados !== 1 ? "s" : ""}{" "}
-                  bloqueado{stats.clientesBloqueados !== 1 ? "s" : ""} por deuda
+                  bloqueado{stats.clientesBloqueados !== 1 ? "s" : ""} por límite de crédito
                 </div>
-                <Link href="/deudas" className="text-[0.78rem] text-achiote-600 font-semibold no-underline mt-0.5 block hover:underline">
-                  Ver en Deudas →
+                <Link href="/cuentas-por-cobrar" className="text-[0.78rem] text-achiote-600 font-semibold no-underline mt-0.5 block hover:underline">
+                  Ver en Cuentas por cobrar →
                 </Link>
               </div>
             </div>

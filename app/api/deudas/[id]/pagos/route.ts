@@ -5,6 +5,7 @@ import { isStaffTipo } from "@/lib/roles";
 import { apiError, unauthorizedError, validationError } from "@/lib/api-error";
 import { recalcularBloqueoCliente } from "@/lib/deuda-alertas";
 import { getLogger } from "@/lib/logger";
+import { planConPagos, reglaDePago } from "@/lib/credito";
 
 const log = getLogger("api/deudas/[id]/pagos");
 
@@ -25,7 +26,7 @@ export async function POST(
   const { id } = await params;
   const id_deuda = Number(id);
   if (!Number.isInteger(id_deuda)) {
-    return validationError("Id de deuda inválido");
+    return validationError("Id de cuenta por cobrar inválido");
   }
 
   const { monto, metodo_pago, nota } = await req.json();
@@ -45,19 +46,19 @@ export async function POST(
     await client.query("BEGIN");
 
     const deudaRes = await client.query(
-      `SELECT id_deuda, monto_total, estado_deuda, id_cliente
+      `SELECT id_deuda, monto_total, estado_deuda, id_cliente, id_venta
        FROM deuda WHERE id_deuda = $1 FOR UPDATE`,
       [id_deuda]
     );
     if (deudaRes.rowCount === 0) {
       await client.query("ROLLBACK");
-      return validationError("La deuda no existe");
+      return validationError("La cuenta por cobrar no existe");
     }
     const deuda = deudaRes.rows[0];
 
     if (deuda.estado_deuda === "PAGADA") {
       await client.query("ROLLBACK");
-      return validationError("Esta deuda ya está marcada como pagada");
+      return validationError("Esta cuenta por cobrar ya está marcada como pagada");
     }
 
     const pagadoRes = await client.query(
@@ -76,6 +77,34 @@ export async function POST(
       );
     }
 
+    // Cuentas que nacen de una venta a crédito: el abono respeta el plan de
+    // pagos. Pago único = solo el saldo completo; varios pagos = como mínimo la
+    // cuota que toca (se puede pagar más y las siguientes se recalculan).
+    if (deuda.id_venta) {
+      const cuotasRes = await client.query(
+        `SELECT numero, TO_CHAR(fecha_vencimiento, 'YYYY-MM-DD') AS fecha_vencimiento, monto
+           FROM cuota_credito WHERE id_deuda = $1 ORDER BY numero`,
+        [id_deuda]
+      );
+      if (cuotasRes.rowCount) {
+        const pagosPrevios = await client.query(
+          `SELECT monto FROM pago_deuda WHERE id_deuda = $1 ORDER BY fecha_pago, id_pago`,
+          [id_deuda]
+        );
+        const regla = reglaDePago(
+          planConPagos(cuotasRes.rows, pagosPrevios.rows.map((r: { monto: string }) => r.monto), "9999-12-31")
+        );
+        if (Math.round(montoNum * 100) < Math.round(regla.minimo * 100)) {
+          await client.query("ROLLBACK");
+          return validationError(
+            regla.pagoUnico
+              ? `Esta cuenta es de pago único: debe pagarse completa (Q${regla.minimo.toFixed(2)}).`
+              : `El pago mínimo es Q${regla.minimo.toFixed(2)} (pago ${regla.cuota?.numero} de ${regla.totalCuotas}). Puedes pagar más y las cuotas siguientes se recalculan.`
+          );
+        }
+      }
+    }
+
     const pagoRes = await client.query(
       `INSERT INTO pago_deuda (id_deuda, monto, id_usuario, metodo_pago, nota)
        VALUES ($1, $2, $3, $4, $5)
@@ -88,6 +117,12 @@ export async function POST(
     if (nuevoSaldo <= 0.01) {
       nuevoEstado = "PAGADA";
       await client.query(`UPDATE deuda SET estado_deuda = 'PAGADA' WHERE id_deuda = $1`, [id_deuda]);
+      // Si la cuenta nació de una venta a crédito, al saldarla la venta queda pagada.
+      if (deuda.id_venta) {
+        await client.query(`UPDATE venta SET estado_venta = 'PAGADO' WHERE id_venta = $1 AND estado_venta <> 'CANCELADO'`, [
+          deuda.id_venta,
+        ]);
+      }
     }
 
     let alerta: Awaited<ReturnType<typeof recalcularBloqueoCliente>> | null = null;

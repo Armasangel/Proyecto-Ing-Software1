@@ -57,6 +57,7 @@ export async function GET(req: NextRequest) {
         o.estado,
         o.notas,
         o.total,
+        o.id_venta,
         c.nombre AS nombre_cliente,
         c.correo AS correo_cliente,
         c.tipo_cliente,
@@ -90,7 +91,7 @@ export async function GET(req: NextRequest) {
       LEFT JOIN presentacion_producto pp ON pp.id_presentacion = d.id_presentacion
       ${whereClause}
       GROUP BY o.id_orden, o.id_cliente, o.id_usuario, o.fecha_orden,
-        o.estado, o.notas, o.total, c.nombre, c.correo, c.tipo_cliente, u.nombre
+        o.estado, o.notas, o.total, o.id_venta, c.nombre, c.correo, c.tipo_cliente, u.nombre
       ORDER BY o.fecha_orden DESC
       LIMIT $1 OFFSET $2
       `,
@@ -107,172 +108,16 @@ export async function GET(req: NextRequest) {
   }
 }
 
+// Las órdenes ya no se crean sueltas: una orden es el pedido de entrega de una
+// VENTA a domicilio (que es la que descuenta stock, factura y, si es a crédito,
+// genera la cuenta por cobrar). Se crean desde Ventas, eligiendo "A domicilio".
 export async function POST(request: NextRequest) {
   const usuario = getUsuarioFromRequest(request);
   if (!usuario || !isStaffTipo(usuario.tipo_usuario)) {
     return NextResponse.json({ error: "No autorizado" }, { status: 403 });
   }
-
-  try {
-    const body = await request.json();
-    const { id_cliente: idCliente, notas, lineas } = body;
-
-    if (!idCliente || Number(idCliente) < 1) {
-      return NextResponse.json({ error: "Debe seleccionar un cliente" }, { status: 400 });
-    }
-    if (!Array.isArray(lineas) || lineas.length === 0) {
-      return NextResponse.json({ error: "Agregue al menos un producto a la orden" }, { status: 400 });
-    }
-
-    const lineasNorm: LineaInput[] = [];
-    for (const L of lineas as unknown[]) {
-      if (!L || typeof L !== "object") continue;
-      const o = L as Record<string, unknown>;
-      const id_producto = Number(o.id_producto);
-      const id_presentacion = o.id_presentacion ? Number(o.id_presentacion) : null;
-      const cantidad = Number(o.cantidad);
-      const precio_unitario = Number(o.precio_unitario);
-      if (!id_producto || cantidad <= 0 || precio_unitario < 0) {
-        return NextResponse.json(
-          { error: "Cada linea requiere id_producto, cantidad > 0 y precio valido" },
-          { status: 400 }
-        );
-      }
-      lineasNorm.push({ id_producto, id_presentacion, cantidad, precio_unitario });
-    }
-
-    if (lineasNorm.length === 0) {
-      return NextResponse.json({ error: "Lineas de orden invalidas" }, { status: 400 });
-    }
-
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-
-      const existeCliente = await client.query(
-        `SELECT estado_cliente FROM cliente WHERE id_cliente = $1`,
-        [idCliente]
-      );
-      if (existeCliente.rowCount === 0) {
-        await client.query("ROLLBACK");
-        return NextResponse.json({ error: "Cliente no encontrado" }, { status: 400 });
-      }
-      if (existeCliente.rows[0].estado_cliente !== true) {
-        await client.query("ROLLBACK");
-        return NextResponse.json(
-          { error: "Este cliente está bloqueado (superó su límite de deuda) y no puede hacer pedidos" },
-          { status: 400 }
-        );
-      }
-
-      let total = 0;
-      const prepared: Array<{
-        id_producto: number;
-        id_bodega: number | null;
-        cantidad: number;
-        precio: number;
-        subtotal: number;
-        id_presentacion: number | null;
-        cantidad_presentacion: number | null;
-      }> = [];
-
-      for (const ln of lineasNorm) {
-        const prod = await client.query(
-          `SELECT id_producto, estado_producto FROM producto WHERE id_producto = $1`,
-          [ln.id_producto]
-        );
-        if (prod.rowCount === 0 || !prod.rows[0].estado_producto) {
-          await client.query("ROLLBACK");
-          return NextResponse.json({ error: `Producto no disponible: id ${ln.id_producto}` }, { status: 400 });
-        }
-
-        // Si la línea viene en una presentación de mayoreo (ej. "Caja de
-        // 24", creada por el dueño), convertimos a unidad base con su
-        // factor de conversión. `cantidad` en detalle_orden siempre queda
-        // en unidad base; la presentación y la cantidad capturada se
-        // guardan aparte solo como referencia (igual que en kardex).
-        let cantidadBase = ln.cantidad;
-        let cantidadPresentacion: number | null = null;
-        if (ln.id_presentacion) {
-          const pres = await client.query(
-            `SELECT factor_conversion FROM presentacion_producto
-             WHERE id_presentacion = $1 AND id_producto = $2 AND estado_presentacion = TRUE`,
-            [ln.id_presentacion, ln.id_producto]
-          );
-          if (pres.rowCount === 0) {
-            await client.query("ROLLBACK");
-            return NextResponse.json(
-              { error: `Presentación inválida para el producto id ${ln.id_producto}` },
-              { status: 400 }
-            );
-          }
-          const factor = Number(pres.rows[0].factor_conversion);
-          cantidadPresentacion = ln.cantidad;
-          cantidadBase = ln.cantidad * factor;
-        }
-
-        // La bodega de origen ya no la escoge el colaborador: se asigna
-        // automáticamente la que tenga mayor cantidad_disponible de este
-        // producto, para que en la lista de órdenes se avise de dónde
-        // conviene sacarlo. Si ninguna bodega tiene el producto registrado
-        // todavía, la línea queda sin bodega (null).
-        const mejorBodega = await client.query(
-          `SELECT id_bodega FROM bodega_producto
-           WHERE id_producto = $1
-           ORDER BY cantidad_disponible DESC
-           LIMIT 1`,
-          [ln.id_producto]
-        );
-        const idBodegaAuto: number | null = mejorBodega.rowCount ? mejorBodega.rows[0].id_bodega : null;
-
-        const subQ = await client.query(
-          `SELECT ROUND(($1::numeric * $2::numeric), 2) AS sub`,
-          [cantidadBase, ln.precio_unitario]
-        );
-        const subtotal = Number(subQ.rows[0].sub);
-        total += subtotal;
-        prepared.push({
-          id_producto: ln.id_producto,
-          id_bodega: idBodegaAuto,
-          cantidad: cantidadBase,
-          precio: ln.precio_unitario,
-          subtotal,
-          id_presentacion: ln.id_presentacion,
-          cantidad_presentacion: cantidadPresentacion,
-        });
-      }
-
-      const totalQ = await client.query(`SELECT ROUND($1::numeric, 2) AS t`, [total]);
-      total = Number(totalQ.rows[0].t);
-
-      const insOrden = await client.query(
-        `INSERT INTO orden (id_cliente, id_usuario, notas, total)
-         VALUES ($1, $2, $3, $4) RETURNING id_orden`,
-        [idCliente, usuario.id_usuario, notas || null, total]
-      );
-      const idOrden = insOrden.rows[0].id_orden as number;
-
-      for (const p of prepared) {
-        await client.query(
-          `INSERT INTO detalle_orden
-             (id_orden, id_producto, id_bodega, cantidad, precio_unitario, subtotal, id_presentacion, cantidad_presentacion)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-          [idOrden, p.id_producto, p.id_bodega, p.cantidad, p.precio, p.subtotal, p.id_presentacion, p.cantidad_presentacion]
-        );
-      }
-
-      await client.query("COMMIT");
-      log.info({ id_orden: idOrden, id_cliente: idCliente, total }, "Orden creada");
-      return NextResponse.json({ mensaje: "Orden creada correctamente", id_orden: idOrden, total }, { status: 201 });
-    } catch (error) {
-      await client.query("ROLLBACK");
-      log.error({ err: error }, "Error al crear la orden [POST]");
-      return NextResponse.json({ error: "Error al crear la orden" }, { status: 500 });
-    } finally {
-      client.release();
-    }
-  } catch (error) {
-    log.error({ err: error }, "Error al procesar la solicitud de orden [POST parse]");
-    return NextResponse.json({ error: "Error al procesar la solicitud" }, { status: 500 });
-  }
+  return NextResponse.json(
+    { error: "Las órdenes se generan desde Ventas: registra una venta con entrega a domicilio." },
+    { status: 410 }
+  );
 }
