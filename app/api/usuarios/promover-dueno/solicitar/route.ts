@@ -8,7 +8,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
-import { isDuenoTipo, MAX_DUENOS, TIPOS_USUARIO } from "@/lib/roles";
+import { isDuenoTipo, TIPOS_USUARIO } from "@/lib/roles";
 import { apiError, tooManyRequestsError, unauthorizedError, validationError } from "@/lib/api-error";
 import { checkRateLimit, getClientIp } from "@/lib/api-rate-limit";
 import { enviarCodigoPromocionDueno } from "@/lib/mailer";
@@ -19,6 +19,7 @@ import {
   hashCodigo,
   signPromocionToken,
 } from "@/lib/verificacion";
+import { cupoLleno, leerCupo, mensajeLimiteAlcanzado } from "@/lib/limites-usuarios";
 import { getLogger } from "@/lib/logger";
 
 const log = getLogger("api/usuarios/promover-dueno/solicitar");
@@ -74,18 +75,14 @@ export async function POST(req: NextRequest) {
       return validationError("No se puede promover a un usuario con la cuenta inactiva");
     }
 
-    // Chequeo temprano del límite: evita mandar un código de verificación
-    // para una promoción que de todas formas no se va a poder confirmar. El
-    // chequeo que realmente importa (contra condiciones de carrera) es el
-    // del paso de confirmación, dentro de una transacción con lock.
-    const conteo = await pool.query<{ count: number }>(
-      `SELECT COUNT(*)::int AS count FROM usuario WHERE tipo_usuario = $1`,
-      [TIPOS_USUARIO.DUENO]
-    );
-    if (conteo.rows[0].count >= MAX_DUENOS) {
-      return validationError(
-        `Ya existen ${MAX_DUENOS} usuarios dueño, el máximo permitido. Hay que quitarle el rol a alguno antes de agregar otro.`
-      );
+    // Chequeo temprano del límite (configurable, ver /api/usuarios/limites):
+    // evita mandar un código de verificación para una promoción que de todas
+    // formas no se va a poder confirmar. El chequeo que realmente importa
+    // (contra condiciones de carrera) es el del paso de confirmación y el
+    // trigger de la BD.
+    const cupo = await leerCupo(pool, TIPOS_USUARIO.DUENO);
+    if (cupoLleno(cupo)) {
+      return validationError(mensajeLimiteAlcanzado(TIPOS_USUARIO.DUENO, cupo.limite));
     }
 
     const codigo = generarCodigo();

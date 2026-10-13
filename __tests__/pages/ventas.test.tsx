@@ -48,7 +48,6 @@ function setupServerVentas() {
 
 async function llenarFormulario(user: ReturnType<typeof userEvent.setup>) {
   // Espera a que lleguen las opciones (y el resto del form).
-  await screen.findByText("[PROD-001] Leche Entera");
   await screen.findByText("Bodega Central");
 
   // El cliente ya no es un <select>: es un buscador con sugerencias. Al
@@ -57,13 +56,17 @@ async function llenarFormulario(user: ReturnType<typeof userEvent.setup>) {
   await user.click(buscadorCliente);
   await user.click(await screen.findByText("Carlos Ruiz (carlos@email.com)"));
 
+  // El producto tampoco es un <select>: es un buscador que sugiere 5 al azar
+  // al enfocarlo (acá solo hay uno en el catálogo).
+  await user.click(screen.getByRole("textbox", { name: "Producto" }));
+  await user.click(await screen.findByText("Leche Entera"));
+
   const combos = screen.getAllByRole("combobox");
-  // Orden del DOM (ya sin el <select> de cliente): estado de pago, tipo de
-  // entrega, producto, bodega. El tipo de venta ya no es un <select> propio
-  // salvo que se active "Forzar un tipo distinto al del cliente" — se
-  // detecta solo a partir del tipo_cliente del cliente elegido.
-  await user.selectOptions(combos[2], "1"); // producto
-  await user.selectOptions(combos[3], "1"); // bodega
+  // Orden del DOM (ya sin los <select> de cliente, producto y forma de pago,
+  // que son un buscador y botones): tipo de entrega, bodega. El tipo de venta
+  // ya no es un <select> propio salvo que se active "Forzar un tipo distinto
+  // al del cliente" — se detecta solo a partir del tipo_cliente del cliente.
+  await user.selectOptions(combos[1], "1"); // bodega
 
   // La cantidad va en un type="text" + inputMode="decimal" (lo limpia
   // lib/cantidad), no en un spinbutton como el precio de venta.
@@ -288,5 +291,214 @@ describe("VentasPage", () => {
     await user.click(screen.getByRole("button", { name: /Deshacer \(\d+s\)/ }));
 
     expect(await screen.findByText(/Ya pasaron más de 10 minutos/)).toBeInTheDocument();
+  });
+});
+
+describe("VentasPage — cliente nuevo", () => {
+  beforeEach(() => {
+    (useRouter as jest.Mock).mockReturnValue({ replace: mockReplace, push: mockReplace });
+    (usePathname as jest.Mock).mockReturnValue("/ventas");
+  });
+
+  async function abrirFormulario(user: ReturnType<typeof userEvent.setup>) {
+    await screen.findByPlaceholderText("Buscar cliente por nombre o correo…");
+    await user.click(screen.getByRole("button", { name: "+ Cliente nuevo" }));
+    return {
+      nombre: screen.getByPlaceholderText("Nombre del cliente"),
+      correo: screen.getByPlaceholderText("nombre@correo.com"),
+    };
+  }
+
+  it("requires the correo (and a valid one) before creating the client", async () => {
+    setupServerVentas();
+    const posts: unknown[] = [];
+    server.use(
+      rest.post("/api/clientes", async (req, res, ctx) => {
+        posts.push(await req.json());
+        return res(ctx.status(201), ctx.json({ cliente: {} }));
+      })
+    );
+    const user = userEvent.setup();
+    render(<VentasPage />);
+    const { nombre, correo } = await abrirFormulario(user);
+
+    await user.type(nombre, "Pedro Nuevo");
+    await user.click(screen.getByRole("button", { name: "Crear cliente" }));
+    expect(await screen.findByText(/correo es obligatorio/i)).toBeInTheDocument();
+
+    await user.type(correo, "no-es-correo");
+    await user.click(screen.getByRole("button", { name: "Crear cliente" }));
+    expect(await screen.findByText(/correo válido/i)).toBeInTheDocument();
+    expect(posts).toHaveLength(0);
+  });
+
+  it("creates the client, selects it and detects its tipo_venta", async () => {
+    setupServerVentas();
+    let body: Record<string, unknown> | null = null;
+    server.use(
+      rest.post("/api/clientes", async (req, res, ctx) => {
+        body = (await req.json()) as Record<string, unknown>;
+        return res(
+          ctx.status(201),
+          ctx.json({
+            cliente: { id_cliente: 9, nombre: "Pedro Nuevo", correo: "pedro@correo.com", tipo_cliente: "MAYORISTA", telefono: null, limite_deuda: null },
+          })
+        );
+      })
+    );
+    const user = userEvent.setup();
+    render(<VentasPage />);
+    const { nombre, correo } = await abrirFormulario(user);
+
+    await user.type(nombre, "Pedro Nuevo");
+    await user.type(correo, "pedro@correo.com");
+    await user.selectOptions(screen.getByDisplayValue("Minorista"), "MAYORISTA");
+    await user.click(screen.getByRole("button", { name: "Crear cliente" }));
+
+    expect(await screen.findByText(/Cliente "Pedro Nuevo" creado y seleccionado/)).toBeInTheDocument();
+    expect(body).toMatchObject({ nombre: "Pedro Nuevo", correo: "pedro@correo.com", tipo_cliente: "MAYORISTA" });
+    expect(screen.getByPlaceholderText("Buscar cliente por nombre o correo…")).toHaveValue("Pedro Nuevo (pedro@correo.com)");
+    expect(await screen.findByText("Mayorista")).toBeInTheDocument();
+    // El formulario se cierra tras crear.
+    expect(screen.queryByPlaceholderText("Nombre del cliente")).not.toBeInTheDocument();
+  });
+
+  it("shows the API error (e.g. duplicated correo) and keeps the form open", async () => {
+    setupServerVentas();
+    server.use(
+      rest.post("/api/clientes", (_req, res, ctx) =>
+        res(ctx.status(400), ctx.json({ error: "Ya existe un cliente registrado con ese correo" }))
+      )
+    );
+    const user = userEvent.setup();
+    render(<VentasPage />);
+    const { nombre, correo } = await abrirFormulario(user);
+    await user.type(nombre, "Carlos Ruiz");
+    await user.type(correo, "carlos@email.com");
+    await user.click(screen.getByRole("button", { name: "Crear cliente" }));
+    expect(await screen.findByText("Ya existe un cliente registrado con ese correo")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Nombre del cliente")).toBeInTheDocument();
+  });
+});
+
+describe("VentasPage — contado o crédito", () => {
+  beforeEach(() => {
+    (useRouter as jest.Mock).mockReturnValue({ replace: mockReplace, push: mockReplace });
+    (usePathname as jest.Mock).mockReturnValue("/ventas");
+  });
+
+  function servidorConVenta(onPost: (body: Record<string, unknown>) => void, respuesta: Record<string, unknown>) {
+    server.use(
+      rest.get("/api/sesion", (_req, res, ctx) => res(ctx.json({ usuario: mockUsuarioEmpleado }))),
+      rest.get("/api/clientes", (_req, res, ctx) => res(ctx.json({ clientes }))),
+      rest.get("/api/productos", (_req, res, ctx) => res(ctx.json({ productos }))),
+      rest.get("/api/bodegas", (_req, res, ctx) => res(ctx.json({ bodegas }))),
+      rest.get("/api/gestion-inventario", (_req, res, ctx) => res(ctx.json({ stock }))),
+      rest.get("/api/ventas", (_req, res, ctx) => res(ctx.json({ ventas: [] }))),
+      rest.post("/api/ventas", async (req, res, ctx) => {
+        onPost((await req.json()) as Record<string, unknown>);
+        return res(ctx.json(respuesta));
+      })
+    );
+  }
+
+  it("is Contado by default: no credit panel and the sale is sent as CONTADO", async () => {
+    let body: Record<string, unknown> = {};
+    servidorConVenta((b) => (body = b), { id_venta: 7, total: 50, condicion_pago: "CONTADO" });
+    const user = userEvent.setup();
+    render(<VentasPage />);
+    await llenarFormulario(user);
+
+    expect(screen.getByRole("button", { name: "Contado" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByText("Condiciones del crédito")).not.toBeInTheDocument();
+    expect(screen.getByText(/El cliente paga el total en este momento/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Registrar venta" }));
+    expect(screen.getByText(/De contado: el cliente paga el total ahora/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Sí, registrar venta" }));
+
+    await waitFor(() => expect(body.condicion_pago).toBe("CONTADO"));
+    expect(body.credito).toBeUndefined();
+    expect(body.estado_pago).toBeUndefined();
+  });
+
+  it("Crédito shows the conditions, previews the payment plan and sends them to the API", async () => {
+    let body: Record<string, unknown> = {};
+    servidorConVenta((b) => (body = b), {
+      id_venta: 8,
+      total: 50,
+      condicion_pago: "CREDITO",
+      credito: { numero_factura: "FACT-000123", fecha_limite_pago: "2026-12-31", bloqueado: false, alerta: { bloqueado: false } },
+    });
+    const user = userEvent.setup();
+    render(<VentasPage />);
+    await llenarFormulario(user); // total Q50.00
+
+    await user.click(screen.getByRole("button", { name: "Crédito" }));
+    expect(screen.getByText("Condiciones del crédito")).toBeInTheDocument();
+    expect(screen.getByText(/Hoy,/)).toBeInTheDocument();
+
+    // Pago único por defecto: una cuota con el total.
+    expect(screen.getByText(/Pago único · vence/)).toBeInTheDocument();
+    expect(screen.getByText("Q50.00", { selector: "span.font-semibold" })).toBeInTheDocument();
+
+    // 2 pagos de Q25 y plazo de 60 días.
+    await user.selectOptions(screen.getByLabelText("Número de pagos"), "2");
+    await user.click(screen.getByRole("button", { name: "60 días" }));
+    expect(screen.getByText(/Pago 1 · vence/)).toBeInTheDocument();
+    expect(screen.getByText(/Pago 2 · vence/)).toBeInTheDocument();
+    expect(screen.getAllByText("Q25.00", { selector: "span.font-semibold" })).toHaveLength(2);
+
+    await user.click(screen.getByRole("button", { name: "Registrar venta" }));
+    expect(screen.getByText(/plazo de 60 días/)).toBeInTheDocument();
+    expect(screen.getByText(/Se generará la factura y una cuenta por cobrar/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Sí, registrar venta" }));
+
+    await waitFor(() => expect(body.condicion_pago).toBe("CREDITO"));
+    expect(body.credito).toMatchObject({ plazo_dias: 60, numero_cuotas: 2 });
+    expect((body.credito as { fecha_factura: string }).fecha_factura).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+
+    // Muestra la factura; el colaborador no ve enlaces a las cuentas por cobrar.
+    expect(await screen.findByText(/Factura FACT-000123/)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Ver cuenta por cobrar" })).not.toBeInTheDocument();
+  });
+
+  it("lets the colaborador force another invoice date", async () => {
+    let body: Record<string, unknown> = {};
+    servidorConVenta((b) => (body = b), { id_venta: 9, total: 50, credito: { numero_factura: "FACT-000124", fecha_limite_pago: "2026-12-31" } });
+    const user = userEvent.setup();
+    render(<VentasPage />);
+    await llenarFormulario(user);
+    await user.click(screen.getByRole("button", { name: "Crédito" }));
+
+    await user.click(screen.getByRole("checkbox", { name: "Elegir otra fecha" }));
+    // Sin elegir la fecha todavía no se puede registrar.
+    expect(screen.getByText("Elige la fecha de la factura")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Registrar venta" })).toBeDisabled();
+
+    const campoFecha = screen.getByLabelText("Fecha de la factura");
+    const ayer = new Date(Date.now() - 86_400_000);
+    const iso = `${ayer.getFullYear()}-${String(ayer.getMonth() + 1).padStart(2, "0")}-${String(ayer.getDate()).padStart(2, "0")}`;
+    await user.type(campoFecha, iso);
+    await user.click(screen.getByRole("button", { name: "Registrar venta" }));
+    await user.click(screen.getByRole("button", { name: "Sí, registrar venta" }));
+
+    await waitFor(() => expect((body.credito as { fecha_factura: string })?.fecha_factura).toBe(iso));
+  });
+
+  it("blocks registering a credit with more payments than days of plazo", async () => {
+    servidorConVenta(() => undefined, {});
+    const user = userEvent.setup();
+    render(<VentasPage />);
+    await llenarFormulario(user);
+    await user.click(screen.getByRole("button", { name: "Crédito" }));
+
+    const plazo = screen.getByLabelText("Plazo en días");
+    await user.clear(plazo);
+    await user.type(plazo, "3");
+    await user.selectOptions(screen.getByLabelText("Número de pagos"), "4");
+
+    expect(screen.getByText("No puede haber más pagos que días de plazo")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Registrar venta" })).toBeDisabled();
   });
 });

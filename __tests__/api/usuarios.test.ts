@@ -90,11 +90,23 @@ describe("GET /api/usuarios", () => {
 
   describe("cupos de dueño", () => {
     /** Simula la base: la lista (posiblemente filtrada) y, aparte, el conteo real por tipo */
-    function mockBase(lista: unknown[], totales: { tipo_usuario: string; total: number }[]) {
+    function mockBase(lista: unknown[], totales: { tipo_usuario: string; total: number }[], limite: number | null = 2, activos = totales.find(t => t.tipo_usuario === "DUENO")?.total ?? 0) {
       mockPool.query.mockImplementation(async (sql: string) =>
-        sql.includes("GROUP BY") ? { rows: totales } : { rows: lista }
+        sql.includes("limite_tipo_usuario") ? { rows: [{ configurado: true, limite, activos }] } : sql.includes("GROUP BY") ? { rows: totales } : { rows: lista }
       );
     }
+
+    it("respeta el límite configurable y cuenta solo dueños activos", async () => {
+      mockBase(mockUsuarios, [{ tipo_usuario: "DUENO", total: 6 }], 5, 3);
+      const res = await GET(createMockRequest("/api/usuarios", { user: testUserDueno }));
+      expect((await res.json()).cupos_dueno).toEqual({ usados: 3, maximo: 5, disponibles: 2 });
+    });
+
+    it("permite cupos sin límite", async () => {
+      mockBase(mockUsuarios, [{ tipo_usuario: "DUENO", total: 6 }], null, 6);
+      const res = await GET(createMockRequest("/api/usuarios", { user: testUserDueno }));
+      expect((await res.json()).cupos_dueno).toEqual({ usados: 6, maximo: null, disponibles: null });
+    });
 
     it("informa cuántos cupos de dueño quedan", async () => {
       mockBase(mockUsuarios, [

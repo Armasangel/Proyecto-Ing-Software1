@@ -45,7 +45,7 @@ export async function verificarLimiteAntesDeDeuda(
   if (estado_cliente === false) {
     return {
       permitido: false,
-      motivo: `${nombre} ya alcanzó su límite de deuda y está bloqueado. No puede adquirir más deuda hasta regularizar su situación.`,
+      motivo: `${nombre} ya alcanzó su límite de crédito y está bloqueado. No puede recibir más crédito hasta regularizar su situación.`,
       deuda_pendiente_actual: 0,
       limite_deuda: limite,
     };
@@ -65,9 +65,9 @@ export async function verificarLimiteAntesDeDeuda(
   if (limite !== null && limite > 0 && deudaPendienteActual + montoNuevo >= limite) {
     return {
       permitido: false,
-      motivo: `Esta deuda (Q${montoNuevo.toFixed(2)}) haría que ${nombre} alcance o supere su límite de deuda (Q${limite.toFixed(
+      motivo: `Este crédito (Q${montoNuevo.toFixed(2)}) haría que ${nombre} alcance o supere su límite de crédito (Q${limite.toFixed(
         2
-      )}). Deuda pendiente actual: Q${deudaPendienteActual.toFixed(2)}.`,
+      )}). Saldo por cobrar actual: Q${deudaPendienteActual.toFixed(2)}.`,
       deuda_pendiente_actual: deudaPendienteActual,
       limite_deuda: limite,
     };

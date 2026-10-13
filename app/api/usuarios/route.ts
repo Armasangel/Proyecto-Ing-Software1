@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
-import { isDuenoTipo, MAX_DUENOS, TIPOS_USUARIO } from "@/lib/roles";
+import { isDuenoTipo, TIPOS_USUARIO } from "@/lib/roles";
 import { apiError, unauthorizedError, validationError } from "@/lib/api-error";
 import { checkRateLimit, getClientIp } from "@/lib/api-rate-limit";
+import { leerCupo, respuestaSiLimiteAlcanzado } from "@/lib/limites-usuarios";
 import { validarContrasena } from "@/lib/password-policy";
 import { revocarSesiones } from "@/lib/sesion";
 import { registrarAuditoria, TIPOS_EVENTO } from "@/lib/audit";
@@ -54,9 +55,9 @@ export async function GET(req: NextRequest) {
 
     const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
-    // Los totales por tipo se piden aparte y SIN filtros: los cupos de dueño
-    // dependen de cuántos dueños existen de verdad (el mismo conteo que usa
-    // el proceso de promoción), no de los que quedaron en la lista filtrada.
+    // Los totales del resumen no dependen de los filtros de la tabla.
+    // El cupo se consulta aparte: usa el límite configurable y solo usuarios
+    // activos, igual que la confirmación de promoción.
     const [result, totalesResult] = await Promise.all([
       pool.query(
         `SELECT
@@ -84,12 +85,13 @@ export async function GET(req: NextRequest) {
     for (const fila of totalesResult.rows) {
       if (fila.tipo_usuario in totales_por_tipo) totales_por_tipo[fila.tipo_usuario] = Number(fila.total) || 0;
     }
-    const usados = totales_por_tipo[TIPOS_USUARIO.DUENO];
+    const cupo = await leerCupo(pool, TIPOS_USUARIO.DUENO);
+    const usados = cupo.activos;
 
     return NextResponse.json({
       usuarios: result.rows,
       totales_por_tipo,
-      cupos_dueno: { usados, maximo: MAX_DUENOS, disponibles: Math.max(0, MAX_DUENOS - usados) },
+      cupos_dueno: { usados, maximo: cupo.limite, disponibles: cupo.limite === null ? null : Math.max(0, cupo.limite - usados) },
     });
   } catch (error) {
     return apiError("USUARIOS GET", error);
@@ -143,7 +145,7 @@ export async function PATCH(req: NextRequest) {
       // Volverse DUENO nunca pasa por esta edición "normal" de rol, ni
       // siquiera viniendo de otro dueño: tiene que pasar por el proceso de
       // /api/usuarios/promover-dueno, con código de verificación por correo
-      // y respetando el límite de MAX_DUENOS. Si ya es DUENO no es un
+      // y respetando el límite configurado de dueños. Si ya es DUENO no es un
       // ascenso (es un no-op para este campo), así que lo dejamos pasar.
       if (tipo_usuario === TIPOS_USUARIO.DUENO && actual.rows[0].tipo_usuario !== TIPOS_USUARIO.DUENO) {
         return validationError(
@@ -255,7 +257,8 @@ export async function PATCH(req: NextRequest) {
 
     return NextResponse.json({ usuario: result.rows[0] });
   } catch (error) {
-    return apiError("USUARIOS PATCH", error);
+    // El trigger de la BD rechaza reactivar o cambiar de tipo si se pasa del límite.
+    return respuestaSiLimiteAlcanzado(error) ?? apiError("USUARIOS PATCH", error);
   }
 }
 
@@ -373,6 +376,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ usuario: result.rows[0] }, { status: 201 });
   } catch (error) {
-    return apiError("USUARIOS POST", error);
+    // El trigger de la BD rechaza el alta si se pasa del límite del tipo.
+    return respuestaSiLimiteAlcanzado(error) ?? apiError("USUARIOS POST", error);
   }
 }

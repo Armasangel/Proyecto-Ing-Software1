@@ -5,7 +5,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { isColaboradorTipo, isDuenoTipo, labelRol, staffVariantFromTipo } from "@/lib/roles";
+import { isDuenoTipo, labelRol, staffVariantFromTipo } from "@/lib/roles";
 import { Icon, type IconName } from "@/components/Icon";
 import { VentaToastListener } from "@/components/VentaToastListener";
 
@@ -26,13 +26,12 @@ type NavItem = {
 const NAV: NavItem[] = [
   { href: "/dashboard",        label: "Dashboard",       icon: "dashboard"     },
   { href: "/inventario",       label: "Inventario",      icon: "inventory"     },
-  { href: "/ordenes",          label: "Órdenes",         icon: "ticket"        },
   { href: "/ventas",           label: "Ventas",          icon: "shopping-cart" },
   { href: "/facturacion",      label: "Facturación",     icon: "bill"          },
   { href: "/reportes",         label: "Reportes",        icon: "report"        },
   { href: "/proveedores",      label: "Proveedores",     icon: "hand-truck"    },
   { href: "/historial-ventas", label: "Historial ventas",icon: "distribution"  },
-  { href: "/deudas",           label: "Deudas",          icon: "debt"     },
+  { href: "/cuentas-por-cobrar",           label: "Cuentas por cobrar",          icon: "debt"     },
   { href: "/usuarios",         label: "Usuarios",        icon: "owner"         },
 ];
 
@@ -42,6 +41,8 @@ function isStaffNavActive(
   allHrefs: readonly string[]
 ): boolean {
   if (pathname === href) return true;
+  // Los pedidos de entrega (/ordenes) cuelgan de Ventas en el menú.
+  if (href === "/ventas" && (pathname === "/ordenes" || pathname.startsWith("/ordenes/"))) return true;
   if (href === "/dashboard") return false;
   if (!pathname.startsWith(`${href}/`)) return false;
   return !allHrefs.some(
@@ -85,17 +86,25 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
   const t = THEMES[variant];
 
   const navVisible = NAV.filter((item) => {
-    if (item.href === "/ventas") return isColaboradorTipo(usuario.tipo_usuario);
     if (
+<<<<<<< HEAD
       ["/inventario", "/historial-ventas", "/proveedores", "/deudas", "/usuarios", "/reportes"].includes(
+=======
+      ["/inventario", "/historial-ventas", "/proveedores", "/cuentas-por-cobrar", "/usuarios"].includes(
+>>>>>>> develop
         item.href
       )
     ) {
       return isDuenoTipo(usuario.tipo_usuario);
     }
+<<<<<<< HEAD
     // "/ordenes" y "/facturacion" (y cualquier otra ruta no listada arriba)
     // quedan visibles tanto para dueño como para colaborador, igual que
     // permite la API.
+=======
+    // "/ventas" (y cualquier otra ruta no listada arriba) queda visible
+    // tanto para dueño como para colaborador, igual que permite la API.
+>>>>>>> develop
     return true;
   });
 

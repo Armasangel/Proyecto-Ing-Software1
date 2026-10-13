@@ -27,7 +27,7 @@ export async function PATCH(
   if (limite_deuda !== null && limite_deuda !== undefined && limite_deuda !== "") {
     limiteNum = Number(limite_deuda);
     if (!Number.isFinite(limiteNum) || limiteNum < 0) {
-      return validationError("El límite de deuda debe ser un número mayor o igual a 0");
+      return validationError("El límite de crédito debe ser un número mayor o igual a 0");
     }
   }
 

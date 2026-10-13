@@ -114,21 +114,21 @@ export default function EstadisticasPage() {
       rows.push(["Rotación de inventario", exportData.kpis.inventario.rotacion_inventario]);
       rows.push(["Productos sin movimiento", exportData.kpis.inventario.productos_sin_movimiento]);
       rows.push(["% cartera vencida", `${exportData.kpis.deuda.pct_cartera_vencida}%`]);
-      rows.push(["Tasa de recuperación de deuda", `${exportData.kpis.deuda.tasa_recuperacion}%`]);
+      rows.push(["Tasa de recuperación de cuentas por cobrar", `${exportData.kpis.deuda.tasa_recuperacion}%`]);
       rows.push(["Ventas sin cerrar (sin cobrar/entregar)", exportData.kpis.operacion.ventas_pendientes]);
       rows.push(["Monto de ventas sin cerrar", exportData.kpis.operacion.monto_ventas_pendientes]);
       rows.push(["Pedidos pendientes", exportData.kpis.operacion.pedidos_pendientes]);
       rows.push(["% cancelación de ventas", `${exportData.kpis.operacion.pct_cancelacion}%`]);
       rows.push([]);
 
-      addSection("Deudas y deudores (estado actual)");
-      rows.push(["Deuda pendiente total", exportData.deudas.resumen.deuda_pendiente_total]);
+      addSection("Cuentas por cobrar y deudores (estado actual)");
+      rows.push(["Saldo por cobrar total", exportData.deudas.resumen.deuda_pendiente_total]);
       rows.push(["Deudores activos", exportData.deudas.resumen.cantidad_deudores]);
-      rows.push(["Deudas pendientes", exportData.deudas.resumen.cantidad_deudas_pendientes]);
-      rows.push(["Clientes bloqueados por deuda", exportData.deudas.resumen.clientes_bloqueados]);
-      rows.push(["Deuda promedio por deudor", exportData.deudas.resumen.deuda_promedio_por_deudor]);
+      rows.push(["Cuentas por cobrar pendientes", exportData.deudas.resumen.cantidad_deudas_pendientes]);
+      rows.push(["Clientes bloqueados por límite de crédito", exportData.deudas.resumen.clientes_bloqueados]);
+      rows.push(["Saldo promedio por deudor", exportData.deudas.resumen.deuda_promedio_por_deudor]);
       rows.push([]);
-      rows.push(["Top deudores", "Teléfono", "Deuda pendiente", "Límite", "Estado"]);
+      rows.push(["Top deudores", "Teléfono", "Saldo por cobrar", "Límite", "Estado"]);
       exportData.deudas.top_deudores.forEach((d) =>
         rows.push([
           d.nombre,

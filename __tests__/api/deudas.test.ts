@@ -71,7 +71,7 @@ describe("POST /api/deudas", () => {
     mockVerificar.mockResolvedValue({ permitido: true, motivo: null, deuda_pendiente_actual: 0, limite_deuda: null });
   });
 
-  it("verifica el límite de deuda del cliente antes de crear la deuda", async () => {
+  it("verifica el límite de crédito del cliente antes de crear la cuenta por cobrar", async () => {
     const client = {
       query: jest.fn().mockResolvedValue({ rows: [{ id_deuda: 2 }], rowCount: 1 }),
       release: jest.fn(),

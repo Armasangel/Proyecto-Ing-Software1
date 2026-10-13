@@ -97,7 +97,7 @@ export function ClientesDeudasTab({ data }: { data: EstadisticasData }) {
       </div>
       {hayMas && (
         <div style={{ textAlign: "right" }}>
-          <Link href="/deudas" style={{ color: "var(--accent2)", fontWeight: 600, fontSize: "0.85rem" }}>Ver todas las deudas →</Link>
+          <Link href="/cuentas-por-cobrar" style={{ color: "var(--accent2)", fontWeight: 600, fontSize: "0.85rem" }}>Ver cuentas por cobrar →</Link>
         </div>
       )}
     </div>

@@ -5,6 +5,7 @@ import { StaffShell } from "@/components/StaffShell";
 import { useStaffSession } from "@/hooks/useStaffSession";
 import { CantidadInput } from "@/components/CantidadInput";
 import { matchesQuery, paginar, PaginationBar, type PageSize } from "@/lib/ui-table";
+import { reglaDePago, type ReglaPago } from "@/lib/credito";
 
 type ProductoDeuda = {
   id_producto: number;
@@ -23,6 +24,35 @@ type PagoDeuda = {
   registrado_por: string | null;
 };
 
+// Plan de pagos de una venta a crédito. Los abonos se aplican en orden, así que
+// el estado de cada cuota lo calcula el servidor.
+type CuotaCredito = {
+  numero: number;
+  fecha_vencimiento: string; // AAAA-MM-DD
+  monto: number;
+  pagado: number;
+  saldo: number;
+  estado: "PAGADA" | "PARCIAL" | "PENDIENTE" | "VENCIDA";
+};
+
+const COLOR_CUOTA: Record<CuotaCredito["estado"], string> = {
+  PAGADA: "#52b788",
+  PARCIAL: "#f4a261",
+  PENDIENTE: "var(--muted)",
+  VENCIDA: "#e63946",
+};
+const TEXTO_CUOTA: Record<CuotaCredito["estado"], string> = {
+  PAGADA: "Pagada",
+  PARCIAL: "Pago parcial",
+  PENDIENTE: "Pendiente",
+  VENCIDA: "Vencida",
+};
+
+function fechaCuota(iso: string): string {
+  const [y, m, d] = iso.split("-");
+  return `${d}/${m}/${y}`;
+}
+
 type Deuda = {
   id_deuda: number;
   nombre_deudor: string;
@@ -39,13 +69,12 @@ type Deuda = {
   saldo_pendiente: string;
   porcentaje_cubierto: string;
   pagos: PagoDeuda[];
-};
-
-type Producto = {
-  id_producto: number;
-  nombre_producto: string;
-  precio_unitario: string;
-  unidad_medida: string;
+  // Solo las cuentas que nacen de una venta a crédito tienen factura y plan de pagos.
+  id_venta?: number | null;
+  numero_factura?: string | null;
+  plazo_dias?: number | null;
+  numero_cuotas?: number;
+  cuotas?: CuotaCredito[];
 };
 
 type Cliente = {
@@ -66,11 +95,10 @@ type Alerta = {
   cambioEstado: boolean;
 };
 
-type LineaForm = { id_producto: string; cantidad: string };
 
 const formVacio = {
   id_cliente: "",
-  fecha_inicio: new Date().toISOString().slice(0, 10),
+  monto: "",
   fecha_limite_pago: "",
 };
 
@@ -161,6 +189,7 @@ function SaldoCubierto({ d }: { d: Deuda }) {
 // Formulario inline para registrar un abono contra una deuda específica.
 function FormPago({
   saldo,
+  regla,
   monto,
   setMonto,
   metodo,
@@ -171,6 +200,8 @@ function FormPago({
   onCancelar,
 }: {
   saldo: number;
+  /** Plan de pagos de la cuenta (solo ventas a crédito); null si el abono es libre. */
+  regla: ReglaPago | null;
   monto: string;
   setMonto: (v: string) => void;
   metodo: string;
@@ -186,10 +217,11 @@ function FormPago({
         <label className="text-[0.75rem] text-ink-muted">Monto a abonar (saldo: Q{saldo.toFixed(2)})</label>
         <input
           type="number"
-          min="0.01"
+          min={regla ? regla.minimo : "0.01"}
           step="0.01"
           max={saldo}
           value={monto}
+          readOnly={!!regla?.pagoUnico}
           onChange={(e) => setMonto(e.target.value)}
           placeholder="0.00"
           className="px-[0.6rem] py-[0.4rem] rounded-[10px] border border-line bg-surface w-[130px] text-[0.88rem]"
@@ -207,6 +239,16 @@ function FormPago({
           <option value="TARJETA">Tarjeta</option>
         </select>
       </div>
+      {regla && (
+        <p style={{ flexBasis: "100%", margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>
+          {regla.pagoUnico
+            ? `Pago único: se debe pagar completo (Q${regla.minimo.toFixed(2)}).`
+            : `Pago ${regla.cuota?.numero} de ${regla.totalCuotas}: mínimo Q${regla.minimo.toFixed(
+                2
+              )}. Puedes pagar más y las cuotas siguientes se recalculan con lo que sobre.`}
+        </p>
+      )}
+      {!regla?.pagoUnico && (
       <button
         type="button"
         onClick={() => setMonto(saldo.toFixed(2))}
@@ -214,6 +256,7 @@ function FormPago({
       >
         Abonar todo
       </button>
+      )}
       <button
         type="button"
         onClick={onGuardar}
@@ -236,16 +279,14 @@ function FormPago({
   );
 }
 
-export default function DeudasPage() {
+export default function CuentasPorCobrarPage() {
   const usuario = useStaffSession();
   const [tab, setTab] = useState<"deudas" | "limites" | "notificaciones">("deudas");
   const [vista, setVista] = useState<"acumulado" | "vencimiento">("acumulado");
   const [deudas, setDeudas] = useState<Deuda[]>([]);
-  const [productos, setProductos] = useState<Producto[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [creando, setCreando] = useState(false);
   const [form, setForm] = useState(formVacio);
-  const [lineas, setLineas] = useState<LineaForm[]>([{ id_producto: "", cantidad: "1" }]);
   const [mensaje, setMensaje] = useState("");
   const [error, setError] = useState("");
   const [alertaBloqueo, setAlertaBloqueo] = useState("");
@@ -294,12 +335,6 @@ export default function DeudasPage() {
     setDeudas(data.deudas || []);
   }
 
-  async function cargarProductos() {
-    const res = await fetch("/api/productos");
-    const data = await res.json();
-    setProductos((data.productos || []).filter((p: any) => p.estado_producto));
-  }
-
   async function cargarClientes() {
     const res = await fetch("/api/clientes?todos=1");
     const data = await res.json();
@@ -333,7 +368,6 @@ export default function DeudasPage() {
 
   useEffect(() => {
     cargarDeudas();
-    cargarProductos();
     cargarClientes();
     cargarNotifConfig();
   }, []);
@@ -400,8 +434,8 @@ export default function DeudasPage() {
     if (!alerta) return;
     if (alerta.bloqueado) {
       setAlertaBloqueo(
-        `⚠️ Este cliente alcanzó su límite de deuda (Q${alerta.limite_deuda?.toFixed(2)}). ` +
-          `Deuda pendiente: Q${alerta.deuda_pendiente.toFixed(2)}. Ya no puede comprar ni hacer pedidos.`
+        `⚠️ Este cliente alcanzó su límite de crédito (Q${alerta.limite_deuda?.toFixed(2)}). ` +
+          `Saldo por cobrar: Q${alerta.deuda_pendiente.toFixed(2)}. Ya no puede comprar ni hacer pedidos.`
       );
     } else if (alerta.cambioEstado) {
       setAlertaBloqueo("✓ El cliente volvió a estar por debajo de su límite y puede comprar de nuevo.");
@@ -438,13 +472,13 @@ export default function DeudasPage() {
     const limiteInicial =
       formCliente.limite_deuda === "" ? null : Number(formCliente.limite_deuda);
     if (limiteInicial !== null && (!Number.isFinite(limiteInicial) || limiteInicial < 0)) {
-      setError("El límite de deuda debe ser un número mayor o igual a 0");
+      setError("El límite de crédito debe ser un número mayor o igual a 0");
       return null;
     }
     const deudaInicial =
       formCliente.deuda_inicial === "" ? null : Number(formCliente.deuda_inicial);
     if (deudaInicial !== null && (!Number.isFinite(deudaInicial) || deudaInicial <= 0)) {
-      setError("La deuda inicial debe ser un número mayor a 0");
+      setError("El saldo inicial debe ser un número mayor a 0");
       return null;
     }
 
@@ -493,7 +527,7 @@ export default function DeudasPage() {
       } else {
         const dataErr = await resDeuda.json().catch(() => ({}));
         setError(
-          `Cliente creado, pero no se pudo registrar la deuda inicial: ${
+          `Cliente creado, pero no se pudo registrar el saldo inicial: ${
             dataErr.error || "error desconocido"
           }`
         );
@@ -620,52 +654,33 @@ export default function DeudasPage() {
 
   if (usuario.tipo_usuario !== "DUENO") {
     return (
-      <StaffShell usuario={usuario} title="Deudas" subtitle="">
+      <StaffShell usuario={usuario} title="Cuentas por cobrar" subtitle="">
         <p className="text-ink-muted">No tienes permiso para ver esta página.</p>
       </StaffShell>
     );
-  }
-
-  function agregarLinea() {
-    setLineas([...lineas, { id_producto: "", cantidad: "1" }]);
-  }
-
-  function quitarLinea(idx: number) {
-    setLineas(lineas.filter((_, i) => i !== idx));
-  }
-
-  function actualizarLinea(idx: number, campo: keyof LineaForm, valor: string) {
-    setLineas(lineas.map((l, i) => (i === idx ? { ...l, [campo]: valor } : l)));
-  }
-
-  function totalPreview(): number {
-    return lineas.reduce((acc, l) => {
-      const prod = productos.find((p) => String(p.id_producto) === l.id_producto);
-      const cantidad = Number(l.cantidad) || 0;
-      if (!prod) return acc;
-      return acc + Number(prod.precio_unitario) * cantidad;
-    }, 0);
   }
 
   function cerrarFormularioDeuda() {
     setCreando(false);
     setForm(formVacio);
     setBusquedaCliente("");
-    setLineas([{ id_producto: "", cantidad: "1" }]);
   }
 
+  // Saldo anterior: cliente + monto, sin productos. Es lo que el cliente ya
+  // debía antes de usar el sistema, así que no genera factura ni plan de pagos.
   async function crearDeuda() {
     setError("");
     setAlertaBloqueo("");
 
     if (!clienteSeleccionado) {
-      setError("Selecciona (o crea) el cliente al que se le asigna la deuda.");
+      setError("Selecciona (o crea) el cliente al que se le asigna el saldo anterior.");
       return;
     }
-
-    const productosPayload = lineas
-      .filter((l) => l.id_producto && Number(l.cantidad) > 0)
-      .map((l) => ({ id_producto: Number(l.id_producto), cantidad: Number(l.cantidad) }));
+    const monto = Number(form.monto);
+    if (!Number.isFinite(monto) || monto <= 0) {
+      setError("El saldo anterior debe ser un monto mayor a 0.");
+      return;
+    }
 
     const res = await fetch("/api/deudas", {
       method: "POST",
@@ -673,22 +688,22 @@ export default function DeudasPage() {
       body: JSON.stringify({
         nombre_deudor: clienteSeleccionado.nombre,
         telefono_deudor: clienteSeleccionado.telefono,
-        fecha_inicio: form.fecha_inicio,
+        fecha_inicio: new Date().toISOString().slice(0, 10),
         fecha_limite_pago: form.fecha_limite_pago || null,
         id_cliente: clienteSeleccionado.id_cliente,
-        productos: productosPayload,
+        monto_libre: monto,
       }),
     });
 
     if (res.ok) {
       const data = await res.json();
-      setMensaje("Deuda creada.");
+      setMensaje("Saldo anterior registrado.");
       cerrarFormularioDeuda();
       mostrarAlerta(data.alerta);
       cargarDeudas();
     } else {
       const data = await res.json().catch(() => ({}));
-      setError(data.error || "Error al crear la deuda.");
+      setError(data.error || "Error al registrar el saldo anterior.");
     }
   }
 
@@ -702,16 +717,29 @@ export default function DeudasPage() {
       mostrarAlerta(data.alerta);
       cargarDeudas();
     } else {
-      setError("No se pudo cambiar el estado de la deuda.");
+      setError("No se pudo cambiar el estado de la cuenta por cobrar.");
     }
     setCambiandoId(null);
   }
 
+  // Plan de pagos de una cuenta que nació de una venta a crédito (si no, el abono es libre).
+  function reglaDe(d: Deuda): ReglaPago | null {
+    return d.estado_deuda === "PENDIENTE" && d.cuotas && d.cuotas.length > 0 ? reglaDePago(d.cuotas) : null;
+  }
+
   function abrirPago(id_deuda: number) {
+    const d = deudas.find((x) => x.id_deuda === id_deuda);
+    const regla = d ? reglaDe(d) : null;
     setPagandoId(id_deuda);
-    setMontoPago("");
+    // Con plan de pagos se propone la cuota que toca.
+    setMontoPago(regla ? regla.minimo.toFixed(2) : "");
     setMetodoPago("EFECTIVO");
     setErrorPago("");
+  }
+
+  function reglaDeDeudaId(id_deuda: number): ReglaPago | null {
+    const d = deudas.find((x) => x.id_deuda === id_deuda);
+    return d ? reglaDe(d) : null;
   }
 
   function cerrarPago() {
@@ -723,7 +751,16 @@ export default function DeudasPage() {
   async function registrarPago(id_deuda: number) {
     const monto = Number(montoPago);
     if (!Number.isFinite(monto) || monto <= 0) {
-      setErrorPago("Ingresá un monto válido, mayor a 0.");
+      setErrorPago("Ingresa un monto válido, mayor a 0.");
+      return;
+    }
+    const regla = reglaDeDeudaId(id_deuda);
+    if (regla && Math.round(monto * 100) < Math.round(regla.minimo * 100)) {
+      setErrorPago(
+        regla.pagoUnico
+          ? `Esta cuenta es de pago único: debe pagarse completa (Q${regla.minimo.toFixed(2)}).`
+          : `El pago mínimo es Q${regla.minimo.toFixed(2)} (pago ${regla.cuota?.numero} de ${regla.totalCuotas}).`
+      );
       return;
     }
     setGuardandoPago(true);
@@ -796,7 +833,7 @@ export default function DeudasPage() {
         <div className="flex gap-2 mb-2">
           <div className="flex-1">
             <label className="block mb-1 text-[0.8rem]">
-              Límite de deuda (opcional)
+              Límite de crédito (opcional)
             </label>
             <input
               type="number"
@@ -810,7 +847,7 @@ export default function DeudasPage() {
           </div>
           <div className="flex-1">
             <label className="block mb-1 text-[0.8rem]">
-              Deuda que ya tenía (opcional)
+              Saldo anterior (opcional)
             </label>
             <input
               type="number"
@@ -824,7 +861,7 @@ export default function DeudasPage() {
           </div>
         </div>
         <p className="text-[0.75rem] text-ink-muted -mt-1 mb-2">
-          Si ya te debía algo se registra de una vez como deuda pendiente — y si eso ya supera el
+          Si ya te debía algo se registra de una vez como saldo por cobrar — y si eso ya supera el
           límite que le pongas, queda bloqueado desde ya.
         </p>
         <div className="flex gap-2">
@@ -855,8 +892,8 @@ export default function DeudasPage() {
   return (
     <StaffShell
       usuario={usuario}
-      title="Deudas"
-      subtitle="Registra y controla las deudas pendientes"
+      title="Cuentas por cobrar"
+      subtitle="Registra y controla las cuentas por cobrar pendientes"
     >
       {mensaje && (
         <p className="text-success mb-4 font-semibold">{mensaje}</p>
@@ -873,8 +910,8 @@ export default function DeudasPage() {
       <div className="flex gap-1 mb-6 border-b border-line">
         {(
           [
-            { id: "deudas", label: "Deudas" },
-            { id: "limites", label: "Límites de deuda" },
+            { id: "deudas", label: "Cuentas por cobrar" },
+            { id: "limites", label: "Límites de crédito" },
             { id: "notificaciones", label: "Notificaciones" },
           ] as const
         ).map((t) => (
@@ -896,6 +933,25 @@ export default function DeudasPage() {
 
       {tab === "deudas" && (
         <>
+          <div
+            style={{
+              marginBottom: "1.25rem",
+              padding: "0.8rem 1rem",
+              border: "1px solid var(--border)",
+              borderRadius: 14,
+              display: "flex",
+              alignItems: "center",
+              gap: "1rem",
+              flexWrap: "wrap",
+            }}
+          >
+            <span style={{ flex: 1, minWidth: 240, fontSize: "0.88rem", color: "var(--muted)" }}>
+              Las ventas a crédito se registran desde <strong style={{ color: "var(--text)" }}>Ventas</strong> (en el
+              menú): ahí se elige Crédito, la fecha de la factura, el plazo y los pagos, y se genera la factura y la
+              cuenta por cobrar automáticamente.
+            </span>
+          </div>
+
           {!creando && (
             <button
               onClick={() => {
@@ -905,13 +961,25 @@ export default function DeudasPage() {
               }}
               className="mb-6 px-[1.2rem] py-2 rounded-[14px] bg-success text-white border-none cursor-pointer font-semibold"
             >
-              + Nueva deuda
+              + Saldo anterior (sin venta)
             </button>
           )}
 
           {creando && (
-            <div className="mb-6 p-4 border border-line rounded-[14px] max-w-[600px]">
-              <h3 className="mb-4">Nueva deuda</h3>
+            <div
+              style={{
+                marginBottom: "1.5rem",
+                padding: "1rem",
+                border: "1px solid var(--border)",
+                borderRadius: 14,
+                maxWidth: 600,
+              }}
+            >
+              <h3 style={{ marginBottom: "0.25rem" }}>Saldo anterior (sin venta)</h3>
+              <p style={{ marginBottom: "1rem", fontSize: "0.8rem", color: "var(--muted)" }}>
+                Para registrar lo que un cliente ya debía antes de usar el sistema. Las ventas nuevas a crédito se
+                registran desde Ventas.
+              </p>
 
               <div className="mb-3">
                 <label className="block mb-1 text-[0.85rem]">
@@ -967,7 +1035,7 @@ export default function DeudasPage() {
                   </button>
                 </div>
                 <p className="text-[0.78rem] text-ink-muted mt-1">
-                  Toda deuda queda asociada a un cliente registrado; si supera su límite, se le
+                  Toda cuenta por cobrar queda asociada a un cliente registrado; si supera su límite, se le
                   bloquean compras y pedidos.
                 </p>
 
@@ -981,7 +1049,7 @@ export default function DeudasPage() {
                 {clienteSeleccionado && (
                   <p className="text-[0.82rem] mt-1">
                     {clienteSeleccionado.telefono && <>Tel: {clienteSeleccionado.telefono} · </>}
-                    Deuda pendiente actual: Q{deudaPendienteDe(clienteSeleccionado.id_cliente).toFixed(2)}
+                    Saldo por cobrar actual: Q{deudaPendienteDe(clienteSeleccionado.id_cliente).toFixed(2)}
                     {clienteSeleccionado.limite_deuda && (
                       <> / límite Q{Number(clienteSeleccionado.limite_deuda).toFixed(2)}</>
                     )}
@@ -989,20 +1057,24 @@ export default function DeudasPage() {
                 )}
               </div>
 
-              <div className="flex gap-3 mb-3">
-                <div className="flex-1">
-                  <label className="block mb-1 text-[0.85rem]">
-                    Fecha de inicio
+              <div style={{ display: "flex", gap: "0.75rem", marginBottom: "1rem", flexWrap: "wrap" }}>
+                <div style={{ flex: 1, minWidth: 180 }}>
+                  <label style={{ display: "block", marginBottom: 4, fontSize: "0.85rem" }}>
+                    Saldo anterior (Q) *
                   </label>
                   <input
-                    type="date"
+                    type="number"
+                    min={0.01}
+                    step="0.01"
                     className={`${cls.input} w-full`}
-                    value={form.fecha_inicio}
-                    onChange={(e) => setForm({ ...form, fecha_inicio: e.target.value })}
+                    value={form.monto}
+                    onChange={(e) => setForm({ ...form, monto: e.target.value })}
+                    placeholder="0.00"
+                    aria-label="Saldo anterior"
                   />
                 </div>
-                <div className="flex-1">
-                  <label className="block mb-1 text-[0.85rem]">
+                <div style={{ flex: 1, minWidth: 180 }}>
+                  <label style={{ display: "block", marginBottom: 4, fontSize: "0.85rem" }}>
                     Fecha límite de pago (opcional)
                   </label>
                   <input
@@ -1014,6 +1086,7 @@ export default function DeudasPage() {
                 </div>
               </div>
 
+<<<<<<< HEAD:app/deudas/page.tsx
               <label className="block mb-1 text-[0.85rem]">
                 Productos *
               </label>
@@ -1060,11 +1133,14 @@ export default function DeudasPage() {
               </p>
 
               <div className="flex gap-2">
+=======
+              <div style={{ display: "flex", gap: 8 }}>
+>>>>>>> develop:app/cuentas-por-cobrar/page.tsx
                 <button
                   onClick={crearDeuda}
                   className="px-4 py-[0.4rem] rounded-[14px] bg-success text-white border-none cursor-pointer"
                 >
-                  Guardar deuda
+                  Guardar saldo anterior
                 </button>
                 <button
                   onClick={cerrarFormularioDeuda}
@@ -1091,7 +1167,7 @@ export default function DeudasPage() {
               value={qDeudas}
               onChange={(e) => setQDeudas(e.target.value)}
               placeholder="Buscar por nombre o teléfono…"
-              aria-label="Buscar en deudas"
+              aria-label="Buscar en cuentas por cobrar"
               className={`${cls.input} flex-[1_1_220px] min-w-[200px] w-auto`}
             />
             {vista === "vencimiento" && (
@@ -1124,7 +1200,7 @@ export default function DeudasPage() {
                   <tr className="border-b-2 border-line text-left">
                     <th className={cls.td}>Persona</th>
                     <th className={cls.td}>Estado</th>
-                    <th className={cls.td}>Deuda pendiente acumulada</th>
+                    <th className={cls.td}>Saldo por cobrar acumulado</th>
                     <th className={cls.td}></th>
                   </tr>
                 </thead>
@@ -1232,11 +1308,50 @@ export default function DeudasPage() {
                                       </div>
                                     </td>
                                     </tr>
+                                    {d.cuotas && d.cuotas.length > 0 && (
+                                      <tr>
+                                        <td colSpan={7} style={{ padding: "0 0.4rem 0.8rem" }}>
+                                          <div style={{ fontSize: "0.78rem", color: "var(--muted)", marginBottom: 4 }}>
+                                            {d.numero_factura ? `Factura ${d.numero_factura} · ` : ""}
+                                            Crédito a {d.plazo_dias} días ·{" "}
+                                            {d.cuotas.length === 1 ? "pago único" : `${d.cuotas.length} pagos`}
+                                          </div>
+                                          <table
+                                            aria-label={`Plan de pagos de la cuenta ${d.id_deuda}`}
+                                            style={{ width: "100%", maxWidth: 560, borderCollapse: "collapse", fontSize: "0.78rem" }}
+                                          >
+                                            <thead>
+                                              <tr style={{ color: "var(--muted)", textAlign: "left" }}>
+                                                <th style={{ padding: "0.25rem" }}>Pago</th>
+                                                <th style={{ padding: "0.25rem" }}>Vence</th>
+                                                <th style={{ padding: "0.25rem" }}>Monto</th>
+                                                <th style={{ padding: "0.25rem" }}>Pagado</th>
+                                                <th style={{ padding: "0.25rem" }}>Estado</th>
+                                              </tr>
+                                            </thead>
+                                            <tbody>
+                                              {d.cuotas.map((c) => (
+                                                <tr key={c.numero} style={{ borderTop: "1px solid var(--border)" }}>
+                                                  <td style={{ padding: "0.25rem" }}>{c.numero}</td>
+                                                  <td style={{ padding: "0.25rem" }}>{fechaCuota(c.fecha_vencimiento)}</td>
+                                                  <td style={{ padding: "0.25rem" }}>Q{c.monto.toFixed(2)}</td>
+                                                  <td style={{ padding: "0.25rem" }}>Q{c.pagado.toFixed(2)}</td>
+                                                  <td style={{ padding: "0.25rem", color: COLOR_CUOTA[c.estado], fontWeight: 600 }}>
+                                                    {TEXTO_CUOTA[c.estado]}
+                                                  </td>
+                                                </tr>
+                                              ))}
+                                            </tbody>
+                                          </table>
+                                        </td>
+                                      </tr>
+                                    )}
                                     {pagandoId === d.id_deuda && (
                                       <tr>
                                         <td colSpan={7} className="pt-2 px-[0.4rem] pb-[0.9rem]">
                                           <FormPago
                                             saldo={Number(d.saldo_pendiente)}
+                                            regla={reglaDe(d)}
                                             monto={montoPago}
                                             setMonto={setMontoPago}
                                             metodo={metodoPago}
@@ -1263,7 +1378,7 @@ export default function DeudasPage() {
                       <td colSpan={4} className="p-6 text-center text-ink-muted">
                         {qDeudas.trim() || soloBloqueados
                           ? "Ningún resultado para esa búsqueda o filtro."
-                          : "No hay deudas registradas."}
+                          : "No hay cuentas por cobrar registradas."}
                       </td>
                     </tr>
                   )}
@@ -1342,6 +1457,7 @@ export default function DeudasPage() {
                             <td colSpan={6} className="pt-2 px-3 pb-4">
                               <FormPago
                                 saldo={Number(d.saldo_pendiente)}
+                                regla={reglaDe(d)}
                                 monto={montoPago}
                                 setMonto={setMontoPago}
                                 metodo={metodoPago}
@@ -1360,7 +1476,7 @@ export default function DeudasPage() {
                   {vencimientoPage.slice.length === 0 && (
                     <tr>
                       <td colSpan={6} className="p-6 text-center text-ink-muted">
-                        No hay deudas pendientes.
+                        No hay cuentas por cobrar pendientes.
                       </td>
                     </tr>
                   )}
@@ -1372,7 +1488,7 @@ export default function DeudasPage() {
                 perPage={perPage}
                 onPage={setPage}
                 onPerPage={setPerPage}
-                noun="deudas"
+                noun="cuentas por cobrar"
               />
             </div>
           )}
@@ -1382,9 +1498,9 @@ export default function DeudasPage() {
       {tab === "limites" && (
         <>
           <p className="text-ink-muted mb-4 max-w-[640px]">
-            Define el límite de deuda de cada cliente. Al llegar (o superar) ese monto en deudas
+            Define el límite de deuda de cada cliente. Al llegar (o superar) ese monto en cuentas por cobrar
             pendientes, el cliente queda bloqueado automáticamente para comprar o hacer pedidos —
-            se desbloquea solo cuando su deuda pendiente vuelve a bajar del límite.
+            se desbloquea solo cuando su saldo por cobrar vuelve a bajar del límite.
           </p>
 
           {!creandoCliente && (
@@ -1426,8 +1542,8 @@ export default function DeudasPage() {
                 <tr className="border-b-2 border-line text-left">
                   <th className={cls.td}>Cliente</th>
                   <th className={cls.td}>Estado</th>
-                  <th className={cls.td}>Deuda pendiente</th>
-                  <th className={cls.td}>Límite de deuda (Q)</th>
+                  <th className={cls.td}>Saldo por cobrar</th>
+                  <th className={cls.td}>Límite de crédito (Q)</th>
                   <th className={cls.td}></th>
                 </tr>
               </thead>
@@ -1495,9 +1611,9 @@ export default function DeudasPage() {
 
       {tab === "notificaciones" && (
         <div className="max-w-[560px]">
-          <h3 className="mb-[0.4rem]">Recordatorios automáticos de deuda</h3>
+          <h3 className="mb-[0.4rem]">Recordatorios automáticos de cobro</h3>
           <p className="text-ink-muted text-[0.88rem] leading-[1.6] mb-5">
-            Cuando está activo, el sistema revisa cada hora si algún cliente con deuda pendiente y
+            Cuando está activo, el sistema revisa cada hora si algún cliente con saldo por cobrar y
             correo registrado no ha recibido un recordatorio en los últimos días que configures acá,
             y le manda uno automáticamente por correo.
           </p>
@@ -1545,7 +1661,7 @@ export default function DeudasPage() {
                   </button>
                 </div>
                 <p className="text-ink-muted text-[0.78rem] mt-[0.4rem]">
-                  A cada cliente con deuda pendiente se le vuelve a recordar cuando pasan al menos
+                  A cada cliente con saldo por cobrar se le vuelve a recordar cuando pasan al menos
                   este número de días desde su último recordatorio (o desde nunca, si es la primera vez).
                 </p>
               </div>
