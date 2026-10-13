@@ -5,6 +5,7 @@ import { isStaffTipo } from "@/lib/roles";
 import { apiError, unauthorizedError, validationError } from "@/lib/api-error";
 import { recalcularBloqueoCliente } from "@/lib/deuda-alertas";
 import { getLogger } from "@/lib/logger";
+import { planConPagos, reglaDePago } from "@/lib/credito";
 
 const log = getLogger("api/deudas/[id]/pagos");
 
@@ -74,6 +75,34 @@ export async function POST(
       return validationError(
         `El pago (Q${montoNum.toFixed(2)}) es mayor al saldo pendiente (Q${saldoActual.toFixed(2)}).`
       );
+    }
+
+    // Cuentas que nacen de una venta a crédito: el abono respeta el plan de
+    // pagos. Pago único = solo el saldo completo; varios pagos = como mínimo la
+    // cuota que toca (se puede pagar más y las siguientes se recalculan).
+    if (deuda.id_venta) {
+      const cuotasRes = await client.query(
+        `SELECT numero, TO_CHAR(fecha_vencimiento, 'YYYY-MM-DD') AS fecha_vencimiento, monto
+           FROM cuota_credito WHERE id_deuda = $1 ORDER BY numero`,
+        [id_deuda]
+      );
+      if (cuotasRes.rowCount) {
+        const pagosPrevios = await client.query(
+          `SELECT monto FROM pago_deuda WHERE id_deuda = $1 ORDER BY fecha_pago, id_pago`,
+          [id_deuda]
+        );
+        const regla = reglaDePago(
+          planConPagos(cuotasRes.rows, pagosPrevios.rows.map((r: { monto: string }) => r.monto), "9999-12-31")
+        );
+        if (Math.round(montoNum * 100) < Math.round(regla.minimo * 100)) {
+          await client.query("ROLLBACK");
+          return validationError(
+            regla.pagoUnico
+              ? `Esta cuenta es de pago único: debe pagarse completa (Q${regla.minimo.toFixed(2)}).`
+              : `El pago mínimo es Q${regla.minimo.toFixed(2)} (pago ${regla.cuota?.numero} de ${regla.totalCuotas}). Puedes pagar más y las cuotas siguientes se recalculan.`
+          );
+        }
+      }
     }
 
     const pagoRes = await client.query(

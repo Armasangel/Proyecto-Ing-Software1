@@ -96,32 +96,94 @@ export function generarCuotas(fechaFacturaISO: string, plazoDias: number, numero
 }
 
 /**
- * Aplica lo abonado, en orden, a las cuotas y calcula el estado de cada una.
+ * Plan de pagos "vivo": parte del plan original y le aplica los pagos hechos,
+ * en orden. Reglas:
+ *   - Cada pago cubre la cuota que toca. Si es igual o mayor al monto de esa
+ *     cuota, la cuota queda pagada y lo que sobró (o la diferencia) se
+ *     descuenta del saldo: las cuotas que faltan se vuelven a calcular
+ *     repartiendo el saldo restante de forma pareja.
+ *   - Pagar de más adelanta el plan: si el saldo restante es 0, las cuotas que
+ *     faltaban quedan cubiertas.
+ *   - Un pago menor a la cuota (solo posible en datos anteriores a esta regla)
+ *     queda como pago parcial de esa cuota, sin recalcular las demás.
  * `hoyISO` se recibe como parámetro para poder probarlo.
  */
-export function asignarPagosACuotas(
+export function planConPagos(
   cuotas: Array<{ numero: number; fecha_vencimiento: string; monto: number | string }>,
-  totalPagado: number | string,
+  pagos: Array<number | string>,
   hoyISO: string
 ): CuotaConEstado[] {
-  let restante = Math.round(Number(totalPagado) * 100);
-  return [...cuotas]
-    .sort((a, b) => a.numero - b.numero)
-    .map((c) => {
-      const montoCent = Math.round(Number(c.monto) * 100);
-      const aplicado = Math.max(0, Math.min(montoCent, restante));
-      restante -= aplicado;
-      const saldoCent = montoCent - aplicado;
-      const vencida = c.fecha_vencimiento < hoyISO;
-      const estado: EstadoCuota =
-        saldoCent <= 0 ? "PAGADA" : vencida ? "VENCIDA" : aplicado > 0 ? "PARCIAL" : "PENDIENTE";
-      return {
-        numero: c.numero,
-        fecha_vencimiento: c.fecha_vencimiento,
-        monto: montoCent / 100,
-        pagado: aplicado / 100,
-        saldo: saldoCent / 100,
-        estado,
-      };
-    });
+  const plan = [...cuotas].sort((a, b) => a.numero - b.numero);
+  const dinamico = plan.map((c) => Math.round(Number(c.monto) * 100)); // monto vigente de cada cuota
+  const pagado = plan.map(() => 0);
+  const total = dinamico.reduce((acc, m) => acc + m, 0);
+  let acumulado = 0;
+
+  for (const pago of pagos) {
+    const centavos = Math.round(Number(pago) * 100);
+    if (!(centavos > 0)) continue;
+    const i = plan.findIndex((_, k) => pagado[k] < dinamico[k]);
+    if (i === -1) break; // ya no hay cuotas por cubrir
+    const falta = dinamico[i] - pagado[i];
+    pagado[i] += centavos;
+    acumulado += centavos;
+
+    if (centavos >= falta) {
+      // Cuota cubierta: lo que falta pagar se reparte entre las cuotas siguientes.
+      const restante = Math.max(0, total - acumulado);
+      const siguientes = plan.map((_, k) => k).filter((k) => k > i);
+      if (siguientes.length > 0) {
+        const base = Math.floor(restante / siguientes.length);
+        siguientes.forEach((k, j) => {
+          dinamico[k] = j === siguientes.length - 1 ? restante - base * (siguientes.length - 1) : base;
+        });
+      }
+    }
+  }
+
+  return plan.map((c, k) => {
+    const saldo = Math.max(0, dinamico[k] - pagado[k]);
+    const vencida = c.fecha_vencimiento < hoyISO;
+    const estado: EstadoCuota = saldo === 0 ? "PAGADA" : vencida ? "VENCIDA" : pagado[k] > 0 ? "PARCIAL" : "PENDIENTE";
+    return {
+      numero: c.numero,
+      fecha_vencimiento: c.fecha_vencimiento,
+      monto: dinamico[k] / 100,
+      pagado: pagado[k] / 100,
+      saldo: saldo / 100,
+      estado,
+    };
+  });
+}
+
+export type ReglaPago = {
+  /** Menor monto aceptado en este momento. */
+  minimo: number;
+  /** Mayor monto aceptado (todo el saldo restante). */
+  maximo: number;
+  /** Cuota que se está pagando (null si ya no queda ninguna). */
+  cuota: CuotaConEstado | null;
+  totalCuotas: number;
+  /** true si la cuenta es de pago único: solo se acepta el saldo completo. */
+  pagoUnico: boolean;
+};
+
+/**
+ * Qué monto se puede abonar ahora a una cuenta con plan de pagos:
+ *   - pago único: solo el saldo completo;
+ *   - varios pagos: como mínimo lo que falta de la cuota actual (se puede pagar
+ *     más, hasta el saldo total).
+ */
+export function reglaDePago(plan: CuotaConEstado[]): ReglaPago {
+  const cuota = plan.find((c) => c.saldo > 0) ?? null;
+  const maximoCent = plan.reduce((acc, c) => acc + Math.round(c.saldo * 100), 0);
+  const pagoUnico = plan.length === 1;
+  const minimoCent = !cuota ? 0 : pagoUnico ? maximoCent : Math.round(cuota.saldo * 100);
+  return {
+    minimo: minimoCent / 100,
+    maximo: maximoCent / 100,
+    cuota,
+    totalCuotas: plan.length,
+    pagoUnico,
+  };
 }

@@ -241,10 +241,11 @@ describe("CuentasPorCobrarPage — crédito desde Ventas", () => {
       ],
     });
 
-  it("is named Cuentas por cobrar and points to Ventas to register credit sales", async () => {
+  it("is named Cuentas por cobrar and tells that credit sales are registered from Ventas", async () => {
     setupServerDeudas([]);
     render(<CuentasPorCobrarPage />);
-    expect(await screen.findByRole("link", { name: "Registrar venta a crédito" })).toHaveAttribute("href", "/ventas");
+    expect(await screen.findByText(/Las ventas a crédito se registran desde/)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Registrar venta a crédito" })).not.toBeInTheDocument();
     expect(screen.getAllByText("Cuentas por cobrar").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Límites de crédito" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "+ Saldo anterior (sin venta)" })).toBeInTheDocument();
@@ -289,5 +290,125 @@ describe("CuentasPorCobrarPage — crédito desde Ventas", () => {
     await user.click(await screen.findByRole("button", { name: "Detalle" }));
     await screen.findByText("pendiente · 25%");
     expect(screen.queryByRole("table", { name: /Plan de pagos/ })).not.toBeInTheDocument();
+  });
+});
+
+describe("CuentasPorCobrarPage — abonos según el plan de pagos", () => {
+  beforeEach(() => {
+    (useRouter as jest.Mock).mockReturnValue({ replace: mockReplace });
+    (usePathname as jest.Mock).mockReturnValue("/cuentas-por-cobrar");
+  });
+
+  const cuenta = (cuotas: unknown[], extra: Record<string, unknown> = {}) =>
+    deudaBase({
+      id_venta: 5,
+      plazo_dias: 30,
+      numero_cuotas: cuotas.length,
+      total_pagado: "0.00",
+      saldo_pendiente: "300.00",
+      monto_total: "300.00",
+      porcentaje_cubierto: "0",
+      pagos: [],
+      cuotas,
+      ...extra,
+    });
+
+  async function abrirPago(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(await screen.findByRole("button", { name: "Detalle" }));
+    await user.click(await screen.findByRole("button", { name: "Registrar pago" }));
+  }
+
+  it("pago único: the amount is fixed to the full balance and cannot be changed", async () => {
+    setupServerDeudas([
+      cuenta([{ numero: 1, fecha_vencimiento: "2099-12-31", monto: 300, pagado: 0, saldo: 300, estado: "PENDIENTE" }]),
+    ]);
+    const user = userEvent.setup();
+    render(<CuentasPorCobrarPage />);
+    await abrirPago(user);
+
+    expect(screen.getByText(/Pago único: se debe pagar completo \(Q300\.00\)/)).toBeInTheDocument();
+    const monto = screen.getByPlaceholderText("0.00");
+    expect(monto).toHaveValue(300);
+    expect(monto).toHaveAttribute("readonly");
+    expect(screen.queryByText("Abonar todo")).not.toBeInTheDocument();
+  });
+
+  it("several pagos: suggests the current cuota as the minimum and allows paying more", async () => {
+    setupServerDeudas([
+      cuenta([
+        { numero: 1, fecha_vencimiento: "2099-11-01", monto: 100, pagado: 0, saldo: 100, estado: "PENDIENTE" },
+        { numero: 2, fecha_vencimiento: "2099-11-15", monto: 100, pagado: 0, saldo: 100, estado: "PENDIENTE" },
+        { numero: 3, fecha_vencimiento: "2099-11-30", monto: 100, pagado: 0, saldo: 100, estado: "PENDIENTE" },
+      ]),
+    ]);
+    const user = userEvent.setup();
+    render(<CuentasPorCobrarPage />);
+    await abrirPago(user);
+
+    expect(screen.getByText(/Pago 1 de 3: mínimo Q100\.00/)).toBeInTheDocument();
+    const monto = screen.getByPlaceholderText("0.00");
+    expect(monto).toHaveValue(100); // propone la cuota que toca
+    expect(screen.getByText("Abonar todo")).toBeInTheDocument();
+
+    // Menos que la cuota: se rechaza sin llamar al servidor.
+    await user.clear(monto);
+    await user.type(monto, "40");
+    await user.click(screen.getByRole("button", { name: "Guardar pago" }));
+    expect(await screen.findByText(/El pago mínimo es Q100\.00 \(pago 1 de 3\)/)).toBeInTheDocument();
+  });
+
+  it("an account without a plan (saldo anterior) keeps free abonos", async () => {
+    setupServerDeudas([deudaBase()]);
+    const user = userEvent.setup();
+    render(<CuentasPorCobrarPage />);
+    await abrirPago(user);
+    expect(screen.queryByText(/Pago único/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/mínimo Q/)).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText("0.00")).toHaveValue(null);
+  });
+});
+
+describe("CuentasPorCobrarPage — saldo anterior", () => {
+  beforeEach(() => {
+    (useRouter as jest.Mock).mockReturnValue({ replace: mockReplace });
+    (usePathname as jest.Mock).mockReturnValue("/cuentas-por-cobrar");
+  });
+
+  it("is just client + amount (no products) and posts a monto_libre", async () => {
+    let body: Record<string, unknown> | null = null;
+    setupServerDeudas([]);
+    server.use(
+      rest.post("/api/deudas", async (req, res, ctx) => {
+        body = (await req.json()) as Record<string, unknown>;
+        return res(ctx.status(201), ctx.json({ deuda: { id_deuda: 9 }, alerta: null }));
+      })
+    );
+    const user = userEvent.setup();
+    render(<CuentasPorCobrarPage />);
+
+    await user.click(await screen.findByRole("button", { name: "+ Saldo anterior (sin venta)" }));
+    expect(screen.queryByText("Productos *")).not.toBeInTheDocument();
+    expect(screen.queryByText("+ Agregar producto")).not.toBeInTheDocument();
+
+    await user.type(screen.getByPlaceholderText("Escribe el nombre para buscar…"), "Pedro");
+    await user.click(await screen.findByText("Pedro Díaz"));
+    await user.type(screen.getByLabelText("Saldo anterior"), "350.50");
+    await user.click(screen.getByRole("button", { name: "Guardar saldo anterior" }));
+
+    await waitFor(() => expect(body).not.toBeNull());
+    expect(body).toMatchObject({ id_cliente: 1, nombre_deudor: "Pedro Díaz", monto_libre: 350.5 });
+    expect(body).not.toHaveProperty("productos");
+    expect(await screen.findByText("Saldo anterior registrado.")).toBeInTheDocument();
+  });
+
+  it("requires a positive amount", async () => {
+    setupServerDeudas([]);
+    const user = userEvent.setup();
+    render(<CuentasPorCobrarPage />);
+    await user.click(await screen.findByRole("button", { name: "+ Saldo anterior (sin venta)" }));
+    await user.type(screen.getByPlaceholderText("Escribe el nombre para buscar…"), "Pedro");
+    await user.click(await screen.findByText("Pedro Díaz"));
+    await user.click(screen.getByRole("button", { name: "Guardar saldo anterior" }));
+    expect(await screen.findByText("El saldo anterior debe ser un monto mayor a 0.")).toBeInTheDocument();
   });
 });

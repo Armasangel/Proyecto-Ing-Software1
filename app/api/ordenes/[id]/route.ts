@@ -61,7 +61,7 @@ export async function PATCH(
       await client.query("BEGIN");
 
       const existe = await client.query(
-        `SELECT id_orden, estado FROM orden WHERE id_orden = $1`,
+        `SELECT id_orden, estado, id_venta FROM orden WHERE id_orden = $1`,
         [idOrden]
       );
       if (existe.rowCount === 0) {
@@ -70,6 +70,13 @@ export async function PATCH(
       }
 
       const estadoActual = existe.rows[0].estado as string;
+      if (estado === "CANCELADO" && existe.rows[0].id_venta) {
+        await client.query("ROLLBACK");
+        return NextResponse.json(
+          { error: "Este pedido pertenece a una venta: para cancelarlo, deshaz la venta desde Ventas." },
+          { status: 400 }
+        );
+      }
       if (estadoActual === "CANCELADO" || estadoActual === "ENTREGADO") {
         await client.query("ROLLBACK");
         return NextResponse.json(
@@ -175,7 +182,7 @@ export async function DELETE(
       await client.query("BEGIN");
 
       const existe = await client.query(
-        `SELECT id_orden, estado FROM orden WHERE id_orden = $1`,
+        `SELECT id_orden, estado, id_venta FROM orden WHERE id_orden = $1`,
         [idOrden]
       );
       if (existe.rowCount === 0) {
@@ -184,6 +191,13 @@ export async function DELETE(
       }
 
       const estadoActual = existe.rows[0].estado as string;
+      if (existe.rows[0].id_venta) {
+        await client.query("ROLLBACK");
+        return NextResponse.json(
+          { error: "Este pedido pertenece a una venta: para cancelarlo, deshaz la venta desde Ventas." },
+          { status: 400 }
+        );
+      }
       if (estadoActual === "ENTREGADO") {
         await client.query("ROLLBACK");
         return NextResponse.json(

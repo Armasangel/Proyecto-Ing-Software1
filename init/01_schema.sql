@@ -480,6 +480,8 @@ CREATE TABLE orden (
                         CHECK (estado IN ('PENDIENTE','CONFIRMADO','EN_PREPARACION','ENVIADO','ENTREGADO','CANCELADO')),
     notas           TEXT,
     total           NUMERIC(12,2)   NOT NULL DEFAULT 0,
+    -- migración 08: la orden es el ticket de entrega de una venta a domicilio.
+    id_venta        INT             UNIQUE REFERENCES venta(id_venta),
     CONSTRAINT fk_orden_cliente  FOREIGN KEY (id_cliente) REFERENCES cliente(id_cliente),
     CONSTRAINT fk_orden_usuario  FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario)
 );

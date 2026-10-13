@@ -151,15 +151,50 @@ describeIfDb("Crédito en ventas (integración)", () => {
     // Facturada hace 5 días, vence la 1ª en +15: nada vencido todavía.
     expect(d.cuotas.map((c: { estado: string }) => c.estado)).toEqual(["PENDIENTE", "PENDIENTE"]);
 
+    // Plan: 2 pagos de Q60. Un pago menor a la cuota se rechaza...
+    const corto = await pagar(30);
+    expect(corto.status).toBe(400);
+    expect((await corto.json()).error).toMatch(/pago mínimo es Q60\.00 \(pago 1 de 2\)/);
+
+    // ...y uno MAYOR (Q70) cubre la 1ª cuota y recalcula la 2ª con lo que sobra (Q50).
     expect((await pagar(70)).status).toBe(201);
     d = await cuotasDe();
-    expect(d.cuotas.map((c: { estado: string }) => c.estado)).toEqual(["PAGADA", "PARCIAL"]);
-    expect(d.cuotas[1]).toMatchObject({ pagado: 10, saldo: 50 });
+    expect(d.cuotas.map((c: { estado: string }) => c.estado)).toEqual(["PAGADA", "PENDIENTE"]);
+    expect(d.cuotas[0]).toMatchObject({ pagado: 70, saldo: 0 });
+    expect(d.cuotas[1]).toMatchObject({ monto: 50, pagado: 0, saldo: 50 });
     expect((await pool.query(`SELECT estado_venta FROM venta WHERE id_venta=$1`, [venta.id_venta])).rows[0].estado_venta).toBe("CONFIRMADO");
+
+    // La última cuota ya no admite menos de lo que falta.
+    expect((await pagar(20)).status).toBe(400);
 
     expect((await pagar(50)).status).toBe(201);
     expect((await pool.query(`SELECT estado_deuda FROM deuda WHERE id_deuda=$1`, [idDeuda])).rows[0].estado_deuda).toBe("PAGADA");
     expect((await pool.query(`SELECT estado_venta FROM venta WHERE id_venta=$1`, [venta.id_venta])).rows[0].estado_venta).toBe("PAGADO");
+  });
+
+  it("pago único: solo se acepta el saldo completo", async () => {
+    const res = await vender({ condicion_pago: "CREDITO", credito: { plazo_dias: 30, numero_cuotas: 1 } }, idClienteSinLimite);
+    const { id_venta } = await res.json();
+    const idDeuda = (await pool.query(`SELECT id_deuda FROM deuda WHERE id_venta=$1`, [id_venta])).rows[0].id_deuda;
+    const pagar = (monto: number) =>
+      POST_PAGO(createMockRequest(`/api/deudas/${idDeuda}/pagos`, { method: "POST", user: testUserEmpleado, body: { monto } }), ctx(idDeuda));
+
+    const parcial = await pagar(50);
+    expect(parcial.status).toBe(400);
+    expect((await parcial.json()).error).toMatch(/pago único: debe pagarse completa \(Q120\.00\)/);
+    expect((await pool.query(`SELECT COUNT(*)::int AS n FROM pago_deuda WHERE id_deuda=$1`, [idDeuda])).rows[0].n).toBe(0);
+
+    expect((await pagar(120)).status).toBe(201);
+    expect((await pool.query(`SELECT estado_deuda FROM deuda WHERE id_deuda=$1`, [idDeuda])).rows[0].estado_deuda).toBe("PAGADA");
+  });
+
+  it("varios pagos: se puede adelantar todo el saldo de una vez", async () => {
+    const res = await vender({ condicion_pago: "CREDITO", credito: { plazo_dias: 45, numero_cuotas: 3 } }, idClienteSinLimite);
+    const { id_venta } = await res.json();
+    const idDeuda = (await pool.query(`SELECT id_deuda FROM deuda WHERE id_venta=$1`, [id_venta])).rows[0].id_deuda;
+    const r = await POST_PAGO(createMockRequest(`/api/deudas/${idDeuda}/pagos`, { method: "POST", user: testUserEmpleado, body: { monto: 120 } }), ctx(idDeuda));
+    expect(r.status).toBe(201);
+    expect((await pool.query(`SELECT estado_deuda FROM deuda WHERE id_deuda=$1`, [idDeuda])).rows[0].estado_deuda).toBe("PAGADA");
   });
 
   it("una cuota sin pagar después de su fecha aparece VENCIDA", async () => {
@@ -228,10 +263,11 @@ describeIfDb("Crédito en ventas (integración)", () => {
   });
 
   it("no deja deshacer una venta a crédito que ya tiene abonos", async () => {
-    const res = await vender({ condicion_pago: "CREDITO", credito: { plazo_dias: 15, numero_cuotas: 1 } });
+    const res = await vender({ condicion_pago: "CREDITO", credito: { plazo_dias: 15, numero_cuotas: 2 } });
     const { id_venta } = await res.json();
     const idDeuda = (await pool.query(`SELECT id_deuda FROM deuda WHERE id_venta=$1`, [id_venta])).rows[0].id_deuda;
-    await POST_PAGO(createMockRequest(`/api/deudas/${idDeuda}/pagos`, { method: "POST", user: testUserEmpleado, body: { monto: 10 } }), ctx(idDeuda));
+    const abono = await POST_PAGO(createMockRequest(`/api/deudas/${idDeuda}/pagos`, { method: "POST", user: testUserEmpleado, body: { monto: 60 } }), ctx(idDeuda));
+    expect(abono.status).toBe(201);
 
     const stockAntes = await stock();
     const anular = await POST_ANULAR(createMockRequest(`/api/ventas/${id_venta}/anular`, { method: "POST", user: testUserEmpleado }), ctx(id_venta));

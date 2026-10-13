@@ -63,13 +63,24 @@ describe("StaffShell", () => {
     expect(screen.getByText("Reportes")).toBeInTheDocument();
   });
 
-  it("hides Ventas for DUENO user", () => {
+  it("shows Ventas (unified with the old Órdenes) for the DUENO too", () => {
     render(
       <StaffShell usuario={duenoUser} title="Dashboard">
         <p>Contenido</p>
       </StaffShell>
     );
-    expect(screen.queryByText("Ventas")).not.toBeInTheDocument();
+    expect(screen.getByText("Ventas")).toBeInTheDocument();
+    // La sección "Órdenes" ya no existe en el menú: sus pedidos cuelgan de Ventas.
+    expect(screen.queryByText("Órdenes")).not.toBeInTheDocument();
+  });
+
+  it("does not show Órdenes to the colaborador either", () => {
+    render(
+      <StaffShell usuario={empleadoUser} title="Ventas">
+        <p>Contenido</p>
+      </StaffShell>
+    );
+    expect(screen.queryByText("Órdenes")).not.toBeInTheDocument();
   });
 
   it("shows Ventas for EMPLEADO user and hides dueno-only items", () => {

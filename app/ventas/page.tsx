@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { StaffShell } from "@/components/StaffShell";
 import { useStaffSession } from "@/hooks/useStaffSession";
-import { TIPOS_USUARIO } from "@/lib/roles";
+import { isStaffTipo } from "@/lib/roles";
 import { Icon } from "@/components/Icon";
 import { ProductoAutocompletar } from "@/components/ProductoAutocompletar";
 import Link from "next/link";
@@ -38,11 +38,21 @@ type StockRow = {
   cantidad_disponible: string;
 };
 
+// Presentación de mayoreo de un producto (ej. "Caja de 24" = 24 unidades base).
+type Presentacion = {
+  id_presentacion: number;
+  nombre_presentacion: string;
+  factor_conversion: string;
+};
+
 type LineaVenta = {
   key: string;
   id_producto: string;
   id_bodega: string;
+  // En unidades de la presentación si hay id_presentacion; si no, en unidad base.
   cantidad: string;
+  id_presentacion: string;
+  // Precio por unidad BASE del producto.
   precio_unitario_venta: string;
 };
 
@@ -68,6 +78,8 @@ type VentaListada = {
   total: string;
   fecha_limite_pago: string | null;
   condicion_pago?: string;
+  id_orden?: number | null;
+  estado_pedido?: string | null;
   nombre_cliente: string;
   correo_cliente: string;
   nombre_colaborador: string | null;
@@ -77,6 +89,16 @@ type VentaListada = {
 // Forma de pago de la venta: de contado se paga completa en el momento; a
 // crédito se genera la factura y una cuenta por cobrar con su plan de pagos.
 type CondicionPago = "CONTADO" | "CREDITO";
+
+// Estado del pedido de entrega que genera una venta a domicilio.
+const ESTADOS_PEDIDO: Record<string, string> = {
+  PENDIENTE: "pendiente",
+  CONFIRMADO: "confirmado",
+  EN_PREPARACION: "en preparación",
+  ENVIADO: "enviado",
+  ENTREGADO: "entregado",
+  CANCELADO: "cancelado",
+};
 
 const OPCIONES_PAGOS = [1, 2, 3, 4, 6, 12] as const;
 const PLAZOS_RAPIDOS = [15, 30, 45, 60] as const;
@@ -113,6 +135,7 @@ function nuevaLinea(): LineaVenta {
     id_producto: "",
     id_bodega: "",
     cantidad: "",
+    id_presentacion: "",
     precio_unitario_venta: "",
   };
 }
@@ -167,6 +190,9 @@ export default function VentasPage() {
   const [tipoEntrega, setTipoEntrega] = useState<string>("EN_TIENDA");
   const [direccionEntrega, setDireccionEntrega] = useState("");
   const [lineas, setLineas] = useState<LineaVenta[]>([nuevaLinea()]);
+  // Presentaciones por producto, cargadas bajo demanda al elegir el producto
+  // (undefined = sin cargar, [] = cargadas y sin presentaciones).
+  const [presentacionesPorProducto, setPresentacionesPorProducto] = useState<Record<number, Presentacion[]>>({});
 
   const cargarVentas = useCallback(async () => {
     setLoadingLista(true);
@@ -190,11 +216,8 @@ export default function VentasPage() {
 
   useEffect(() => {
     if (!usuario) return;
-    if (usuario.tipo_usuario === TIPOS_USUARIO.DUENO) {
-      router.replace("/dashboard");
-      return;
-    }
-    if (usuario.tipo_usuario !== TIPOS_USUARIO.EMPLEADO) return;
+    // Ventas es de dueño y colaborador: el dueño también vende (y hace pedidos).
+    if (!isStaffTipo(usuario.tipo_usuario)) return;
     cargarClientes();
     fetch("/api/productos").then((r) => r.json()).then((d) => setProductos(d.productos || []));
     fetch("/api/bodegas").then((r) => r.json()).then((d) => setBodegas(d.bodegas || []));
@@ -212,7 +235,7 @@ export default function VentasPage() {
   // (o desbloquea) a un cliente por deuda mientras tanto, esto refresca la
   // lista al volver — así nunca queda desactualizada.
   useEffect(() => {
-    if (!usuario || usuario.tipo_usuario !== TIPOS_USUARIO.EMPLEADO) return;
+    if (!usuario || !isStaffTipo(usuario.tipo_usuario)) return;
     function onFocus() {
       cargarClientes();
     }
@@ -274,17 +297,38 @@ export default function VentasPage() {
     return row ? Number(row.cantidad_disponible) : 0;
   }, [stock]);
 
+  const cargarPresentacionesSiFalta = useCallback(async (idProducto: number) => {
+    if (!idProducto || presentacionesPorProducto[idProducto] !== undefined) return;
+    try {
+      const r = await fetch(`/api/presentaciones?id_producto=${idProducto}`);
+      const d = await r.json();
+      setPresentacionesPorProducto((prev) => ({ ...prev, [idProducto]: d.presentaciones || [] }));
+    } catch {
+      setPresentacionesPorProducto((prev) => ({ ...prev, [idProducto]: [] }));
+    }
+  }, [presentacionesPorProducto]);
+
+  // Cantidad en unidad base (convierte si la línea viene en una presentación,
+  // ej. 3 "Caja de 24" => 72).
+  function factorDeLinea(ln: LineaVenta): number {
+    if (!ln.id_presentacion) return 1;
+    const lista = presentacionesPorProducto[Number(ln.id_producto)] || [];
+    const pres = lista.find((p) => p.id_presentacion === Number(ln.id_presentacion));
+    return pres ? Number(pres.factor_conversion) || 1 : 1;
+  }
+
   const totalBorrador = useMemo(() => {
     let t = 0;
     for (const ln of lineas) {
-      const q = Number(ln.cantidad);
+      const q = Number(ln.cantidad) * factorDeLinea(ln);
       const pu = Number(ln.precio_unitario_venta);
       if (q > 0 && pu >= 0 && !Number.isNaN(q) && !Number.isNaN(pu)) {
         t += Math.round(q * pu * 100) / 100;
       }
     }
     return Math.round(t * 100) / 100;
-  }, [lineas]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lineas, presentacionesPorProducto]);
 
   // ── Crédito: fecha efectiva de la factura y vista previa del plan de pagos ──
   const fechaFacturaEfectiva = otraFechaFactura && fechaFactura ? fechaFactura : hoyLocalISO();
@@ -303,7 +347,7 @@ export default function VentasPage() {
   }, [condicionPago, errorCredito, totalBorrador, fechaFacturaEfectiva, plazoDias, numeroCuotas]);
 
   if (!usuario) return <p className="p-8 text-ink-muted">Cargando…</p>;
-  if (usuario.tipo_usuario !== TIPOS_USUARIO.EMPLEADO) return <p className="p-8 text-ink-muted">Redirigiendo…</p>;
+  if (!isStaffTipo(usuario.tipo_usuario)) return <p className="p-8 text-ink-muted">Redirigiendo…</p>;
 
   function precioSugerido(p: Producto | undefined): string {
     if (!p) return "";
@@ -320,7 +364,8 @@ export default function VentasPage() {
   function onProductoChange(key: string, idStr: string) {
     const id = Number(idStr);
     const p = productoPorId.get(id);
-    setLineas((prev) => prev.map((ln) => ln.key === key ? { ...ln, id_producto: idStr, precio_unitario_venta: p ? precioSugerido(p) : ln.precio_unitario_venta } : ln));
+    setLineas((prev) => prev.map((ln) => ln.key === key ? { ...ln, id_producto: idStr, id_presentacion: "", precio_unitario_venta: p ? precioSugerido(p) : ln.precio_unitario_venta } : ln));
+    if (id) cargarPresentacionesSiFalta(id);
     setError(null); setOkMsg(null);
   }
 
@@ -442,7 +487,13 @@ export default function VentasPage() {
     try {
       const lineasPayload = lineas
         .filter((ln) => ln.id_producto && ln.id_bodega && ln.cantidad && ln.precio_unitario_venta)
-        .map((ln) => ({ id_producto: Number(ln.id_producto), id_bodega: Number(ln.id_bodega), cantidad: Number(ln.cantidad), precio_unitario_venta: Number(ln.precio_unitario_venta) }));
+        .map((ln) => ({
+          id_producto: Number(ln.id_producto),
+          id_bodega: Number(ln.id_bodega),
+          cantidad: Number(ln.cantidad),
+          id_presentacion: ln.id_presentacion ? Number(ln.id_presentacion) : undefined,
+          precio_unitario_venta: Number(ln.precio_unitario_venta),
+        }));
       const res = await fetch("/api/ventas", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -459,14 +510,14 @@ export default function VentasPage() {
       const data = await res.json();
       if (!res.ok) { setError(data.error || "No se pudo registrar la venta"); return; }
       if (data.credito) {
-        setOkMsg(`Venta #${data.id_venta} a crédito registrada. Total: Q${Number(data.total).toFixed(2)} · Factura ${data.credito.numero_factura}`);
+        setOkMsg(`Venta #${data.id_venta} a crédito registrada. Total: Q${Number(data.total).toFixed(2)} · Factura ${data.credito.numero_factura}${data.id_orden ? ` · Pedido de entrega #${data.id_orden}` : ""}`);
         setCreditoGenerado({
           numero_factura: data.credito.numero_factura,
           fecha_limite_pago: data.credito.fecha_limite_pago,
           bloqueado: !!data.credito.alerta?.bloqueado,
         });
       } else {
-        setOkMsg(`Venta #${data.id_venta} registrada. Total: Q${Number(data.total).toFixed(2)}`);
+        setOkMsg(`Venta #${data.id_venta} registrada. Total: Q${Number(data.total).toFixed(2)}${data.id_orden ? ` · Pedido de entrega #${data.id_orden}` : ""}`);
         setCreditoGenerado(null);
       }
       setVentaDeshacer({ id: data.id_venta, total: Number(data.total) });
@@ -496,8 +547,13 @@ export default function VentasPage() {
   const puedeEnviar = idCliente && lineas.some((ln) => ln.id_producto && ln.id_bodega && ln.cantidad && Number(ln.cantidad) > 0) && (tipoEntrega === "EN_TIENDA" || direccionEntrega.trim().length > 0) && (condicionPago === "CONTADO" || (!errorCredito && totalBorrador > 0));
 
   return (
-    <StaffShell usuario={usuario} title="Ventas" subtitle="Registro de ventas y control de transacciones (colaborador)">
+    <StaffShell usuario={usuario} title="Ventas" subtitle="Registro de ventas, créditos y pedidos de entrega">
       <div className="flex flex-col gap-8">
+        <div className="max-w-[720px] flex justify-end -mb-5">
+          <Link href="/ordenes" className="text-[0.85rem] font-semibold text-market-600 hover:underline">
+            Ver pedidos de entrega →
+          </Link>
+        </div>
         <div className="max-w-[720px] bg-white border border-[var(--border)] rounded-card shadow-warm p-7">
 
           {/* Encabezado del formulario */}
@@ -835,67 +891,115 @@ export default function VentasPage() {
               </div>
             )}
 
-            <div className="mt-2">
-              <div className="font-semibold text-[0.9rem] mb-3 text-ink">Productos</div>
-              <div className="flex flex-col gap-3">
-                {lineas.map((ln) => {
-                  const pSel = ln.id_producto ? productoPorId.get(Number(ln.id_producto)) : undefined;
-                  const disponible = stockDisponible(ln.id_producto, ln.id_bodega);
-                  return (
-                    <div key={ln.key} className="grid gap-2 items-end" style={{ gridTemplateColumns: "1fr 140px 100px 120px auto" }}>
-                      <div className="flex flex-col gap-1.5">
-                        <label className={labelCls}>Producto</label>
-                        <ProductoAutocompletar
-                          productos={productosActivos}
-                          value={ln.id_producto}
-                          onChange={(id) => onProductoChange(ln.key, id)}
-                          className={inputCls}
-                        />
-                      </div>
-                      <div className="flex flex-col gap-1.5">
-                        <label className={labelCls}>Bodega *</label>
-                        <select value={ln.id_bodega} onChange={(e) => { actualizarLinea(ln.key, { id_bodega: e.target.value }); setError(null); setOkMsg(null); }} className={inputCls}>
-                          <option value="">— Bodega —</option>
-                          {bodegas.map((b) => <option key={b.id_bodega} value={b.id_bodega}>{b.nombre_bodega}</option>)}
-                        </select>
-                      </div>
-                      <div className="flex flex-col gap-1.5">
-                        <label className={labelCls}>Cantidad</label>
-                        <input type="number" min="0.001" step="0.001" value={ln.cantidad} onChange={(e) => actualizarLinea(ln.key, { cantidad: e.target.value })} className={inputCls} />
-                      </div>
-                      <div className="flex flex-col gap-1.5">
-                        <label className={labelCls}>P. venta</label>
-                        <input type="number" min="0" step="0.01" value={ln.precio_unitario_venta} onChange={(e) => actualizarLinea(ln.key, { precio_unitario_venta: e.target.value })} className={inputCls} />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setLineas((prev) => prev.length <= 1 ? prev : prev.filter((x) => x.key !== ln.key))}
-                        disabled={lineas.length <= 1}
-                        title="Quitar línea"
-                        className="h-10 w-10 flex items-center justify-center rounded-control border border-[var(--border)] bg-cream/60 text-ink-muted transition-colors disabled:cursor-not-allowed disabled:opacity-50 enabled:hover:bg-achiote-50 enabled:hover:text-achiote-600"
-                      >
-                        <Icon name="close" variant="dark" size={14} />
-                      </button>
-                      {pSel && (
-                        <span className="col-span-full text-[0.78rem] text-ink-muted">
-                          Unidad: {pSel.unidad_medida}
-                          {ln.id_bodega && (
-                            <> · Disponible en bodega: <strong className={disponible > 0 ? "text-market-600" : "text-achiote-600"}>{disponible}</strong></>
-                          )}
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-              <button
-                type="button"
-                onClick={() => setLineas((prev) => [...prev, nuevaLinea()])}
-                className="mt-3 px-3.5 py-2 rounded-control border border-market bg-transparent text-market-600 font-semibold text-[0.88rem] transition-transform active:scale-[0.97] hover:bg-market-50"
-              >
-                + Agregar producto
-              </button>
-            </div>
+<div className="mt-2">
+  <div className="font-semibold text-[0.9rem] mb-3 text-ink">Productos</div>
+  <div className="flex flex-col gap-4">
+    {lineas.map((ln) => {
+      const pSel = ln.id_producto ? productoPorId.get(Number(ln.id_producto)) : undefined;
+      const disponible = stockDisponible(ln.id_producto, ln.id_bodega);
+      const presentaciones = presentacionesPorProducto[Number(ln.id_producto)] || [];
+      return (
+        <div
+          key={ln.key}
+          className="grid gap-x-2 gap-y-3 items-end"
+          style={{ gridTemplateColumns: "minmax(0,1.4fr) minmax(0,0.8fr) minmax(0,1fr) minmax(0,1fr) auto" }}
+        >
+          {/* Fila 1: Producto + quitar */}
+          <div className="flex flex-col gap-1.5" style={{ gridColumn: "1 / span 4", gridRow: 1 }}>
+            <label className={labelCls}>Producto</label>
+            <ProductoAutocompletar
+              productos={productosActivos}
+              value={ln.id_producto}
+              onChange={(id) => onProductoChange(ln.key, id)}
+              className={inputCls}
+            />
+          </div>
+          <button
+            type="button"
+            style={{ gridColumn: 5, gridRow: 1 }}
+            onClick={() => setLineas((prev) => prev.length <= 1 ? prev : prev.filter((x) => x.key !== ln.key))}
+            disabled={lineas.length <= 1}
+            title="Quitar línea"
+            className="h-10 w-10 flex items-center justify-center rounded-control border border-[var(--border)] bg-cream/60 text-ink-muted transition-colors disabled:cursor-not-allowed disabled:opacity-50 enabled:hover:bg-achiote-50 enabled:hover:text-achiote-600"
+          >
+            <Icon name="close" variant="dark" size={14} />
+          </button>
+
+          {/* Fila 2: Bodega, Cantidad, Presentación, Precio */}
+          <div className="flex flex-col gap-1.5" style={{ gridColumn: 1, gridRow: 2 }}>
+            <label className={labelCls}>Bodega *</label>
+            <select
+              value={ln.id_bodega}
+              onChange={(e) => { actualizarLinea(ln.key, { id_bodega: e.target.value }); setError(null); setOkMsg(null); }}
+              className={inputCls}
+            >
+              <option value="">— Bodega —</option>
+              {bodegas.map((b) => <option key={b.id_bodega} value={b.id_bodega}>{b.nombre_bodega}</option>)}
+            </select>
+          </div>
+
+          <div className="flex flex-col gap-1.5" style={{ gridColumn: 2, gridRow: 2 }}>
+            <label className={labelCls}>Cantidad</label>
+            <input
+              type="number" min="0.001" step="0.001"
+              value={ln.cantidad}
+              onChange={(e) => actualizarLinea(ln.key, { cantidad: e.target.value })}
+              className={inputCls}
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5" style={{ gridColumn: 3, gridRow: 2 }}>
+            <label className={labelCls}>Presentación</label>
+            <select
+              value={ln.id_presentacion}
+              onChange={(e) => actualizarLinea(ln.key, { id_presentacion: e.target.value })}
+              className={inputCls}
+              disabled={presentaciones.length === 0}
+              aria-label="Presentación"
+            >
+              <option value="">Unidad</option>
+              {presentaciones.map((pr) => (
+                <option key={pr.id_presentacion} value={pr.id_presentacion}>
+                  {pr.nombre_presentacion} (×{Number(pr.factor_conversion)})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex flex-col gap-1.5" style={{ gridColumn: 4, gridRow: 2 }}>
+            <label className={labelCls}>P. venta</label>
+            <input
+              type="number" min="0" step="0.01"
+              value={ln.precio_unitario_venta}
+              onChange={(e) => actualizarLinea(ln.key, { precio_unitario_venta: e.target.value })}
+              className={inputCls}
+            />
+          </div>
+
+          {/* Fila 3: info */}
+          {(pSel || (ln.id_presentacion && Number(ln.cantidad) > 0)) && (
+            <span className="col-span-full text-[0.78rem] text-ink-muted">
+              {pSel && <>Unidad: {pSel.unidad_medida}</>}
+              {ln.id_bodega && (
+                <> · Disponible en bodega: <strong className={disponible > 0 ? "text-market-600" : "text-achiote-600"}>{disponible}</strong></>
+              )}
+              {ln.id_presentacion && Number(ln.cantidad) > 0 && (
+                <> · = {(Number(ln.cantidad) * factorDeLinea(ln)).toLocaleString("es-GT")} unidades</>
+              )}
+            </span>
+          )}
+        </div>
+      );
+    })}
+  </div>
+  <button
+    type="button"
+    onClick={() => setLineas((prev) => [...prev, nuevaLinea()])}
+    className="mt-3 px-3.5 py-2 rounded-control border border-market bg-transparent text-market-600 font-semibold text-[0.88rem] transition-transform active:scale-[0.97] hover:bg-market-50"
+  >
+    + Agregar producto
+  </button>
+</div>
 
             <div className="flex justify-between items-center mt-2 pt-4 border-t border-[var(--border)]">
               <span className="font-bold text-ink">Total: Q{totalBorrador.toFixed(2)}</span>
@@ -922,8 +1026,7 @@ export default function VentasPage() {
                 {okMsg}
                 {creditoGenerado && (
                   <>
-                    {" "}· vence {formatoFecha(creditoGenerado.fecha_limite_pago)}.{" "}
-                    <Link href="/cuentas-por-cobrar" className="underline font-semibold">Ver cuenta por cobrar</Link>
+                    {" "}· vence {formatoFecha(creditoGenerado.fecha_limite_pago)}.
                     {creditoGenerado.bloqueado && (
                       <span className="block text-achiote-600 font-semibold mt-1">
                         ⚠️ Este cliente alcanzó su límite de crédito y quedó bloqueado para nuevas compras.
@@ -1017,7 +1120,11 @@ export default function VentasPage() {
                         <div className="text-[0.78rem] text-ink-muted">{v.correo_cliente}</div>
                       </td>
                       <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">{v.nombre_colaborador ?? "—"}</td>
-                      <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">{v.condicion_pago === "CREDITO" ? `Crédito · ${v.estado_venta}` : v.estado_venta}</td>
+                      <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">{v.condicion_pago === "CREDITO" ? `Crédito · ${v.estado_venta}` : v.estado_venta}
+                      {v.id_orden && v.estado_pedido && (
+                        <span className="block text-[0.75rem] text-ink-muted">Pedido: {ESTADOS_PEDIDO[v.estado_pedido] ?? v.estado_pedido}</span>
+                      )}
+                    </td>
                       <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">{v.tipo_venta}</td>
                       <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)] text-right font-semibold">Q{Number(v.total).toFixed(2)}</td>
                       <td className="px-3.5 py-2.5 text-[0.82rem] border-b border-[var(--border)] max-w-[320px]">

@@ -4,8 +4,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { StaffShell } from "@/components/StaffShell";
 import { useStaffSession } from "@/hooks/useStaffSession";
 import { matchesQuery, paginar, PaginationBar, type PageSize } from "@/lib/ui-table";
-import { ProductoAutocompletar } from "@/components/ProductoAutocompletar";
-import Link from "next/link";
+import { reglaDePago, type ReglaPago } from "@/lib/credito";
 
 type ProductoDeuda = {
   id_producto: number;
@@ -77,14 +76,6 @@ type Deuda = {
   cuotas?: CuotaCredito[];
 };
 
-type Producto = {
-  id_producto: number;
-  nombre_producto: string;
-  codigo_producto: string;
-  precio_unitario: string;
-  unidad_medida: string;
-};
-
 type Cliente = {
   id_cliente: number;
   nombre: string;
@@ -103,11 +94,10 @@ type Alerta = {
   cambioEstado: boolean;
 };
 
-type LineaForm = { id_producto: string; cantidad: string };
 
 const formVacio = {
   id_cliente: "",
-  fecha_inicio: new Date().toISOString().slice(0, 10),
+  monto: "",
   fecha_limite_pago: "",
 };
 
@@ -209,6 +199,7 @@ function SaldoCubierto({ d }: { d: Deuda }) {
 // Formulario inline para registrar un abono contra una deuda específica.
 function FormPago({
   saldo,
+  regla,
   monto,
   setMonto,
   metodo,
@@ -219,6 +210,8 @@ function FormPago({
   onCancelar,
 }: {
   saldo: number;
+  /** Plan de pagos de la cuenta (solo ventas a crédito); null si el abono es libre. */
+  regla: ReglaPago | null;
   monto: string;
   setMonto: (v: string) => void;
   metodo: string;
@@ -246,10 +239,11 @@ function FormPago({
         <label style={{ fontSize: "0.75rem", color: "var(--muted)" }}>Monto a abonar (saldo: Q{saldo.toFixed(2)})</label>
         <input
           type="number"
-          min="0.01"
+          min={regla ? regla.minimo : "0.01"}
           step="0.01"
           max={saldo}
           value={monto}
+          readOnly={!!regla?.pagoUnico}
           onChange={(e) => setMonto(e.target.value)}
           placeholder="0.00"
           style={{
@@ -280,6 +274,16 @@ function FormPago({
           <option value="TARJETA">Tarjeta</option>
         </select>
       </div>
+      {regla && (
+        <p style={{ flexBasis: "100%", margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>
+          {regla.pagoUnico
+            ? `Pago único: se debe pagar completo (Q${regla.minimo.toFixed(2)}).`
+            : `Pago ${regla.cuota?.numero} de ${regla.totalCuotas}: mínimo Q${regla.minimo.toFixed(
+                2
+              )}. Puedes pagar más y las cuotas siguientes se recalculan con lo que sobre.`}
+        </p>
+      )}
+      {!regla?.pagoUnico && (
       <button
         type="button"
         onClick={() => setMonto(saldo.toFixed(2))}
@@ -295,6 +299,7 @@ function FormPago({
       >
         Abonar todo
       </button>
+      )}
       <button
         type="button"
         onClick={onGuardar}
@@ -340,11 +345,9 @@ export default function CuentasPorCobrarPage() {
   const [tab, setTab] = useState<"deudas" | "limites" | "notificaciones">("deudas");
   const [vista, setVista] = useState<"acumulado" | "vencimiento">("acumulado");
   const [deudas, setDeudas] = useState<Deuda[]>([]);
-  const [productos, setProductos] = useState<Producto[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [creando, setCreando] = useState(false);
   const [form, setForm] = useState(formVacio);
-  const [lineas, setLineas] = useState<LineaForm[]>([{ id_producto: "", cantidad: "1" }]);
   const [mensaje, setMensaje] = useState("");
   const [error, setError] = useState("");
   const [alertaBloqueo, setAlertaBloqueo] = useState("");
@@ -393,12 +396,6 @@ export default function CuentasPorCobrarPage() {
     setDeudas(data.deudas || []);
   }
 
-  async function cargarProductos() {
-    const res = await fetch("/api/productos");
-    const data = await res.json();
-    setProductos((data.productos || []).filter((p: any) => p.estado_producto));
-  }
-
   async function cargarClientes() {
     const res = await fetch("/api/clientes?todos=1");
     const data = await res.json();
@@ -424,7 +421,6 @@ export default function CuentasPorCobrarPage() {
 
   useEffect(() => {
     cargarDeudas();
-    cargarProductos();
     cargarClientes();
     cargarNotifConfig();
   }, []);
@@ -717,46 +713,27 @@ export default function CuentasPorCobrarPage() {
     );
   }
 
-  function agregarLinea() {
-    setLineas([...lineas, { id_producto: "", cantidad: "1" }]);
-  }
-
-  function quitarLinea(idx: number) {
-    setLineas(lineas.filter((_, i) => i !== idx));
-  }
-
-  function actualizarLinea(idx: number, campo: keyof LineaForm, valor: string) {
-    setLineas(lineas.map((l, i) => (i === idx ? { ...l, [campo]: valor } : l)));
-  }
-
-  function totalPreview(): number {
-    return lineas.reduce((acc, l) => {
-      const prod = productos.find((p) => String(p.id_producto) === l.id_producto);
-      const cantidad = Number(l.cantidad) || 0;
-      if (!prod) return acc;
-      return acc + Number(prod.precio_unitario) * cantidad;
-    }, 0);
-  }
-
   function cerrarFormularioDeuda() {
     setCreando(false);
     setForm(formVacio);
     setBusquedaCliente("");
-    setLineas([{ id_producto: "", cantidad: "1" }]);
   }
 
+  // Saldo anterior: cliente + monto, sin productos. Es lo que el cliente ya
+  // debía antes de usar el sistema, así que no genera factura ni plan de pagos.
   async function crearDeuda() {
     setError("");
     setAlertaBloqueo("");
 
     if (!clienteSeleccionado) {
-      setError("Selecciona (o crea) el cliente al que se le asigna la cuenta por cobrar.");
+      setError("Selecciona (o crea) el cliente al que se le asigna el saldo anterior.");
       return;
     }
-
-    const productosPayload = lineas
-      .filter((l) => l.id_producto && Number(l.cantidad) > 0)
-      .map((l) => ({ id_producto: Number(l.id_producto), cantidad: Number(l.cantidad) }));
+    const monto = Number(form.monto);
+    if (!Number.isFinite(monto) || monto <= 0) {
+      setError("El saldo anterior debe ser un monto mayor a 0.");
+      return;
+    }
 
     const res = await fetch("/api/deudas", {
       method: "POST",
@@ -764,22 +741,22 @@ export default function CuentasPorCobrarPage() {
       body: JSON.stringify({
         nombre_deudor: clienteSeleccionado.nombre,
         telefono_deudor: clienteSeleccionado.telefono,
-        fecha_inicio: form.fecha_inicio,
+        fecha_inicio: new Date().toISOString().slice(0, 10),
         fecha_limite_pago: form.fecha_limite_pago || null,
         id_cliente: clienteSeleccionado.id_cliente,
-        productos: productosPayload,
+        monto_libre: monto,
       }),
     });
 
     if (res.ok) {
       const data = await res.json();
-      setMensaje("Cuenta por cobrar creada.");
+      setMensaje("Saldo anterior registrado.");
       cerrarFormularioDeuda();
       mostrarAlerta(data.alerta);
       cargarDeudas();
     } else {
       const data = await res.json().catch(() => ({}));
-      setError(data.error || "Error al crear la cuenta por cobrar.");
+      setError(data.error || "Error al registrar el saldo anterior.");
     }
   }
 
@@ -798,11 +775,24 @@ export default function CuentasPorCobrarPage() {
     setCambiandoId(null);
   }
 
+  // Plan de pagos de una cuenta que nació de una venta a crédito (si no, el abono es libre).
+  function reglaDe(d: Deuda): ReglaPago | null {
+    return d.estado_deuda === "PENDIENTE" && d.cuotas && d.cuotas.length > 0 ? reglaDePago(d.cuotas) : null;
+  }
+
   function abrirPago(id_deuda: number) {
+    const d = deudas.find((x) => x.id_deuda === id_deuda);
+    const regla = d ? reglaDe(d) : null;
     setPagandoId(id_deuda);
-    setMontoPago("");
+    // Con plan de pagos se propone la cuota que toca.
+    setMontoPago(regla ? regla.minimo.toFixed(2) : "");
     setMetodoPago("EFECTIVO");
     setErrorPago("");
+  }
+
+  function reglaDeDeudaId(id_deuda: number): ReglaPago | null {
+    const d = deudas.find((x) => x.id_deuda === id_deuda);
+    return d ? reglaDe(d) : null;
   }
 
   function cerrarPago() {
@@ -814,7 +804,16 @@ export default function CuentasPorCobrarPage() {
   async function registrarPago(id_deuda: number) {
     const monto = Number(montoPago);
     if (!Number.isFinite(monto) || monto <= 0) {
-      setErrorPago("Ingresá un monto válido, mayor a 0.");
+      setErrorPago("Ingresa un monto válido, mayor a 0.");
+      return;
+    }
+    const regla = reglaDeDeudaId(id_deuda);
+    if (regla && Math.round(monto * 100) < Math.round(regla.minimo * 100)) {
+      setErrorPago(
+        regla.pagoUnico
+          ? `Esta cuenta es de pago único: debe pagarse completa (Q${regla.minimo.toFixed(2)}).`
+          : `El pago mínimo es Q${regla.minimo.toFixed(2)} (pago ${regla.cuota?.numero} de ${regla.totalCuotas}).`
+      );
       return;
     }
     setGuardandoPago(true);
@@ -1049,23 +1048,10 @@ export default function CuentasPorCobrarPage() {
             }}
           >
             <span style={{ flex: 1, minWidth: 240, fontSize: "0.88rem", color: "var(--muted)" }}>
-              Las ventas a crédito se registran desde <strong style={{ color: "var(--text)" }}>Ventas</strong>: ahí
-              eliges Crédito, la fecha de la factura, el plazo y los pagos, y se genera la factura y la cuenta por
-              cobrar automáticamente.
+              Las ventas a crédito se registran desde <strong style={{ color: "var(--text)" }}>Ventas</strong> (en el
+              menú): ahí se elige Crédito, la fecha de la factura, el plazo y los pagos, y se genera la factura y la
+              cuenta por cobrar automáticamente.
             </span>
-            <Link
-              href="/ventas"
-              style={{
-                padding: "0.5rem 1.2rem",
-                borderRadius: 14,
-                background: "#52b788",
-                color: "#fff",
-                fontWeight: 600,
-                textDecoration: "none",
-              }}
-            >
-              Registrar venta a crédito
-            </Link>
           </div>
 
           {!creando && (
@@ -1210,19 +1196,23 @@ export default function CuentasPorCobrarPage() {
                 )}
               </div>
 
-              <div style={{ display: "flex", gap: "0.75rem", marginBottom: "0.75rem" }}>
-                <div style={{ flex: 1 }}>
+              <div style={{ display: "flex", gap: "0.75rem", marginBottom: "1rem", flexWrap: "wrap" }}>
+                <div style={{ flex: 1, minWidth: 180 }}>
                   <label style={{ display: "block", marginBottom: 4, fontSize: "0.85rem" }}>
-                    Fecha de inicio
+                    Saldo anterior (Q) *
                   </label>
                   <input
-                    type="date"
+                    type="number"
+                    min={0.01}
+                    step="0.01"
                     style={inputStyle}
-                    value={form.fecha_inicio}
-                    onChange={(e) => setForm({ ...form, fecha_inicio: e.target.value })}
+                    value={form.monto}
+                    onChange={(e) => setForm({ ...form, monto: e.target.value })}
+                    placeholder="0.00"
+                    aria-label="Saldo anterior"
                   />
                 </div>
-                <div style={{ flex: 1 }}>
+                <div style={{ flex: 1, minWidth: 180 }}>
                   <label style={{ display: "block", marginBottom: 4, fontSize: "0.85rem" }}>
                     Fecha límite de pago (opcional)
                   </label>
@@ -1234,63 +1224,6 @@ export default function CuentasPorCobrarPage() {
                   />
                 </div>
               </div>
-
-              <label style={{ display: "block", marginBottom: 4, fontSize: "0.85rem" }}>
-                Productos *
-              </label>
-              {lineas.map((linea, idx) => (
-                <div key={idx} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
-                  <ProductoAutocompletar
-                    productos={productos}
-                    value={linea.id_producto}
-                    onChange={(id) => actualizarLinea(idx, "id_producto", id)}
-                    style={inputStyle}
-                    wrapperStyle={{ flex: 1 }}
-                    detalle={(p) => `(Q${Number(p.precio_unitario).toFixed(2)}/${p.unidad_medida})`}
-                  />
-                  <input
-                    type="number"
-                    min={0.001}
-                    step="1"
-                    style={{ ...inputStyle, width: 100 }}
-                    value={linea.cantidad}
-                    onChange={(e) => actualizarLinea(idx, "cantidad", e.target.value)}
-                  />
-                  {lineas.length > 1 && (
-                    <button
-                      onClick={() => quitarLinea(idx)}
-                      style={{
-                        padding: "0 0.6rem",
-                        borderRadius: 14,
-                        background: "var(--border)",
-                        border: "none",
-                        cursor: "pointer",
-                      }}
-                    >
-                      ✕
-                    </button>
-                  )}
-                </div>
-              ))}
-              <button
-                onClick={agregarLinea}
-                style={{
-                  marginTop: "0.25rem",
-                  marginBottom: "1rem",
-                  padding: "0.3rem 0.8rem",
-                  borderRadius: 14,
-                  background: "transparent",
-                  border: "1px dashed var(--border)",
-                  cursor: "pointer",
-                  fontSize: "0.85rem",
-                }}
-              >
-                + Agregar producto
-              </button>
-
-              <p style={{ fontWeight: 700, marginBottom: "1rem" }}>
-                Total: Q{totalPreview().toFixed(2)}
-              </p>
 
               <div style={{ display: "flex", gap: 8 }}>
                 <button
@@ -1573,6 +1506,7 @@ export default function CuentasPorCobrarPage() {
                                         <td colSpan={7} style={{ padding: "0.5rem 0.4rem 0.9rem" }}>
                                           <FormPago
                                             saldo={Number(d.saldo_pendiente)}
+                                            regla={reglaDe(d)}
                                             monto={montoPago}
                                             setMonto={setMontoPago}
                                             metodo={metodoPago}
@@ -1695,6 +1629,7 @@ export default function CuentasPorCobrarPage() {
                             <td colSpan={6} style={{ padding: "0.5rem 0.75rem 1rem" }}>
                               <FormPago
                                 saldo={Number(d.saldo_pendiente)}
+                                regla={reglaDe(d)}
                                 monto={montoPago}
                                 setMonto={setMontoPago}
                                 metodo={metodoPago}

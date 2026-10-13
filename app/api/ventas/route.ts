@@ -77,6 +77,8 @@ export async function GET(req: NextRequest) {
         v.total,
         v.fecha_limite_pago,
         v.condicion_pago,
+        o.id_orden,
+        o.estado AS estado_pedido,
         uc.nombre AS nombre_cliente,
         uc.correo AS correo_cliente,
         ue.nombre AS nombre_colaborador,
@@ -98,12 +100,13 @@ export async function GET(req: NextRequest) {
       FROM venta v
       JOIN cliente uc ON uc.id_cliente = v.id_cliente
       LEFT JOIN usuario ue ON ue.id_usuario = v.id_empleado
+      LEFT JOIN orden o ON o.id_venta = v.id_venta
       LEFT JOIN detalle_venta dv ON dv.id_venta = v.id_venta
       LEFT JOIN producto p ON p.id_producto = dv.id_producto
       GROUP BY
         v.id_venta, v.id_cliente, v.id_empleado, v.fecha_venta,
         v.estado_venta, v.tipo_venta, v.tipo_entrega, v.direccion_entrega,
-        v.total, v.fecha_limite_pago, v.condicion_pago, uc.nombre, uc.correo, ue.nombre
+        v.total, v.fecha_limite_pago, v.condicion_pago, o.id_orden, o.estado, uc.nombre, uc.correo, ue.nombre
       ORDER BY v.fecha_venta DESC
       LIMIT $1 OFFSET $2
     `, [limit, offset]);
@@ -129,8 +132,12 @@ export async function GET(req: NextRequest) {
 type LineaInput = {
   id_producto: number;
   id_bodega: number;
+  // En unidades de la presentación si id_presentacion viene (ej. 3 "Caja de
+  // 24"); en unidad base si no.
   cantidad: number;
+  // Precio por unidad BASE del producto.
   precio_unitario_venta: number;
+  id_presentacion: number | null;
 };
 
 export async function POST(request: NextRequest) {
@@ -236,7 +243,13 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
-      lineasNorm.push({ id_producto, id_bodega, cantidad, precio_unitario_venta });
+      lineasNorm.push({
+        id_producto,
+        id_bodega,
+        cantidad,
+        precio_unitario_venta,
+        id_presentacion: o.id_presentacion ? Number(o.id_presentacion) : null,
+      });
     }
 
     if (lineasNorm.length === 0) {
@@ -288,7 +301,15 @@ export async function POST(request: NextRequest) {
       }
 
       let total = 0;
-      const prepared: Array<{ id_producto: number; id_bodega: number; cantidad: number; precio: number; subtotal: number }> = [];
+      const prepared: Array<{
+        id_producto: number;
+        id_bodega: number;
+        cantidad: number; // siempre en unidad base
+        precio: number;
+        subtotal: number;
+        id_presentacion: number | null;
+        cantidad_presentacion: number | null;
+      }> = [];
 
       for (const ln of lineasNorm) {
         const prod = await client.query(
@@ -299,12 +320,38 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: `Producto no disponible: id ${ln.id_producto}` }, { status: 400 });
         }
 
+        // Presentación de mayoreo (ej. "Caja de 24"): la cantidad capturada se
+        // convierte a unidad base con su factor; stock, kardex y detalle
+        // siempre trabajan en unidad base.
+        let cantidadBase = ln.cantidad;
+        let cantidadPresentacion: number | null = null;
+        if (ln.id_presentacion) {
+          const pres = await client.query(
+            `SELECT factor_conversion FROM presentacion_producto
+             WHERE id_presentacion = $1 AND id_producto = $2 AND estado_presentacion = TRUE`,
+            [ln.id_presentacion, ln.id_producto]
+          );
+          if (pres.rowCount === 0) {
+            await client.query("ROLLBACK");
+            return NextResponse.json(
+              { error: `Presentación inválida para el producto id ${ln.id_producto}` },
+              { status: 400 }
+            );
+          }
+          cantidadPresentacion = ln.cantidad;
+          cantidadBase = ln.cantidad * Number(pres.rows[0].factor_conversion);
+        }
+
         const subQ = await client.query(
-          `SELECT ROUND(($1::numeric * $2::numeric), 2) AS sub`, [ln.cantidad, ln.precio_unitario_venta]
+          `SELECT ROUND(($1::numeric * $2::numeric), 2) AS sub`, [cantidadBase, ln.precio_unitario_venta]
         );
         const subtotal = Number(subQ.rows[0].sub);
         total += subtotal;
-        prepared.push({ id_producto: ln.id_producto, id_bodega: ln.id_bodega, cantidad: ln.cantidad, precio: ln.precio_unitario_venta, subtotal });
+        prepared.push({
+          id_producto: ln.id_producto, id_bodega: ln.id_bodega, cantidad: cantidadBase,
+          precio: ln.precio_unitario_venta, subtotal,
+          id_presentacion: ln.id_presentacion, cantidad_presentacion: cantidadPresentacion,
+        });
       }
 
       const totalQ = await client.query(`SELECT ROUND($1::numeric, 2) AS t`, [total]);
@@ -389,8 +436,30 @@ export async function POST(request: NextRequest) {
         );
         await client.query(
           `INSERT INTO kardex (id_bodega, id_producto, tipo_movimiento, cantidad, descripcion) VALUES ($1,$2,'SALIDA',$3,$4)`,
-          [p.id_bodega, p.id_producto, p.cantidad, `Venta #${idVenta} (panel colaborador)`]
+          [p.id_bodega, p.id_producto, p.cantidad, `Venta #${idVenta}`]
         );
+      }
+
+      // ── Entrega a domicilio: la venta genera su pedido para bodega ──
+      // La orden es solo el "ticket" que recorre el flujo de preparación
+      // (CONFIRMADO -> EN_PREPARACION -> ENVIADO -> ENTREGADO). La venta ya
+      // descontó el stock y, si es a crédito, genera la cuenta por cobrar.
+      let idOrden: number | null = null;
+      if (tipo_entrega === "DOMICILIO") {
+        const orden = await client.query(
+          `INSERT INTO orden (id_cliente, id_usuario, estado, notas, total, id_venta)
+           VALUES ($1, $2, 'CONFIRMADO', $3, $4, $5) RETURNING id_orden`,
+          [idCliente, usuario.id_usuario, `Entrega a domicilio: ${direccion}`, total, idVenta]
+        );
+        idOrden = orden.rows[0].id_orden as number;
+        for (const p of prepared) {
+          await client.query(
+            `INSERT INTO detalle_orden
+               (id_orden, id_producto, id_bodega, cantidad, precio_unitario, subtotal, id_presentacion, cantidad_presentacion)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+            [idOrden, p.id_producto, p.id_bodega, p.cantidad, p.precio, p.subtotal, p.id_presentacion, p.cantidad_presentacion]
+          );
+        }
       }
 
       // ── Crédito: factura + cuenta por cobrar + plan de cuotas ──
@@ -482,6 +551,7 @@ export async function POST(request: NextRequest) {
         total,
         tipo_venta: tipoVentaFinal,
         condicion_pago: esCredito ? "CREDITO" : "CONTADO",
+        ...(idOrden ? { id_orden: idOrden } : {}),
         ...(creditoCreado ? { credito: creditoCreado } : {}),
       });
     } catch (error) {

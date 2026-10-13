@@ -4,7 +4,7 @@ import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { isStaffTipo, TIPOS_USUARIO } from "@/lib/roles";
 import { apiError, unauthorizedError, validationError } from "@/lib/api-error";
 import { recalcularBloqueoCliente, verificarLimiteAntesDeDeuda } from "@/lib/deuda-alertas";
-import { asignarPagosACuotas } from "@/lib/credito";
+import { planConPagos } from "@/lib/credito";
 import { getLogger } from "@/lib/logger";
 
 const log = getLogger("api/deudas");
@@ -19,6 +19,25 @@ type ProductoLinea = {
 };
 
 // GET /api/deudas — lista todas las deudas con sus productos
+type PagoFila = { id_pago: number; monto: number | string };
+
+// Plan de pagos vivo de una cuenta: los pagos se aplican en orden y las cuotas
+// que faltan se recalculan con lo que quede por pagar. Si la cuenta se marcó
+// como pagada a mano, todas las cuotas quedan cubiertas.
+function planConPagosDeDeuda(
+  cuotasPlan: Array<{ numero: number; fecha_vencimiento: string; monto: number | string }>,
+  pagos: PagoFila[],
+  estadoDeuda: string,
+  hoy: string | undefined
+) {
+  const hoyISO = hoy ?? new Date().toISOString().slice(0, 10);
+  const ordenados = [...pagos].sort((a, b) => a.id_pago - b.id_pago).map((p) => p.monto);
+  const plan = planConPagos(cuotasPlan, ordenados, hoyISO);
+  return estadoDeuda === "PAGADA"
+    ? plan.map((c) => ({ ...c, saldo: 0, estado: "PAGADA" as const }))
+    : plan;
+}
+
 export async function GET(req: NextRequest) {
   const usuario = getUsuarioFromRequest(req);
   if (!usuario || !isStaffTipo(usuario.tipo_usuario)) {
@@ -101,7 +120,7 @@ export async function GET(req: NextRequest) {
     // plan, es decir, nació de una venta a crédito).
     const deudas = result.rows.map(({ cuotas_plan, hoy, ...deuda }) => ({
       ...deuda,
-      cuotas: asignarPagosACuotas(cuotas_plan ?? [], deuda.total_pagado ?? 0, hoy ?? new Date().toISOString().slice(0, 10)),
+      cuotas: planConPagosDeDeuda(cuotas_plan ?? [], deuda.pagos ?? [], deuda.estado_deuda, hoy),
     }));
     return NextResponse.json({ deudas });
   } catch (error) {

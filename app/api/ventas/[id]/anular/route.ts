@@ -119,6 +119,11 @@ export async function POST(
     }
 
     await client.query(`UPDATE venta SET estado_venta = 'CANCELADO' WHERE id_venta = $1`, [id_venta]);
+    // Si era una venta con entrega, su pedido de bodega también se cancela.
+    await client.query(
+      `UPDATE orden SET estado = 'CANCELADO' WHERE id_venta = $1 AND estado <> 'ENTREGADO'`,
+      [id_venta]
+    );
 
     if (deudaRes.rowCount) {
       // deuda_producto y cuota_credito se borran en cascada.

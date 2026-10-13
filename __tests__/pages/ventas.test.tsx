@@ -390,9 +390,9 @@ describe("VentasPage — contado o crédito", () => {
     expect(body.credito).toMatchObject({ plazo_dias: 60, numero_cuotas: 2 });
     expect((body.credito as { fecha_factura: string }).fecha_factura).toMatch(/^\d{4}-\d{2}-\d{2}$/);
 
-    // Muestra la factura y un enlace a la cuenta por cobrar.
+    // Muestra la factura; el colaborador no ve enlaces a las cuentas por cobrar.
     expect(await screen.findByText(/Factura FACT-000123/)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Ver cuenta por cobrar" })).toHaveAttribute("href", "/cuentas-por-cobrar");
+    expect(screen.queryByRole("link", { name: "Ver cuenta por cobrar" })).not.toBeInTheDocument();
   });
 
   it("lets the colaborador force another invoice date", async () => {
