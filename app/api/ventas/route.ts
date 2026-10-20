@@ -17,6 +17,11 @@ import {
   validarCondicionesCredito,
   type Cuota,
 } from "@/lib/credito";
+import {
+  cargarDescuentosAplicables,
+  elegirMejorDescuento,
+  type Descuento,
+} from "@/lib/descuentos";
 
 const log = getLogger("api/ventas");
 
@@ -301,15 +306,28 @@ export async function POST(request: NextRequest) {
       }
 
       let total = 0;
+      let descuentoTotal = 0;
       const prepared: Array<{
         id_producto: number;
         id_bodega: number;
         cantidad: number; // siempre en unidad base
         precio: number;
-        subtotal: number;
+        subtotal: number; // NETO (ya con el descuento restado)
+        descuento_porcentaje: number;
+        descuento_monto: number;
+        id_descuento: number | null;
+        descuento_nombre: string | null;
         id_presentacion: number | null;
         cantidad_presentacion: number | null;
       }> = [];
+
+      // Reglas de descuento activas para este cliente (por cliente o por su
+      // tipo_cliente). Se cargan una sola vez dentro de la transacción.
+      const descuentosAplicables: Descuento[] = await cargarDescuentosAplicables(
+        client,
+        Number(idCliente),
+        tipoClienteDetectado
+      );
 
       for (const ln of lineasNorm) {
         const prod = await client.query(
@@ -345,17 +363,30 @@ export async function POST(request: NextRequest) {
         const subQ = await client.query(
           `SELECT ROUND(($1::numeric * $2::numeric), 2) AS sub`, [cantidadBase, ln.precio_unitario_venta]
         );
-        const subtotal = Number(subQ.rows[0].sub);
-        total += subtotal;
+        const subtotalBruto = Number(subQ.rows[0].sub);
+
+        // Descuento de la línea: evalúa las reglas aplicables y toma la que
+        // más descuente (no se acumulan). El subtotal guardado queda neto.
+        const mejor = elegirMejorDescuento(cantidadBase, subtotalBruto, descuentosAplicables);
+        const descuentoMonto = mejor ? mejor.monto : 0;
+        const subtotalNeto = Math.round((subtotalBruto - descuentoMonto) * 100) / 100;
+
+        total += subtotalNeto;
+        descuentoTotal += descuentoMonto;
         prepared.push({
           id_producto: ln.id_producto, id_bodega: ln.id_bodega, cantidad: cantidadBase,
-          precio: ln.precio_unitario_venta, subtotal,
+          precio: ln.precio_unitario_venta, subtotal: subtotalNeto,
+          descuento_porcentaje: mejor ? mejor.porcentaje : 0,
+          descuento_monto: descuentoMonto,
+          id_descuento: mejor ? mejor.descuento.id_descuento : null,
+          descuento_nombre: mejor ? mejor.descuento.nombre : null,
           id_presentacion: ln.id_presentacion, cantidad_presentacion: cantidadPresentacion,
         });
       }
 
       const totalQ = await client.query(`SELECT ROUND($1::numeric, 2) AS t`, [total]);
       total = Number(totalQ.rows[0].t);
+      descuentoTotal = Math.round(descuentoTotal * 100) / 100;
 
       // ── Crédito: fecha de factura, plan de cuotas y límite del cliente ──
       // Todo se valida ANTES de tocar el stock, para rechazar sin efectos.
@@ -397,12 +428,12 @@ export async function POST(request: NextRequest) {
 
       const insVenta = await client.query(
         `INSERT INTO venta (id_cliente, id_empleado, estado_venta, tipo_venta, tipo_entrega,
-          direccion_entrega, enlinea, total, fecha_limite_pago, condicion_pago, fecha_venta)
-         VALUES ($1, $2, $3, $4, $5, $6, FALSE, $7, $8, $9, COALESCE(($10::date + LOCALTIME)::timestamp, NOW()))
+          direccion_entrega, enlinea, total, fecha_limite_pago, condicion_pago, fecha_venta, descuento_total)
+         VALUES ($1, $2, $3, $4, $5, $6, FALSE, $7, $8, $9, COALESCE(($10::date + LOCALTIME)::timestamp, NOW()), $11)
          RETURNING id_venta`,
         [idCliente, usuario.id_usuario, estado_venta, tipoVentaFinal, tipo_entrega,
          tipo_entrega === "EN_TIENDA" ? null : direccion || null, total, fechaLimite,
-         esCredito ? "CREDITO" : "CONTADO", fechaFactura]
+         esCredito ? "CREDITO" : "CONTADO", fechaFactura, descuentoTotal]
       );
 
       const idVenta = insVenta.rows[0].id_venta as number;
@@ -426,8 +457,11 @@ export async function POST(request: NextRequest) {
         }
 
         await client.query(
-          `INSERT INTO detalle_venta (id_venta, id_producto, id_bodega, cantidad, precio_unitario, subtotal) VALUES ($1,$2,$3,$4,$5,$6)`,
-          [idVenta, p.id_producto, p.id_bodega, p.cantidad, p.precio, p.subtotal]
+          `INSERT INTO detalle_venta (id_venta, id_producto, id_bodega, cantidad, precio_unitario, subtotal,
+                                      descuento_porcentaje, descuento_monto, id_descuento, descuento_nombre)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+          [idVenta, p.id_producto, p.id_bodega, p.cantidad, p.precio, p.subtotal,
+           p.descuento_porcentaje, p.descuento_monto, p.id_descuento, p.descuento_nombre]
         );
         await client.query(
           `UPDATE bodega_producto SET cantidad_disponible = cantidad_disponible - $1, ultima_actualizacion = NOW()
@@ -538,6 +572,7 @@ export async function POST(request: NextRequest) {
       log.info(
         {
           id_venta: idVenta, id_cliente: idCliente, tipo_venta: tipoVentaFinal, forzado: forzarTipoVenta, total,
+          descuento_total: descuentoTotal,
           condicion_pago: esCredito ? "CREDITO" : "CONTADO", id_deuda: creditoCreado?.id_deuda,
           usuario: usuario.id_usuario,
         },
@@ -549,6 +584,7 @@ export async function POST(request: NextRequest) {
           : "Venta registrada correctamente",
         id_venta: idVenta,
         total,
+        descuento_total: descuentoTotal,
         tipo_venta: tipoVentaFinal,
         condicion_pago: esCredito ? "CREDITO" : "CONTADO",
         ...(idOrden ? { id_orden: idOrden } : {}),

@@ -36,6 +36,7 @@ const PROTECTED_PREFIXES = [
   "/facturacion",
   "/catalogo",
   "/proveedores",
+  "/descuentos",
   "/mi-cuenta",
 ];
 
@@ -178,6 +179,8 @@ export const config = {
     "/catalogo/:path*",
     "/proveedores",
     "/proveedores/:path*",
+    "/descuentos",
+    "/descuentos/:path*",
     "/mi-cuenta",
     "/mi-cuenta/:path*",
     "/api",

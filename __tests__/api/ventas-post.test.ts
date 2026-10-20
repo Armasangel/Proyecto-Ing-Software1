@@ -5,6 +5,16 @@ jest.mock("@/lib/db", () => ({
   pool: { query: jest.fn(), connect: jest.fn() },
 }));
 
+// El cálculo de descuentos pega a la base con sus propias consultas. Aquí se
+// mockea la carga para que las cadenas de mockResolvedValueOnce sigan haciendo
+// match con las consultas que hace la ruta. Por defecto no hay descuentos.
+jest.mock("@/lib/descuentos", () => ({
+  ...jest.requireActual("@/lib/descuentos"),
+  cargarDescuentosAplicables: jest.fn(),
+}));
+
+const mockCargarDescuentos = jest.requireMock("@/lib/descuentos").cargarDescuentosAplicables as jest.Mock;
+
 const mockPool = jest.requireMock("@/lib/db").pool as { connect: jest.Mock };
 
 function makeClient() {
@@ -57,7 +67,10 @@ function tipoVentaEnviado(client: ReturnType<typeof makeClient>): string {
 }
 
 describe("POST /api/ventas — detección automática de tipo_venta", () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockCargarDescuentos.mockResolvedValue([]);
+  });
 
   it("returns 403 for a non-staff user", async () => {
     const req = makeReq({});
@@ -121,5 +134,80 @@ describe("POST /api/ventas — detección automática de tipo_venta", () => {
     expect(res.status).toBe(400);
     const data = await res.json();
     expect(data.error).toMatch(/Cliente no encontrado/);
+  });
+});
+
+describe("POST /api/ventas — aplicación de descuentos", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockCargarDescuentos.mockResolvedValue([]);
+  });
+
+  // Igual que encadenarVentaFeliz pero con un subtotal controlado para poder
+  // verificar el descuento por línea.
+  function encadenarVenta(
+    client: ReturnType<typeof makeClient>,
+    opciones: { tipoCliente?: string; subtotalBruto?: number } = {}
+  ) {
+    const { tipoCliente = "MINORISTA", subtotalBruto = 100 } = opciones;
+    client.query
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 }) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ tipo_cliente: tipoCliente }], rowCount: 1 }) // SELECT cliente
+      .mockResolvedValueOnce({ rows: [{ id_bodega: 1 }], rowCount: 1 }) // SELECT bodegas
+      .mockResolvedValueOnce({ rows: [{ id_producto: 1, estado_producto: true }], rowCount: 1 }) // SELECT producto
+      .mockResolvedValueOnce({ rows: [{ sub: subtotalBruto }] }) // subtotal bruto
+      .mockResolvedValueOnce({ rows: [{ t: subtotalBruto * 0.9 }] }) // total redondeado (neto)
+      .mockResolvedValueOnce({ rows: [{ id_venta: 99 }] }) // INSERT venta
+      .mockResolvedValueOnce({ rows: [{ cantidad_disponible: 100 }], rowCount: 1 }) // stock FOR UPDATE
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 }) // INSERT detalle_venta
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 }) // UPDATE bodega_producto
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 }) // INSERT kardex
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 }); // COMMIT
+  }
+
+  const regla = {
+    id_descuento: 7,
+    nombre: "Mayoreo 10%",
+    tipo: "CANTIDAD",
+    tramos: [{ cantidad_desde: 1, porcentaje: 10 }],
+  };
+
+  it("applies the discount and stores the net subtotal per line", async () => {
+    mockCargarDescuentos.mockResolvedValue([regla]);
+    const client = makeClient();
+    // La línea es cantidad 1 × precio 10 = subtotal bruto 100 (mock), 10% = 10.
+    encadenarVenta(client, { subtotalBruto: 100 });
+    const res = await POST(makeReq({}));
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.descuento_total).toBe(10);
+    expect(data.total).toBe(90);
+
+    const detalle = client.query.mock.calls.find((c) =>
+      (c[0] as string).includes("INSERT INTO detalle_venta")
+    );
+    const params = detalle?.[1] as unknown[];
+    // [id_venta, id_producto, id_bodega, cantidad, precio, subtotal, %, monto, id_desc, nombre]
+    expect(params[5]).toBe(90); // subtotal neto
+    expect(params[6]).toBe(10); // descuento_porcentaje
+    expect(params[7]).toBe(10); // descuento_monto
+    expect(params[8]).toBe(7); // id_descuento
+    expect(params[9]).toBe("Mayoreo 10%"); // descuento_nombre
+
+    const venta = client.query.mock.calls.find((c) =>
+      (c[0] as string).includes("INSERT INTO venta")
+    );
+    const vParams = venta?.[1] as unknown[];
+    expect(vParams[6]).toBe(90); // total neto
+    expect(vParams[10]).toBe(10); // descuento_total
+  });
+
+  it("passes the client's tipo_cliente to the discount loader", async () => {
+    const client = makeClient();
+    encadenarVenta(client, { tipoCliente: "MAYORISTA" });
+    await POST(makeReq({}));
+    expect(mockCargarDescuentos).toHaveBeenCalledTimes(1);
+    expect(mockCargarDescuentos.mock.calls[0][1]).toBe(1); // id_cliente
+    expect(mockCargarDescuentos.mock.calls[0][2]).toBe("MAYORISTA");
   });
 });

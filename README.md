@@ -257,6 +257,7 @@ Sobre una base ya inicializada hay que correr las dos:
 ```bash
 psql -U <usuario> -d <basedatos> -f migrations/06_seguridad_credenciales.sql
 psql -U <usuario> -d <basedatos> -f migrations/07_auditoria_credenciales.sql
+psql -U <usuario> -d <basedatos> -f migrations/09_descuentos.sql
 ```
 
 Ambas son idempotentes (se pueden correr más de una vez). Sólo aplican sobre
@@ -477,6 +478,7 @@ una vista propia tras el login (`lib/roles.ts` → `postLoginPath`):
 | Historial de ventas | `/historial-ventas` | ✅ | — | — |
 | Cuentas por cobrar (deudas) | `/cuentas-por-cobrar` | ✅ | — | — |
 | Proveedores | `/proveedores` | ✅ | — | — |
+| Descuentos | `/descuentos` | ✅ | — | — |
 | Usuarios | `/usuarios` | ✅ | — | — |
 | Bitácora de acceso | `/usuarios` (panel) | ✅ | — | — |
 | Pedidos asignados | `/bodega` → Pedidos | — | — | ✅ |
@@ -536,6 +538,12 @@ una vista propia tras el login (`lib/roles.ts` → `postLoginPath`):
 - [x] Historial de ventas con filtros y paginación
 - [x] Gestión de clientes (minorista / mayorista) con límite de deuda y bloqueo automático
 
+### Descuentos
+- [x] Descuentos configurables por el dueño: por porcentaje, por cantidad o por escala de tramos
+- [x] Asignables a un cliente puntual o a un tipo de cliente (MINORISTA / MAYORISTA)
+- [x] Se aplican por línea al registrar la venta (el servidor recalcula; la UI solo previsualiza)
+- [x] Snapshot por línea en el historial (editar o borrar la regla no altera ventas pasadas)
+
 ### Cuentas por cobrar y pedidos
 - [x] Cuentas por cobrar por productos o monto libre, con alertas, límites y bloqueo automático
 - [x] Reglas de pago por condición del cliente, con vista de plan de pagos y seniority de cuotas
@@ -560,6 +568,7 @@ una vista propia tras el login (`lib/roles.ts` → `postLoginPath`):
 │   │   ├── facturacion/      → Facturas
 │   │   ├── deudas/           → Cuentas por cobrar (la API conserva /api/deudas)
 │   │   ├── ordenes/          → Pedidos de entrega
+│   │   ├── descuentos/       → Reglas de descuento y asignaciones (dueño) + aplicables
 │   │   ├── gestion-inventario/ → Kardex, ajustes, transferencias, stock mínimo
 │   │   ├── estadisticas/     → Reportes analíticos
 │   │   ├── clientes/ bodegas/ categorias/ marcas/ proveedores/ precios/
@@ -574,6 +583,7 @@ una vista propia tras el login (`lib/roles.ts` → `postLoginPath`):
 │   ├── cuentas-por-cobrar/   → Cuentas por cobrar y deudores (solo dueño)
 │   ├── ordenes/              → Pedidos de entrega (se crean desde Ventas)
 │   ├── proveedores/          → Gestión de proveedores
+│   ├── descuentos/           → Configuración de descuentos (solo dueño)
 │   ├── reportes/             → Estadísticas y reportes del negocio
 │   ├── usuarios/             → Gestión de usuarios y roles
 │   ├── login/                → Página de inicio de sesión

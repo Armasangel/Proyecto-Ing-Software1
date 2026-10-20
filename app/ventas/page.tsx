@@ -10,6 +10,7 @@ import { CantidadInput } from "@/components/CantidadInput";
 import { ProductoAutocompletar } from "@/components/ProductoAutocompletar";
 import Link from "next/link";
 import { CUOTAS_MAXIMAS, PLAZO_MAXIMO_DIAS, generarCuotas, sumarDias, validarCondicionesCredito } from "@/lib/credito";
+import { elegirMejorDescuento, type Descuento as ReglaDescuento } from "@/lib/descuentos";
 import { etiquetaCliente, filtrarClientesPorTexto } from "@/lib/clientes-busqueda";
 
 type Cliente = {
@@ -195,6 +196,29 @@ export default function VentasPage() {
   // Presentaciones por producto, cargadas bajo demanda al elegir el producto
   // (undefined = sin cargar, [] = cargadas y sin presentaciones).
   const [presentacionesPorProducto, setPresentacionesPorProducto] = useState<Record<number, Presentacion[]>>({});
+  // Reglas de descuento que aplican al cliente elegido. Es SOLO para la vista
+  // previa; el servidor recalcula y aplica el descuento al registrar la venta.
+  const [descuentosAplicables, setDescuentosAplicables] = useState<ReglaDescuento[]>([]);
+
+  // Al cambiar el cliente se recargan las reglas de descuento que le tocan.
+  useEffect(() => {
+    if (!idCliente) {
+      setDescuentosAplicables([]);
+      return;
+    }
+    let cancelado = false;
+    fetch(`/api/descuentos/aplicables?id_cliente=${idCliente}`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => {
+        if (!cancelado) setDescuentosAplicables(d.descuentos || []);
+      })
+      .catch(() => {
+        if (!cancelado) setDescuentosAplicables([]);
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, [idCliente]);
 
   const cargarVentas = useCallback(async () => {
     setLoadingLista(true);
@@ -316,7 +340,33 @@ export default function VentasPage() {
     return pres ? Number(pres.factor_conversion) || 1 : 1;
   }
 
-  const totalBorrador = useMemo(() => {
+  // Descuento de una línea (vista previa). Devuelve el bruto, el monto
+  // descontado, el porcentaje y el neto. El servidor recalcula al registrar.
+  function descuentoDeLinea(ln: LineaVenta): { bruto: number; monto: number; porcentaje: number; neto: number } {
+    const q = Number(ln.cantidad) * factorDeLinea(ln);
+    const pu = Number(ln.precio_unitario_venta);
+    if (!(q > 0) || !(pu >= 0) || Number.isNaN(q) || Number.isNaN(pu)) {
+      return { bruto: 0, monto: 0, porcentaje: 0, neto: 0 };
+    }
+    const bruto = Math.round(q * pu * 100) / 100;
+    const mejor = elegirMejorDescuento(q, bruto, descuentosAplicables);
+    const monto = mejor ? mejor.monto : 0;
+    return {
+      bruto,
+      monto,
+      porcentaje: mejor ? mejor.porcentaje : 0,
+      neto: Math.round((bruto - monto) * 100) / 100,
+    };
+  }
+
+  const descuentoBorrador = useMemo(() => {
+    let d = 0;
+    for (const ln of lineas) d += descuentoDeLinea(ln).monto;
+    return Math.round(d * 100) / 100;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lineas, presentacionesPorProducto, descuentosAplicables]);
+
+  const totalBrutoBorrador = useMemo(() => {
     let t = 0;
     for (const ln of lineas) {
       const q = Number(ln.cantidad) * factorDeLinea(ln);
@@ -328,6 +378,12 @@ export default function VentasPage() {
     return Math.round(t * 100) / 100;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lineas, presentacionesPorProducto]);
+
+  // Total de la venta NETO (con el descuento ya restado).
+  const totalBorrador = useMemo(
+    () => Math.round((totalBrutoBorrador - descuentoBorrador) * 100) / 100,
+    [totalBrutoBorrador, descuentoBorrador]
+  );
 
   // ── Crédito: fecha efectiva de la factura y vista previa del plan de pagos ──
   const fechaFacturaEfectiva = otraFechaFactura && fechaFactura ? fechaFactura : hoyLocalISO();
@@ -976,17 +1032,27 @@ export default function VentasPage() {
           </div>
 
           {/* Fila 3: info */}
-          {(pSel || (ln.id_presentacion && Number(ln.cantidad) > 0)) && (
-            <span className="col-span-full text-[0.78rem] text-ink-muted">
-              {pSel && <>Unidad: {pSel.unidad_medida}</>}
-              {ln.id_bodega && (
-                <> · Disponible en bodega: <strong className={disponible > 0 ? "text-market-600" : "text-achiote-600"}>{disponible}</strong></>
-              )}
-              {ln.id_presentacion && Number(ln.cantidad) > 0 && (
-                <> · = {(Number(ln.cantidad) * factorDeLinea(ln)).toLocaleString("es-GT")} unidades</>
-              )}
-            </span>
-          )}
+          {(() => {
+            const d = descuentoDeLinea(ln);
+            if (!pSel && !(ln.id_presentacion && Number(ln.cantidad) > 0) && d.monto <= 0) return null;
+            return (
+              <span className="col-span-full text-[0.78rem] text-ink-muted">
+                {pSel && <>Unidad: {pSel.unidad_medida}</>}
+                {ln.id_bodega && (
+                  <> · Disponible en bodega: <strong className={disponible > 0 ? "text-market-600" : "text-achiote-600"}>{disponible}</strong></>
+                )}
+                {ln.id_presentacion && Number(ln.cantidad) > 0 && (
+                  <> · = {(Number(ln.cantidad) * factorDeLinea(ln)).toLocaleString("es-GT")} unidades</>
+                )}
+                {d.monto > 0 && (
+                  <>
+                    {" "}· Descuento {d.porcentaje}%: <strong className="text-market-600">−Q{d.monto.toFixed(2)}</strong>
+                    {" "}· Subtotal: <strong className="text-ink">Q{d.neto.toFixed(2)}</strong>
+                  </>
+                )}
+              </span>
+            );
+          })()}
         </div>
       );
     })}
@@ -1001,7 +1067,14 @@ export default function VentasPage() {
 </div>
 
             <div className="flex justify-between items-center mt-2 pt-4 border-t border-[var(--border)]">
-              <span className="font-bold text-ink">Total: Q{totalBorrador.toFixed(2)}</span>
+              <div className="flex flex-col">
+                <span className="font-bold text-ink">Total: Q{totalBorrador.toFixed(2)}</span>
+                {descuentoBorrador > 0 && (
+                  <span className="text-[0.8rem] text-market-600 font-medium">
+                    Subtotal Q{totalBrutoBorrador.toFixed(2)} · Descuento −Q{descuentoBorrador.toFixed(2)}
+                  </span>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={() => setConfirmando(true)}
