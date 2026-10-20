@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { Icon } from "@/components/Icon";
 import { matchesQuery, paginar, PaginationBar, type PageSize } from "@/lib/ui-table";
+import { PresentacionesProducto } from "@/components/inventario-catalogo/PresentacionesProducto";
+import { normalizarUnidad, presentacionesIniciales, validarPresentaciones, type Presentacion } from "@/lib/presentaciones";
 
 const MIS_ITEMS = [
   {label: "editar", icon: "pencil"},
@@ -21,6 +23,7 @@ interface Producto {
   unidad_medida: string;
   estado_producto: boolean;
   caducidad: boolean;
+  fecha_caducidad?: string | null;
   exento_iva: boolean;
 }
 
@@ -39,19 +42,6 @@ interface Proveedor {
   correo_contacto: string | null;
   telefono: string | null;
 }
-type PresentacionForm = { nombre_presentacion: string; factor_conversion: string };
-
-// Mismo heurístico que valida /api/productos en el servidor: por el nombre
-// de la unidad de medida detectamos si es un líquido embotellado (requiere
-// caja obligatoria) o si se mide en libras (puede ofrecerse como "saco").
-const UNIDADES_LIQUIDAS = ["botella", "litro", "lt", "ml", "galon", "galón"];
-function esUnidadLiquida(unidad: string): boolean {
-  return UNIDADES_LIQUIDAS.some((k) => unidad.trim().toLowerCase().includes(k));
-}
-function esUnidadLibra(unidad: string): boolean {
-  return unidad.trim().toLowerCase().includes("libra");
-}
-
 const PROVEEDOR_VACIO = { nombre_proveedor: "", nit_proveedor: "", correo_contacto: "", telefono: "" };
 
 const EMPTY_FORM = {
@@ -115,7 +105,31 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
   const [errorMarca, setErrorMarca] = useState("");
 
   // Presentaciones por mayor (ej. "Caja de 24", "Saco de 50 libras")
-  const [presentacionesForm, setPresentacionesForm] = useState<PresentacionForm[]>([]);
+  const [presentacionesForm, setPresentacionesForm] = useState<Presentacion[]>([]);
+  const [presentacionesCargando, setPresentacionesCargando] = useState(false);
+  const [presentacionesError, setPresentacionesError] = useState("");
+  const [reintentoPresentaciones, setReintentoPresentaciones] = useState(0);
+  const unidadBase = normalizarUnidad(form.unidad_medida);
+
+  useEffect(() => {
+    if (modalOpen && !editando) setPresentacionesForm(presentacionesIniciales(unidadBase));
+  }, [modalOpen, editando, unidadBase]);
+
+  useEffect(() => {
+    if (!modalOpen || !editando) return;
+    const controller = new AbortController();
+    setPresentacionesCargando(true);
+    setPresentacionesError("");
+    fetch(`/api/presentaciones?id_producto=${editando.id_producto}`, { signal: controller.signal })
+      .then(async (res) => {
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        if (!controller.signal.aborted) setPresentacionesForm((data.presentaciones || []).map((p: Presentacion) => ({ ...p, factor_conversion: Number(p.factor_conversion) })));
+      })
+      .catch(() => { if (!controller.signal.aborted) setPresentacionesError("No se pudieron cargar las presentaciones del producto."); })
+      .finally(() => { if (!controller.signal.aborted) setPresentacionesCargando(false); });
+    return () => controller.abort();
+  }, [modalOpen, editando, reintentoPresentaciones]);
 
   // Confirm delete
   const [confirmId, setConfirmId] = useState<number | null>(null);
@@ -161,13 +175,6 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
       matchesQuery(proveedorQuery, p.nombre_proveedor, p.nit_proveedor)
   );
 
-  const liquidoRequiereCaja = esUnidadLiquida(form.unidad_medida);
-  const esLibra = esUnidadLibra(form.unidad_medida);
-  const presentacionesValidas = presentacionesForm.filter(
-    (p) => p.nombre_presentacion.trim() && Number(p.factor_conversion) > 0
-  );
-  const faltaCajaObligatoria = !editando && liquidoRequiereCaja && presentacionesValidas.length === 0;
-
   // ── Modal helpers ──────────────────────────────────────────────────────────
   const resetExtras = () => {
     setProveedoresSeleccionados([]);
@@ -176,6 +183,8 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
     setFormProveedorNuevo(PROVEEDOR_VACIO);
     setErrorProveedor("");
     setPresentacionesForm([]);
+    setPresentacionesCargando(false);
+    setPresentacionesError("");
     setCreandoCategoria(false);
     setNuevaCategoriaNombre("");
     setErrorCategoria("");
@@ -203,7 +212,7 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
       id_categoria: String(p.id_categoria),
       id_marca: String(p.id_marca),
       caducidad: p.caducidad,
-      fecha_caducidad: "",
+      fecha_caducidad: p.fecha_caducidad?.slice(0, 10) ?? "",
       exento_iva: p.exento_iva,
       estado_producto: p.estado_producto,
     });
@@ -293,25 +302,14 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
     finally { setGuardandoMarca(false); }
   };
 
-  const agregarFilaPresentacion = (nombrePreset = "") => {
-    setPresentacionesForm((prev) => [...prev, { nombre_presentacion: nombrePreset, factor_conversion: "" }]);
-  };
-  const actualizarPresentacion = (idx: number, campo: keyof PresentacionForm, valor: string) => {
-    setPresentacionesForm((prev) => prev.map((p, i) => (i === idx ? { ...p, [campo]: valor } : p)));
-  };
-  const quitarPresentacionFila = (idx: number) => {
-    setPresentacionesForm((prev) => prev.filter((_, i) => i !== idx));
-  };
-
   const handleGuardar = async () => {
     if (!form.codigo_producto || !form.nombre_producto || !form.unidad_medida || !form.id_categoria || !form.id_marca) {
       setFormError("Completa todos los campos obligatorios (*)");
       return;
     }
-    if (faltaCajaObligatoria) {
-      setFormError("Los productos con unidad líquida (botella, litro, ml, galón) necesitan al menos una presentación tipo caja. Agrégala abajo en \"Presentaciones por mayor\".");
-      return;
-    }
+    if (presentacionesCargando || presentacionesError) return;
+    const errorPresentaciones = validarPresentaciones(presentacionesForm);
+    if (errorPresentaciones) { setFormError(errorPresentaciones); return; }
     setSaving(true);
     setFormError("");
     const url = editando ? `/api/productos/${editando.id_producto}` : "/api/productos";
@@ -326,11 +324,8 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
     };
     if (!editando) {
       payload.id_proveedores = proveedoresSeleccionados.map((p) => p.id_proveedor);
-      payload.presentaciones = presentacionesValidas.map((p) => ({
-        nombre_presentacion: p.nombre_presentacion.trim(),
-        factor_conversion: Number(p.factor_conversion),
-      }));
     }
+    payload.presentaciones = presentacionesForm;
     try {
       const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const data = await res.json();
@@ -810,32 +805,27 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
                     )}
                   </div>
 
-                  {/* ── Presentaciones por mayor ── */}
-                  <div style={{ borderTop: "1px solid var(--border)", paddingTop: "1rem" }}>
-                    <label style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)", letterSpacing: "0.04em", textTransform: "uppercase" }}>
-                      Presentaciones por mayor {liquidoRequiereCaja ? "(obligatoria para líquidos)" : "(opcional)"}
-                    </label>
-                    <p style={{ fontSize: "0.78rem", color: "var(--muted)", margin: "0.3rem 0 0.6rem" }}>Ej. &quot;Caja de 24&quot; = 24 unidades base, &quot;Saco de 50&quot; = 50 libras base.</p>
-                    {presentacionesForm.map((p, idx) => (
-                      <div key={idx} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem", alignItems: "center" }}>
-                        <input style={{ ...s.input, flex: "1 1 200px" }} value={p.nombre_presentacion} onChange={(e) => actualizarPresentacion(idx, "nombre_presentacion", e.target.value)} placeholder="Ej: Caja de 24" />
-                        <input style={{ ...s.input, width: 170 }} type="number" min="0" step="1" value={p.factor_conversion} onChange={(e) => actualizarPresentacion(idx, "factor_conversion", e.target.value)} placeholder="Cantidad de unidades base" />
-                        <button type="button" onClick={() => quitarPresentacionFila(idx)} style={s.btnDel} title="Quitar"><Icon name="trash" size={14} /></button>
-                      </div>
-                    ))}
-                    <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-                      <button type="button" onClick={() => agregarFilaPresentacion()} style={s.btnSecondary}>+ Agregar presentación</button>
-                      {liquidoRequiereCaja && <button type="button" onClick={() => agregarFilaPresentacion("Caja")} style={s.btnSecondary}>+ Agregar caja</button>}
-                      {esLibra && <button type="button" onClick={() => agregarFilaPresentacion("Saco")} style={s.btnSecondary}>+ Agregar saco</button>}
-                    </div>
-                  </div>
                 </>
               )}
+              {presentacionesCargando && <p role="status">Cargando presentaciones…</p>}
+              {presentacionesError && (
+                <div role="alert" style={s.formError}>
+                  {presentacionesError}
+                  <button type="button" onClick={() => setReintentoPresentaciones((v) => v + 1)} style={s.btnSecondary}>Reintentar carga</button>
+                </div>
+              )}
+              <PresentacionesProducto
+                key={editando?.id_producto ?? "nuevo"}
+                unidad={form.unidad_medida}
+                value={presentacionesForm}
+                onChange={setPresentacionesForm}
+                disabled={saving || presentacionesCargando || !!presentacionesError}
+              />
               {formError && <p style={s.formError}>{formError}</p>}
             </div>
             <div style={{ ...s.modalFooter, padding: "1rem 1.5rem", display: "flex", justifyContent: "flex-end", gap: "0.75rem", borderTop: "1px solid var(--border)" }}>
               <button type="button" onClick={cerrarModal} style={s.btnSecondary} disabled={saving}>Cancelar</button>
-              <button type="button" onClick={handleGuardar} style={s.btnSecondary} disabled={saving}>{saving ? "Guardando…" : editando ? "Guardar cambios" : "Crear producto"}</button>
+              <button type="button" onClick={handleGuardar} style={s.btnSecondary} disabled={saving || presentacionesCargando || !!presentacionesError}>{saving ? "Guardando…" : editando ? "Guardar cambios" : "Crear producto"}</button>
             </div>
           </div>
         </div>

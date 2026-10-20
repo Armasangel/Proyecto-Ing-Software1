@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
-import { isStaffTipo } from "@/lib/roles";
+import { isDuenoTipo, isStaffTipo } from "@/lib/roles";
 import { apiError, unauthorizedError, validationError } from "@/lib/api-error";
+import { normalizarUnidad, validarPresentaciones, type Presentacion } from "@/lib/presentaciones";
+import { guardarPresentaciones, PresentacionError } from "@/lib/producto-presentaciones";
 
 type Params = { params: Promise<{ id: string }> };
 
-// HEAD/PUT /api/productos/:id — actualiza los datos básicos de un producto
-// (queda igual que en el POST de /api/productos; id_proveedores y
-// presentaciones solo se gestionan al crear, igual que en el frontend).
+// Datos y presentaciones se guardan juntos para no dejar cambios parciales.
 export async function PUT(req: NextRequest, { params }: Params) {
   const usuario = getUsuarioFromRequest(req);
   if (!usuario || !isStaffTipo(usuario.tipo_usuario)) {
@@ -35,6 +35,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
       exento_iva = false,
       id_categoria,
       id_marca,
+      presentaciones,
     } = body as {
       codigo_producto: string;
       nombre_producto: string;
@@ -47,22 +48,35 @@ export async function PUT(req: NextRequest, { params }: Params) {
       exento_iva?: boolean;
       id_categoria: number;
       id_marca: number;
+      presentaciones?: Presentacion[];
     };
 
     if (!codigo_producto || !nombre_producto || !unidad_medida || !id_categoria || !id_marca) {
       return NextResponse.json({ error: "Faltan campos obligatorios" }, { status: 400 });
+    }
+    if (presentaciones !== undefined) {
+      if (!isDuenoTipo(usuario.tipo_usuario)) return unauthorizedError();
+      const error = validarPresentaciones(presentaciones);
+      if (error) return validationError(error);
     }
 
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
 
-      const existe = await client.query(`SELECT id_producto FROM producto WHERE id_producto = $1`, [
+      const existe = await client.query(`SELECT id_producto, unidad_medida FROM producto WHERE id_producto = $1 FOR UPDATE`, [
         idProducto,
       ]);
       if (existe.rowCount === 0) {
         await client.query("ROLLBACK");
         return NextResponse.json({ error: "Producto no encontrado" }, { status: 404 });
+      }
+      if (normalizarUnidad(existe.rows[0].unidad_medida) !== normalizarUnidad(unidad_medida)) {
+        const relacionadas = await client.query(`SELECT 1 FROM presentacion_producto WHERE id_producto = $1 LIMIT 1`, [idProducto]);
+        if (relacionadas.rowCount) {
+          await client.query("ROLLBACK");
+          return validationError("No se puede cambiar la unidad base de un producto con presentaciones. Sus equivalencias e historial dependen de ella.");
+        }
       }
 
       const result = await client.query(
@@ -96,6 +110,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
         ]
       );
 
+      if (presentaciones !== undefined) await guardarPresentaciones(client, idProducto, presentaciones);
       await client.query("COMMIT");
       return NextResponse.json({ id_producto: result.rows[0].id_producto });
     } catch (error) {
@@ -105,6 +120,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
       client.release();
     }
   } catch (error: any) {
+    if (error instanceof PresentacionError) return validationError(error.message);
     if (error.code === "23505") {
       return NextResponse.json({ error: "El código de producto ya existe" }, { status: 409 });
     }

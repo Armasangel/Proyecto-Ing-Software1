@@ -3,6 +3,7 @@ import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { isBodegueroTipo, isDuenoTipo } from "@/lib/roles";
 import { apiError, unauthorizedError, validationError } from "@/lib/api-error";
+import { aliasesUnidad, normalizarPresentacion, sugerenciasPresentaciones, validarPresentaciones, type Presentacion } from "@/lib/presentaciones";
 
 /**
  * GET /api/presentaciones?id_producto=123
@@ -16,12 +17,35 @@ export async function GET(req: NextRequest) {
     return unauthorizedError();
   }
 
-  const idProducto = Number(req.nextUrl.searchParams.get("id_producto"));
-  if (!idProducto) {
+  const idRaw = req.nextUrl.searchParams.get("id_producto");
+  const unidad = req.nextUrl.searchParams.get("unidad_medida")?.trim();
+  const idProducto = Number(idRaw);
+  if (idRaw !== null && (!Number.isSafeInteger(idProducto) || idProducto < 1)) {
+    return validationError("id_producto inválido");
+  }
+  if (idRaw === null && !unidad) {
     return validationError("id_producto es obligatorio");
   }
 
   try {
+    if (idRaw === null && unidad) {
+      const result = await pool.query(
+        `SELECT DISTINCT pp.nombre_presentacion, pp.factor_conversion
+         FROM presentacion_producto pp JOIN producto p ON p.id_producto = pp.id_producto
+         WHERE LOWER(TRANSLATE(TRIM(p.unidad_medida), 'áéíóúü', 'aeiouu')) = ANY($1::text[])
+           AND pp.estado_presentacion = TRUE
+         ORDER BY pp.nombre_presentacion, pp.factor_conversion`,
+        [aliasesUnidad(unidad)]
+      );
+      const opciones = new Map<string, Presentacion>();
+      for (const p of [...sugerenciasPresentaciones(unidad), ...result.rows]) {
+        const factor = Number(p.factor_conversion);
+        opciones.set(`${normalizarPresentacion(p.nombre_presentacion)}:${factor}`, {
+          nombre_presentacion: p.nombre_presentacion, factor_conversion: factor,
+        });
+      }
+      return NextResponse.json({ presentaciones: Array.from(opciones.values()) });
+    }
     const result = await pool.query(
       `SELECT id_presentacion, id_producto, nombre_presentacion, factor_conversion
        FROM presentacion_producto
@@ -55,9 +79,8 @@ export async function POST(req: NextRequest) {
     if (!idProducto || !nombre) {
       return validationError("id_producto y nombre_presentacion son obligatorios");
     }
-    if (!(factor > 0)) {
-      return validationError("factor_conversion debe ser un número mayor a 0");
-    }
+    const error = validarPresentaciones([{ nombre_presentacion: nombre, factor_conversion: factor }]);
+    if (error) return validationError(error);
 
     const producto = await pool.query(`SELECT 1 FROM producto WHERE id_producto = $1`, [idProducto]);
     if (producto.rowCount === 0) {

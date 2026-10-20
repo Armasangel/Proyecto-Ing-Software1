@@ -263,6 +263,34 @@ Ambas son idempotentes (se pueden correr más de una vez). Sólo aplican sobre
 bases ya inicializadas: en bases nuevas el esquema de `init/01_schema.sql` ya
 incluye estos cambios.
 
+### Presentaciones desde el producto
+
+Las presentaciones se administran en **Inventario → Productos → Editar** y
+al crear un producto. El buscador muestra hasta cinco sugerencias aleatorias;
+al escribir busca entre las equivalencias de la misma unidad base y las
+presentaciones activas configuradas en otros productos compatibles. Se puede
+crear una equivalencia indicando cuántas unidades base representa. Los cambios
+se aplican junto con el producto al guardar; cancelar descarta la selección.
+
+Para completar una base existente, ejecutar:
+
+```bash
+psql -v ON_ERROR_STOP=1 -U <usuario> -d <basedatos> -f migrations/09_presentaciones_por_producto.sql
+```
+
+La migración es idempotente: agrega la unidad base que falte y, para productos
+en libras, arroba (25), saco (50) y quintal (100). Conserva los registros,
+factores, estados e identificadores existentes. Las instalaciones nuevas
+ejecutan el mismo archivo desde `init/09_presentaciones_por_producto.sql`.
+No se asumen tamaños de cajas para completar productos en litros o unidades;
+esos empaques se seleccionan o crean en el formulario.
+
+Quitar una presentación la desactiva; no se elimina el historial. Si se vuelve
+a seleccionar con el mismo nombre y factor, se reutiliza su identificador.
+Una equivalencia existente no cambia de factor y un producto con presentaciones
+no cambia de unidad base (sí se aceptan alias, por ejemplo `lb` y `libra`).
+Para otra equivalencia se crea una presentación con un nombre diferente.
+
 **Antes de desplegar**, rotá la contraseña de las cuentas que usaban la clave
 publicada en el repo: después de correr la 06 quedan marcadas para cambiar y no
 pueden iniciar sesión hasta que lo hagan.

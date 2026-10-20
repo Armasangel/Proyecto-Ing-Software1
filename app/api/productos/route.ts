@@ -3,6 +3,7 @@ import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { isBodegueroTipo, isStaffTipo } from "@/lib/roles";
 import { apiError, unauthorizedError } from "@/lib/api-error";
+import { presentacionesIniciales, validarPresentaciones, type Presentacion } from "@/lib/presentaciones";
 
 export async function GET(req: NextRequest) {
   const usuario = getUsuarioFromRequest(req);
@@ -21,6 +22,9 @@ export async function GET(req: NextRequest) {
         p.estado_producto,
         p.caducidad,
         p.fecha_caducidad,
+        p.exento_iva,
+        p.id_categoria,
+        p.id_marca,
         c.nombre_categoria,
         m.nombre_marca
       FROM producto p
@@ -33,20 +37,6 @@ export async function GET(req: NextRequest) {
     return apiError("PRODUCTOS GET", error);
   }
 }
-
-// Unidades cuyo nombre sugiere un líquido embotellado: para estas, el
-// producto SI O SI debe quedar con al menos una presentación tipo "caja"
-// (de lo contrario nadie podría vender/trasladar por mayor de forma
-// consistente). Se valida también aquí en el servidor, no solo en el
-// formulario, para que no se pueda saltar con una llamada directa a la API.
-const UNIDADES_LIQUIDAS = ["botella", "litro", "lt", "ml", "galon", "galón"];
-
-function esUnidadLiquida(unidad: string): boolean {
-  const u = unidad.trim().toLowerCase();
-  return UNIDADES_LIQUIDAS.some((k) => u.includes(k));
-}
-
-type PresentacionInput = { nombre_presentacion: string; factor_conversion: number };
 
 export async function POST(req: NextRequest) {
   const usuario = getUsuarioFromRequest(req);
@@ -68,7 +58,7 @@ export async function POST(req: NextRequest) {
       id_categoria,
       id_marca,
       id_proveedores = [],
-      presentaciones = [],
+      presentaciones,
     } = body as {
       codigo_producto: string;
       nombre_producto: string;
@@ -82,28 +72,18 @@ export async function POST(req: NextRequest) {
       id_categoria: number;
       id_marca: number;
       id_proveedores?: number[];
-      presentaciones?: PresentacionInput[];
+      presentaciones?: Presentacion[];
     };
 
     if (!codigo_producto || !nombre_producto || !unidad_medida || !id_categoria || !id_marca) {
       return NextResponse.json({ error: "Faltan campos obligatorios" }, { status: 400 });
     }
 
-    const presentacionesLimpias = (Array.isArray(presentaciones) ? presentaciones : [])
-      .map((p) => ({
-        nombre_presentacion: String(p?.nombre_presentacion ?? "").trim(),
-        factor_conversion: Number(p?.factor_conversion),
-      }))
-      .filter((p) => p.nombre_presentacion && p.factor_conversion > 0);
-
-    if (esUnidadLiquida(unidad_medida) && presentacionesLimpias.length === 0) {
-      return NextResponse.json(
-        {
-          error:
-            "Los productos con unidad de medida líquida (botella, litro, ml, galón) deben tener al menos una presentación tipo caja definida (ej. 'Caja de 24').",
-        },
-        { status: 400 }
-      );
+    const presentacionesLimpias = presentaciones === undefined ? presentacionesIniciales(unidad_medida) : presentaciones;
+    const errorPresentaciones = validarPresentaciones(presentacionesLimpias);
+    if (errorPresentaciones) return NextResponse.json({ error: errorPresentaciones }, { status: 400 });
+    if (presentacionesLimpias.some((p) => p.id_presentacion !== undefined)) {
+      return NextResponse.json({ error: "Las presentaciones de otro producto deben seleccionarse como nuevas equivalencias." }, { status: 400 });
     }
 
     const idProveedores = (Array.isArray(id_proveedores) ? id_proveedores : [])
@@ -150,7 +130,7 @@ export async function POST(req: NextRequest) {
           `INSERT INTO presentacion_producto (id_producto, nombre_presentacion, factor_conversion)
            VALUES ($1, $2, $3)
            ON CONFLICT (id_producto, nombre_presentacion) DO NOTHING`,
-          [idProducto, pres.nombre_presentacion, pres.factor_conversion]
+          [idProducto, pres.nombre_presentacion.trim(), pres.factor_conversion]
         );
       }
 
