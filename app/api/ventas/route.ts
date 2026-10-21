@@ -275,12 +275,24 @@ export async function POST(request: NextRequest) {
         nombre?: string;
         telefono?: string | null;
         nit_cliente?: string | null;
+        es_consumidor_final?: boolean;
       }>(
-        `SELECT tipo_cliente, nombre, telefono, nit_cliente FROM cliente WHERE id_cliente = $1 AND estado_cliente = TRUE`, [idCliente]
+        `SELECT tipo_cliente, nombre, telefono, nit_cliente, es_consumidor_final
+         FROM cliente WHERE id_cliente = $1 AND estado_cliente = TRUE`, [idCliente]
       );
       if (existeCliente.rowCount === 0) {
         await client.query("ROLLBACK");
         return NextResponse.json({ error: "Cliente no encontrado" }, { status: 400 });
+      }
+
+      // Consumidor Final es un cliente anónimo: no hay a quién cobrarle, así
+      // que las ventas a crédito con este cliente se rechazan.
+      if (esCredito && existeCliente.rows[0].es_consumidor_final) {
+        await client.query("ROLLBACK");
+        return NextResponse.json(
+          { error: "Consumidor Final no puede comprar a crédito; registre la venta como Contado" },
+          { status: 400 }
+        );
       }
 
       // Detección automática del tipo de venta: por defecto es el

@@ -21,6 +21,7 @@ type Cliente = {
   telefono?: string | null;
   limite_deuda?: string | null;
   total_ventas?: number;
+  es_consumidor_final?: boolean;
 };
 
 type Producto = {
@@ -308,8 +309,19 @@ export default function VentasPage() {
   }, [clientes]);
 
   const clientesSugeridos = useMemo(() => {
-    if (busquedaCliente.trim() === "") return clientesDestacados;
-    return filtrarClientesPorTexto(clientes, busquedaCliente).slice(0, 8);
+    const vacia = busquedaCliente.trim() === "";
+    const base = vacia
+      ? clientesDestacados
+      : filtrarClientesPorTexto(clientes, busquedaCliente).slice(0, 8);
+    // Consumidor Final siempre queda fijado arriba del dropdown: es el
+    // registro genérico para ventas rápidas a personas que no quieren
+    // registrarse. Con búsqueda vacía se incluye aunque no esté entre los
+    // más frecuentes; al escribir solo aparece si coincide con el texto.
+    const consumidorFinal = clientes.filter(
+      (c) => c.es_consumidor_final && (vacia || base.includes(c))
+    );
+    const resto = base.filter((c) => !c.es_consumidor_final);
+    return vacia ? [...consumidorFinal, ...resto].slice(0, 6) : [...consumidorFinal, ...resto];
   }, [busquedaCliente, clientes, clientesDestacados]);
 
   const stockDisponible = useCallback((idProducto: string, idBodega: string): number => {
@@ -438,12 +450,22 @@ export default function VentasPage() {
   function onClienteChange(idStr: string) {
     setIdCliente(idStr);
     setError(null); setOkMsg(null);
+    const clienteElegido = clientes.find((c) => String(c.id_cliente) === idStr);
+    // Consumidor Final es un cliente anónimo: no hay a quién cobrarle, así
+    // que la venta queda a Contado (y el servidor además rechaza el crédito
+    // con este cliente). Se limpian también las condiciones de crédito.
+    if (clienteElegido?.es_consumidor_final) {
+      setCondicionPago("CONTADO");
+      setOtraFechaFactura(false);
+      setFechaFactura("");
+      setPlazoDias("30");
+      setNumeroCuotas("1");
+    }
     // Detección automática: el tipo de venta pasa a ser el tipo_cliente del
     // cliente elegido, a menos que el colaborador ya esté forzando otro tipo
     // a propósito.
     if (!forzarTipoVenta) {
-      const c = clientes.find((c) => String(c.id_cliente) === idStr);
-      const detectado = c?.tipo_cliente === "MAYORISTA" ? "MAYORISTA" : "MINORISTA";
+      const detectado = clienteElegido?.tipo_cliente === "MAYORISTA" ? "MAYORISTA" : "MINORISTA";
       setTipoVenta(detectado);
       aplicarPreciosPorTipo(detectado);
     }
@@ -674,7 +696,14 @@ export default function VentasPage() {
                         }}
                         className="px-3 py-2 text-[0.88rem] text-ink cursor-pointer hover:bg-cream/60 border-b border-[var(--border)] last:border-b-0 flex justify-between items-center gap-2"
                       >
-                        <span>{etiquetaCliente(c)}</span>
+                        <span className="flex items-center gap-2 min-w-0">
+                          <span className="truncate">{etiquetaCliente(c)}</span>
+                          {c.es_consumidor_final && (
+                            <span className="text-[0.66rem] font-semibold uppercase tracking-wide whitespace-nowrap bg-market/10 text-market-600 border border-market/25 rounded px-1.5 py-0.5">
+                              Consumidor Final
+                            </span>
+                          )}
+                        </span>
                         {!!c.total_ventas && (
                           <span className="text-[0.72rem] text-ink-muted whitespace-nowrap">
                             {c.total_ventas} venta{c.total_ventas === 1 ? "" : "s"}
@@ -793,24 +822,32 @@ export default function VentasPage() {
                   {([
                     { v: "CONTADO", t: "Contado" },
                     { v: "CREDITO", t: "Crédito" },
-                  ] as const).map((o) => (
-                    <button
-                      key={o.v}
-                      type="button"
-                      aria-pressed={condicionPago === o.v}
-                      onClick={() => { setCondicionPago(o.v); setError(null); }}
-                      className={`flex-1 px-3 py-2.5 rounded-control border text-[0.95rem] font-semibold transition-colors ${
-                        condicionPago === o.v
-                          ? "bg-market text-white border-market"
-                          : "bg-transparent text-ink-muted border-[var(--border)] hover:bg-cream"
-                      }`}
-                    >
-                      {o.t}
-                    </button>
-                  ))}
+                  ] as const).map((o) => {
+                    // Consumidor Final no es cobrable: solo se vende a contado.
+                    const creditoBloqueado = o.v === "CREDITO" && !!clienteSeleccionado?.es_consumidor_final;
+                    return (
+                      <button
+                        key={o.v}
+                        type="button"
+                        aria-pressed={condicionPago === o.v}
+                        disabled={creditoBloqueado}
+                        title={creditoBloqueado ? "Consumidor Final solo puede vender a Contado" : undefined}
+                        onClick={() => { setCondicionPago(o.v); setError(null); }}
+                        className={`flex-1 px-3 py-2.5 rounded-control border text-[0.95rem] font-semibold transition-colors ${
+                          condicionPago === o.v
+                            ? "bg-market text-white border-market"
+                            : "bg-transparent text-ink-muted border-[var(--border)] hover:bg-cream"
+                        } ${creditoBloqueado ? "opacity-40 cursor-not-allowed hover:bg-transparent" : ""}`}
+                      >
+                        {o.t}
+                      </button>
+                    );
+                  })}
                 </div>
                 <span className="text-[0.78rem] text-ink-muted">
-                  {condicionPago === "CONTADO"
+                  {clienteSeleccionado?.es_consumidor_final
+                    ? "Consumidor Final solo puede vender a Contado."
+                    : condicionPago === "CONTADO"
                     ? "El cliente paga el total en este momento."
                     : "Se genera la factura y una cuenta por cobrar."}
                 </span>

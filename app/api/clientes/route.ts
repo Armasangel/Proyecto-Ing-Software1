@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const result = await pool.query(
-      `SELECT id_cliente, nombre, correo, telefono, tipo_cliente, estado_cliente, limite_deuda
+      `SELECT id_cliente, nombre, correo, telefono, tipo_cliente, estado_cliente, limite_deuda, es_consumidor_final
        FROM cliente
        ${incluirTodos ? "" : "WHERE estado_cliente = TRUE"}
        ORDER BY nombre`

@@ -28,10 +28,17 @@ function makeClient() {
 // SELECT bodegas, SELECT producto, SELECT subtotal, SELECT total redondeado,
 // INSERT venta, SELECT stock FOR UPDATE, INSERT detalle_venta,
 // UPDATE bodega_producto, INSERT kardex, COMMIT.
-function encadenarVentaFeliz(client: ReturnType<typeof makeClient>, tipoCliente: string) {
+function encadenarVentaFeliz(
+  client: ReturnType<typeof makeClient>,
+  tipoCliente: string,
+  esConsumidorFinal = false
+) {
   client.query
     .mockResolvedValueOnce({ rows: [], rowCount: 0 }) // BEGIN
-    .mockResolvedValueOnce({ rows: [{ tipo_cliente: tipoCliente }], rowCount: 1 }) // SELECT cliente
+    .mockResolvedValueOnce({
+      rows: [{ tipo_cliente: tipoCliente, es_consumidor_final: esConsumidorFinal }],
+      rowCount: 1,
+    }) // SELECT cliente
     .mockResolvedValueOnce({ rows: [{ id_bodega: 1 }], rowCount: 1 }) // SELECT bodegas
     .mockResolvedValueOnce({ rows: [{ id_producto: 1, estado_producto: true }], rowCount: 1 }) // SELECT producto
     .mockResolvedValueOnce({ rows: [{ sub: 10 }] }) // subtotal
@@ -134,6 +141,47 @@ describe("POST /api/ventas — detección automática de tipo_venta", () => {
     expect(res.status).toBe(400);
     const data = await res.json();
     expect(data.error).toMatch(/Cliente no encontrado/);
+  });
+});
+
+describe("POST /api/ventas — Consumidor Final", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockCargarDescuentos.mockResolvedValue([]);
+  });
+
+  it("rejects a credit sale for the Consumidor Final client", async () => {
+    const client = makeClient();
+    client.query
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 }) // BEGIN
+      .mockResolvedValueOnce({
+        rows: [{ tipo_cliente: "MINORISTA", es_consumidor_final: true }],
+        rowCount: 1,
+      }) // SELECT cliente
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 }); // ROLLBACK
+
+    const res = await POST(
+      makeReq({ condicion_pago: "CREDITO", credito: { plazo_dias: 30, numero_cuotas: 1 } })
+    );
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toMatch(/Consumidor Final no puede comprar a crédito/);
+
+    // No se registra nada: ni venta, ni factura, ni deuda.
+    const inserto = client.query.mock.calls.some((c) =>
+      (c[0] as string).includes("INSERT")
+    );
+    expect(inserto).toBe(false);
+  });
+
+  it("allows a cash sale for the Consumidor Final client", async () => {
+    const client = makeClient();
+    encadenarVentaFeliz(client, "MINORISTA", true);
+    const res = await POST(makeReq({ condicion_pago: "CONTADO" }));
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.id_venta).toBe(99);
+    expect(data.condicion_pago).toBe("CONTADO");
   });
 });
 

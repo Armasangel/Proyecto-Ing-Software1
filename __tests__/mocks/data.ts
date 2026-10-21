@@ -15,6 +15,9 @@ export const mockCliente = {
 export const mockClientes = [
   mockCliente,
   { id_cliente: 2, nombre: "Ana García", correo: "ana@email.com", tipo_cliente: "MAYORISTA" },
+  // Registro genérico "Consumidor Final": sin correo y marcado con la bandera
+  // que usa la UI para fijarlo en el dropdown y bloquearle el crédito.
+  { id_cliente: 3, nombre: "Consumidor Final", correo: null, tipo_cliente: "MINORISTA", es_consumidor_final: true },
 ];
 
 export const mockCategorias = [

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { rest } from "msw";
 import { setupServer } from "msw/node";
@@ -23,6 +23,7 @@ const mockUsuarioEmpleado = { id_usuario: 2, nombre: "María", correo: "maria@ti
 const clientes = [
   { id_cliente: 1, nombre: "Carlos Ruiz", correo: "carlos@email.com", tipo_cliente: "MINORISTA", total_ventas: 1 },
   { id_cliente: 2, nombre: "Distribuidora El Sol", correo: "sol@email.com", tipo_cliente: "MAYORISTA", total_ventas: 3 },
+  { id_cliente: 5, nombre: "Consumidor Final", correo: null, tipo_cliente: "MINORISTA", total_ventas: 0, es_consumidor_final: true },
 ];
 
 const productos = [
@@ -500,5 +501,71 @@ describe("VentasPage — contado o crédito", () => {
 
     expect(screen.getByText("No puede haber más pagos que días de plazo")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Registrar venta" })).toBeDisabled();
+  });
+});
+
+describe("VentasPage — Consumidor Final", () => {
+  beforeEach(() => {
+    (useRouter as jest.Mock).mockReturnValue({ replace: mockReplace, push: mockReplace });
+    (usePathname as jest.Mock).mockReturnValue("/ventas");
+  });
+
+  function dropdownDeClientes(buscador: HTMLElement): HTMLElement {
+    return buscador.parentElement as HTMLElement;
+  }
+
+  it("fija el Consumidor Final arriba del dropdown y lo quita al buscar otro cliente", async () => {
+    setupServerVentas();
+    const user = userEvent.setup();
+    render(<VentasPage />);
+
+    const buscador = await screen.findByPlaceholderText("Buscar cliente por nombre o correo…");
+    await user.click(buscador);
+    const dropdown = dropdownDeClientes(buscador);
+
+    expect(await within(dropdown).findByText("Clientes frecuentes")).toBeInTheDocument();
+    // Nombre + insignia del registro genérico, fijados antes que los frecuentes.
+    const [nombreCF, insigniaCF] = within(dropdown).getAllByText("Consumidor Final");
+    expect(insigniaCF.className).toContain("uppercase");
+
+    const nombreCarlos = within(dropdown).getByText("Carlos Ruiz (carlos@email.com)");
+    expect(
+      nombreCF.compareDocumentPosition(nombreCarlos) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+
+    // Al buscar un cliente que no es él, deja de estar fijado en el listado.
+    await user.type(buscador, "sol");
+    await waitFor(() => {
+      expect(within(dropdown).queryByText("Consumidor Final")).not.toBeInTheDocument();
+    });
+    expect(
+      within(dropdown).getByText("Distribuidora El Sol (sol@email.com)")
+    ).toBeInTheDocument();
+  });
+
+  it("al elegirlo fuerza Contado y bloquea el Crédito", async () => {
+    setupServerVentas();
+    const user = userEvent.setup();
+    render(<VentasPage />);
+
+    const buscador = await screen.findByPlaceholderText("Buscar cliente por nombre o correo…");
+    await user.click(buscador);
+    const [nombreCF] = within(dropdownDeClientes(buscador)).getAllByText("Consumidor Final");
+    await user.click(nombreCF);
+
+    expect(buscador).toHaveValue("Consumidor Final");
+    expect(screen.getByRole("button", { name: "Contado" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Crédito" })).toBeDisabled();
+    expect(
+      screen.getByText("Consumidor Final solo puede vender a Contado.")
+    ).toBeInTheDocument();
+
+    // Con un cliente registrado, el crédito vuelve a estar disponible.
+    await user.clear(buscador);
+    await user.type(buscador, "Carlos");
+    await user.click(
+      await within(dropdownDeClientes(buscador)).findByText("Carlos Ruiz (carlos@email.com)")
+    );
+    expect(screen.getByRole("button", { name: "Crédito" })).toBeEnabled();
   });
 });

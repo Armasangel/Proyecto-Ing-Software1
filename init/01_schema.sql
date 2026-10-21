@@ -99,6 +99,7 @@ CREATE TABLE cliente (
     estado_cliente  BOOLEAN         NOT NULL DEFAULT TRUE,
     nit_cliente     VARCHAR(20)     NOT NULL DEFAULT 'CF',
     limite_deuda    NUMERIC(12,2),
+    es_consumidor_final BOOLEAN      NOT NULL DEFAULT FALSE,
     CONSTRAINT uq_cliente_correo UNIQUE (correo)
 );
 
