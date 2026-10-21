@@ -23,11 +23,13 @@ describe("GET /api/presentaciones", () => {
     expect(data.presentaciones.every((p: { id_presentacion?: number }) => p.id_presentacion === undefined)).toBe(true);
   });
 
-  it("does not suggest weight packages for litres", async () => {
-    const res = await GET(createMockRequest("/api/presentaciones?unidad_medida=litro", { user: testUserDueno }));
+  it("offers counted bottles instead of volume-based packages", async () => {
+    const res = await GET(createMockRequest("/api/presentaciones?unidad_medida=botella", { user: testUserDueno }));
     const data = await res.json();
     expect(data.presentaciones.some((p: { nombre_presentacion: string }) => /libra|arroba|quintal/i.test(p.nombre_presentacion))).toBe(false);
-    expect(data.presentaciones).toContainEqual({ nombre_presentacion: "250 mililitros", factor_conversion: 0.25 });
+    expect(data.presentaciones).toContainEqual({ nombre_presentacion: "Botella", factor_conversion: 1 });
+    expect(data.presentaciones).toContainEqual({ nombre_presentacion: "Caja de 24 botellas", factor_conversion: 24 });
+    expect(data.presentaciones.some((p: { nombre_presentacion: string }) => /mililitro|litro|galón/i.test(p.nombre_presentacion))).toBe(false);
   });
 
   it("still returns the actual IDs for stock and sales", async () => {

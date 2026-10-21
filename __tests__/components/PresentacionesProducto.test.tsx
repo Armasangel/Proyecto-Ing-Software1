@@ -63,10 +63,10 @@ describe("PresentacionesProducto", () => {
   it("refreshes compatible suggestions when the unit changes", async () => {
     const user = userEvent.setup();
     const { rerender } = render(<Editor unidad="libra" />);
-    rerender(<Editor unidad="litro" />);
+    rerender(<Editor unidad="botella" />);
     await user.click(screen.getByRole("combobox"));
-    await user.type(screen.getByRole("combobox"), "250");
-    expect(screen.getByRole("option", { name: "250 mililitros · 0.25 litro" })).toBeInTheDocument();
+    await user.type(screen.getByRole("combobox"), "24");
+    expect(screen.getByRole("option", { name: "Caja de 24 botellas · 24 botella" })).toBeInTheDocument();
     expect(screen.queryByText(/Quintal/)).not.toBeInTheDocument();
   });
 

@@ -54,7 +54,7 @@ describe("Product presentation editing", () => {
   });
 
   it("requires selecting new presentations when changing the base unit", async () => {
-    expect((await editar({ ...base, unidad_medida: "litro" })).status).toBe(400);
+    expect((await editar({ ...base, unidad_medida: "botella" })).status).toBe(400);
     expect(client.query).toHaveBeenLastCalledWith("ROLLBACK");
   });
 

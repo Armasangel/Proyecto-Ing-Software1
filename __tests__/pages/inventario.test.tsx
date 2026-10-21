@@ -250,7 +250,7 @@ describe("InventarioPage (Inventario + Catálogo unificados)", () => {
     await user.click(screen.getByRole("button", { name: "+ Crear marca" }));
     await user.type(screen.getByLabelText("Nombre de nueva marca"), "Marca nueva");
     await user.click(screen.getByRole("button", { name: /^Crear marca$/ }));
-    await waitFor(() => expect(screen.getByLabelText("Marca")).toHaveValue("2"));
+    await waitFor(() => expect(screen.getByLabelText("Marca")).toHaveValue("Marca nueva"));
     await user.click(screen.getByRole("button", { name: "Guardar cambios" }));
     await waitFor(() => expect(guardar).toHaveBeenCalledWith(expect.objectContaining({ id_categoria: 1, id_categoria_2: 2, id_categoria_3: 3, id_marca: 2 })));
   });

@@ -3,7 +3,7 @@ import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { isBodegueroTipo, isStaffTipo } from "@/lib/roles";
 import { apiError, unauthorizedError } from "@/lib/api-error";
-import { normalizarUnidad, presentacionesIniciales, validarPresentaciones, type Presentacion } from "@/lib/presentaciones";
+import { esUnidadDeVolumen, normalizarUnidad, presentacionesIniciales, validarPresentaciones, type Presentacion } from "@/lib/presentaciones";
 import { validarCategoriasProducto } from "@/lib/producto-categorias";
 
 export async function GET(req: NextRequest) {
@@ -90,6 +90,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Faltan campos obligatorios" }, { status: 400 });
     }
 
+    if (esUnidadDeVolumen(unidad_medida)) return NextResponse.json({ error: "Los líquidos se registran por botella. Usa botella como unidad base y crea un producto distinto para cada tamaño (por ejemplo, 800 ml)." }, { status: 400 });
     const errorCategorias = validarCategoriasProducto([id_categoria, id_categoria_2, id_categoria_3]);
     if (errorCategorias) return NextResponse.json({ error: errorCategorias }, { status: 400 });
     const presentacionesLimpias = presentaciones === undefined ? presentacionesIniciales(unidad_medida) : presentaciones;

@@ -8,8 +8,9 @@ describe("Presentations and base units", () => {
 
   it("distinguishes millilitres and litres and handles accents", () => {
     expect(normalizarUnidad("GALÓN")).toBe("galon");
-    expect(sugerenciasPresentaciones("ml")).toContainEqual({ nombre_presentacion: "Litro", factor_conversion: 1000 });
-    expect(sugerenciasPresentaciones("lt")).toContainEqual({ nombre_presentacion: "250 mililitros", factor_conversion: 0.25 });
+    expect(sugerenciasPresentaciones("ml")).toEqual([]);
+    expect(sugerenciasPresentaciones("lt")).toEqual([]);
+    expect(sugerenciasPresentaciones("botella")).toContainEqual({ nombre_presentacion: "Caja de 24 botellas", factor_conversion: 24 });
     expect(presentacionesIniciales("unidad")).toEqual([{ nombre_presentacion: "Unidad", factor_conversion: 1 }]);
   });
 

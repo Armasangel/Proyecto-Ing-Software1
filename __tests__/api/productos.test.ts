@@ -98,6 +98,16 @@ describe("POST /api/productos", () => {
     expect(data.error).toBe("Faltan campos obligatorios");
   });
 
+  it.each(["litro", "ml", "GALÓN"])("requires bottles instead of volume unit %s", async (unidad_medida) => {
+    const res = await POST(createMockRequest("/api/productos", {
+      method: "POST", user: testUserDueno,
+      body: { codigo_producto: "ACE-800", nombre_producto: "Aceite 800 ml", unidad_medida, id_categoria: 1, id_marca: 1 },
+    }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toContain("botella");
+    expect(mockPool.connect).not.toHaveBeenCalled();
+  });
+
   it.each([
     { id_categoria_2: null, id_categoria_3: null },
     { id_categoria_2: 2, id_categoria_3: 3 },

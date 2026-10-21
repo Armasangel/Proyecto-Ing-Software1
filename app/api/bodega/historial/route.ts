@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
          k.descripcion,
          k.motivo,
          p.nombre_producto,
-         p.unidad_medida,
+         k.unidad_base AS unidad_medida,
          pp.nombre_presentacion,
          k.cantidad_presentacion
        FROM kardex k

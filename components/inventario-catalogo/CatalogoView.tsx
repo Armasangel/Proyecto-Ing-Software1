@@ -6,6 +6,7 @@ import { PresentacionesProducto } from "@/components/inventario-catalogo/Present
 import { normalizarUnidad, presentacionesIniciales, validarPresentaciones, type Presentacion } from "@/lib/presentaciones";
 import { validarCategoriasProducto } from "@/lib/producto-categorias";
 import { CategoriaAutocompletar } from "@/components/inventario-catalogo/CategoriaAutocompletar";
+import { MarcaAutocompletar } from "@/components/inventario-catalogo/MarcaAutocompletar";
 
 const MIS_ITEMS = [
   {label: "editar", icon: "pencil"},
@@ -40,6 +41,7 @@ interface Categoria {
 interface Marca {
   id_marca: number;
   nombre_marca: string;
+  usos?: number;
 }
 interface Proveedor {
   id_proveedor: number;
@@ -166,12 +168,12 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
     fetch("/api/productos")
       .then((r) => r.json())
       .then((d) => setProductos(d.productos || []));
+    fetch("/api/marcas").then((r) => r.json()).then((d) => setMarcas(d.marcas || []));
   }, []);
 
   useEffect(() => {
     cargarProductos();
     fetch("/api/categorias").then((r) => r.json()).then((d) => setCategorias(d.categorias || []));
-    fetch("/api/marcas").then((r) => r.json()).then((d) => setMarcas(d.marcas || []));
     fetch("/api/proveedores")
       .then((r) => (r.ok ? r.json() : { proveedores: [] }))
       .then((d) => setProveedores(d.proveedores || []))
@@ -612,10 +614,8 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
               </select>
 
               <label style={s.drawerLabel}>Marca</label>
-              <select value={filtroMarca} onChange={(e) => setFiltroMarca(e.target.value)} style={s.input} aria-label="Filtrar por marca">
-                <option value="">Todas las marcas</option>
-                {marcas.map((m) => <option key={m.id_marca} value={m.id_marca}>{m.nombre_marca}</option>)}
-              </select>
+              <MarcaAutocompletar marcas={marcas} value={filtroMarca} onChange={setFiltroMarca} style={s.input}
+                ariaLabel="Filtrar por marca" opcional textoSinSeleccion="Todas las marcas" />
 
               <label style={s.drawerLabel}>Estado</label>
               <label style={s.checkLabel}>
@@ -742,11 +742,8 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
               )}
               <div style={s.fila}>
                 <Field label="Marca *" style={{ flex: 1 }}>
-                  <select aria-label="Marca" style={s.input} value={form.id_marca} disabled={saving || guardandoMarca}
-                    onChange={(e) => setForm((f) => ({ ...f, id_marca: e.target.value }))}>
-                    <option value="">— Selecciona —</option>
-                    {marcas.map((m) => <option key={m.id_marca} value={m.id_marca}>{m.nombre_marca}</option>)}
-                  </select>
+                  <MarcaAutocompletar marcas={marcas} style={s.input} value={form.id_marca} disabled={saving || guardandoMarca}
+                    onChange={(id) => setForm((f) => ({ ...f, id_marca: id }))} />
                   <button type="button" onClick={() => { setCreandoMarca(true); setNuevaMarcaNombre(""); setErrorMarca(""); }} disabled={saving || guardandoMarca} style={s.btnSecondary}>+ Crear marca</button>
                 </Field>
               </div>
@@ -794,10 +791,13 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
                     style={{ ...s.input, backgroundColor: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)" }} 
                     value={form.unidad_medida} 
                     onChange={(e) => setForm(f => ({ ...f, unidad_medida: e.target.value }))} 
-                    placeholder="libra, litro, unidad…" 
+                    placeholder="libra, botella, unidad…"
                   />
                 </Field>
               </div>
+              <p style={{ fontSize: "0.78rem", color: "var(--muted)", margin: 0 }}>
+                Los líquidos se venden por botella. Registra cada tamaño (800 ml, 1 L, etc.) como un producto distinto; las cajas agrupan botellas del mismo producto.
+              </p>
               {cambiaUnidad && (
                 <p role="status" style={{ fontSize: "0.82rem", color: "var(--muted)", margin: 0 }}>
                   Al guardar se corregirá la unidad de {editando.unidad_medida} a {form.unidad_medida || "la nueva unidad"}.

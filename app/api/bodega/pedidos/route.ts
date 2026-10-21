@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
               'codigo_producto', p.codigo_producto,
               'nombre_producto', p.nombre_producto,
               'cantidad', d.cantidad,
-              'unidad_medida', p.unidad_medida,
+              'unidad_medida', d.unidad_base,
               'id_bodega', d.id_bodega,
               'es_mi_bodega', d.id_bodega = $1
             )

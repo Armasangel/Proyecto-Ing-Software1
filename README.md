@@ -277,6 +277,11 @@ Los tres campos de categoría muestran hasta cinco sugerencias aleatorias al
 abrirse. Al escribir buscan en todo el catálogo, sin distinguir mayúsculas ni
 acentos, y muestran hasta ocho coincidencias. Se excluyen las categorías ya
 seleccionadas en los otros campos; las opcionales permiten elegir «Sin categoría».
+El selector y el filtro de marcas muestran inicialmente las cinco más usadas,
+según la cantidad de productos que tienen asignada cada marca (incluidos los
+inactivos). Los empates se ordenan por nombre. Al escribir se busca en todas
+las marcas, también las recién creadas o sin productos, sin distinguir acentos
+ni mayúsculas. El orden se actualiza al guardar un producto.
 
 En una base existente ejecutar:
 
@@ -310,8 +315,34 @@ La migración es idempotente: agrega la unidad base que falte y, para productos
 en libras, arroba (25), saco (50) y quintal (100). Conserva los registros,
 factores, estados e identificadores existentes. Las instalaciones nuevas
 ejecutan el mismo archivo desde `init/09_presentaciones_por_producto.sql`.
-No se asumen tamaños de cajas para completar productos en litros o unidades;
-esos empaques se seleccionan o crean en el formulario.
+No se asumen tamaños de cajas para completar productos por conteo; esos
+empaques se seleccionan o crean en el formulario.
+
+### Líquidos por botella y unidades históricas
+
+Los líquidos se registran con unidad base **botella**. El tamaño pertenece al
+producto: «Aceite 800 ml» y «Aceite 1 L» son productos diferentes. Las
+presentaciones agrupan botellas del mismo producto (por ejemplo, caja de 12);
+no convierten una botella de 1 L en una presentación de 800 ml.
+
+Después de las migraciones anteriores, aplicar en este orden:
+
+```bash
+psql -v ON_ERROR_STOP=1 -U <usuario> -d <basedatos> -f migrations/12_unidades_historicas.sql
+psql -v ON_ERROR_STOP=1 -U <usuario> -d <basedatos> -f migrations/13_liquidos_por_botella.sql
+```
+
+La 12 guarda `unidad_base` en kardex, detalles de venta, pedidos y deudas.
+Los nuevos registros capturan automáticamente la unidad del momento; después
+no cambia al editar el producto. Historiales, pedidos, facturas y deudas leen
+esa copia. Los registros antiguos se completan con la unidad de su presentación
+cuando se conoce, o con la unidad disponible en el producto. Si la unidad ya
+había cambiado y nunca se guardó, no es posible reconstruirla con certeza.
+
+La 13 corrige las unidades de volumen existentes a botella y los líquidos de
+ejemplo que usaban «unidad». Conserva cantidades, precios y las presentaciones
+históricas desactivadas; copia los empaques por conteo a la nueva unidad. Las
+dos migraciones son idempotentes y tienen su equivalente en `init/`.
 
 Quitar una presentación la desactiva; no se elimina el historial. Si se vuelve
 a seleccionar con el mismo nombre y factor, se reutiliza su identificador.

@@ -11,7 +11,11 @@ export async function GET(req: NextRequest) {
   }
   try {
     const result = await pool.query(
-      `SELECT id_marca, nombre_marca FROM marca ORDER BY nombre_marca`
+      `SELECT m.id_marca, m.nombre_marca, COUNT(p.id_producto)::int AS usos
+       FROM marca m
+       LEFT JOIN producto p ON p.id_marca = m.id_marca
+       GROUP BY m.id_marca, m.nombre_marca
+       ORDER BY usos DESC, m.nombre_marca, m.id_marca`
     );
     return NextResponse.json({ marcas: result.rows });
   } catch (error) {

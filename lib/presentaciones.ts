@@ -24,6 +24,10 @@ export function normalizarUnidad(unidad: string): string {
   return Object.keys(ALIAS_UNIDADES).find((key) => ALIAS_UNIDADES[key].includes(texto)) ?? texto;
 }
 
+export function esUnidadDeVolumen(unidad: string): boolean {
+  return ["litro", "mililitro", "galon"].includes(normalizarUnidad(unidad));
+}
+
 export function aliasesUnidad(unidad: string): string[] {
   return ALIAS_UNIDADES[normalizarUnidad(unidad)] ?? [normalizarPresentacion(unidad)];
 }
@@ -34,13 +38,13 @@ const opcion = (nombre_presentacion: string, factor_conversion: number): Present
 export function sugerenciasPresentaciones(unidad: string): Presentacion[] {
   switch (normalizarUnidad(unidad)) {
     case "libra": return [opcion("Libra", 1), opcion("Media libra", 0.5), opcion("2 libras", 2), opcion("3 libras", 3), opcion("5 libras", 5), opcion("10 libras", 10), opcion("20 libras", 20), opcion("Arroba (25 libras)", 25), opcion("Saco de 50 libras", 50), opcion("Quintal (100 libras)", 100)];
-    case "litro": return [opcion("Litro", 1), opcion("Medio litro", 0.5), opcion("250 mililitros", 0.25), opcion("5 litros", 5), opcion("10 litros", 10), opcion("20 litros", 20)];
-    case "mililitro": return [opcion("Mililitro", 1), opcion("250 mililitros", 250), opcion("500 mililitros", 500), opcion("Litro", 1000), opcion("5 litros", 5000)];
+    case "litro":
+    case "mililitro":
+    case "galon": return [];
     case "kilogramo": return [opcion("Kilogramo", 1), opcion("Medio kilogramo", 0.5), opcion("250 gramos", 0.25), opcion("5 kilogramos", 5), opcion("Saco de 25 kilogramos", 25), opcion("Saco de 50 kilogramos", 50)];
     case "gramo": return [opcion("Gramo", 1), opcion("100 gramos", 100), opcion("250 gramos", 250), opcion("500 gramos", 500), opcion("Kilogramo", 1000)];
     case "unidad": return [opcion("Unidad", 1), opcion("Media docena", 6), opcion("Docena", 12), opcion("Paquete de 6", 6), opcion("Caja de 12", 12), opcion("Caja de 24", 24)];
     case "botella": return [opcion("Botella", 1), opcion("Paquete de 6 botellas", 6), opcion("Caja de 12 botellas", 12), opcion("Caja de 24 botellas", 24), opcion("Caja de 48 botellas", 48)];
-    case "galon": return [opcion("Galón", 1), opcion("Medio galón", 0.5), opcion("2 galones", 2), opcion("5 galones", 5), opcion("10 galones", 10)];
     default: return unidad.trim() ? [opcion(unidad.trim(), 1)] : [];
   }
 }

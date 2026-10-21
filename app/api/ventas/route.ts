@@ -90,6 +90,7 @@ export async function GET(req: NextRequest) {
               'codigo_producto', p.codigo_producto,
               'id_producto', dv.id_producto,
               'cantidad', dv.cantidad,
+              'unidad_medida', dv.unidad_base,
               'precio_unitario_venta', dv.precio_unitario,
               'subtotal', dv.subtotal
             )
