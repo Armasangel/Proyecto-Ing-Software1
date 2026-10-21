@@ -26,9 +26,10 @@ export async function POST(req: NextRequest) {
   }
   try {
     const { nombre_categoria } = await req.json();
-    if (!nombre_categoria || !String(nombre_categoria).trim()) {
+    if (typeof nombre_categoria !== "string" || !nombre_categoria.trim()) {
       return NextResponse.json({ error: "El nombre de la categoría es obligatorio" }, { status: 400 });
     }
+    if (nombre_categoria.trim().length > 100) return NextResponse.json({ error: "El nombre de la categoría no puede superar 100 caracteres" }, { status: 400 });
     const result = await pool.query(
       `INSERT INTO categoria (nombre_categoria) VALUES ($1) RETURNING id_categoria, nombre_categoria`,
       [String(nombre_categoria).trim()]

@@ -3,7 +3,8 @@ import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { isBodegueroTipo, isStaffTipo } from "@/lib/roles";
 import { apiError, unauthorizedError } from "@/lib/api-error";
-import { presentacionesIniciales, validarPresentaciones, type Presentacion } from "@/lib/presentaciones";
+import { normalizarUnidad, presentacionesIniciales, validarPresentaciones, type Presentacion } from "@/lib/presentaciones";
+import { validarCategoriasProducto } from "@/lib/producto-categorias";
 
 export async function GET(req: NextRequest) {
   const usuario = getUsuarioFromRequest(req);
@@ -24,11 +25,17 @@ export async function GET(req: NextRequest) {
         p.fecha_caducidad,
         p.exento_iva,
         p.id_categoria,
+        p.id_categoria_2,
+        p.id_categoria_3,
         p.id_marca,
         c.nombre_categoria,
+        c2.nombre_categoria AS nombre_categoria_2,
+        c3.nombre_categoria AS nombre_categoria_3,
         m.nombre_marca
       FROM producto p
       JOIN categoria c ON c.id_categoria = p.id_categoria
+      LEFT JOIN categoria c2 ON c2.id_categoria = p.id_categoria_2
+      LEFT JOIN categoria c3 ON c3.id_categoria = p.id_categoria_3
       JOIN marca     m ON m.id_marca     = p.id_marca
       ORDER BY p.nombre_producto
     `);
@@ -56,6 +63,8 @@ export async function POST(req: NextRequest) {
       fecha_caducidad = null,
       exento_iva = false,
       id_categoria,
+      id_categoria_2 = null,
+      id_categoria_3 = null,
       id_marca,
       id_proveedores = [],
       presentaciones,
@@ -70,6 +79,8 @@ export async function POST(req: NextRequest) {
       fecha_caducidad?: string | null;
       exento_iva?: boolean;
       id_categoria: number;
+      id_categoria_2?: number | null;
+      id_categoria_3?: number | null;
       id_marca: number;
       id_proveedores?: number[];
       presentaciones?: Presentacion[];
@@ -79,6 +90,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Faltan campos obligatorios" }, { status: 400 });
     }
 
+    const errorCategorias = validarCategoriasProducto([id_categoria, id_categoria_2, id_categoria_3]);
+    if (errorCategorias) return NextResponse.json({ error: errorCategorias }, { status: 400 });
     const presentacionesLimpias = presentaciones === undefined ? presentacionesIniciales(unidad_medida) : presentaciones;
     const errorPresentaciones = validarPresentaciones(presentacionesLimpias);
     if (errorPresentaciones) return NextResponse.json({ error: errorPresentaciones }, { status: 400 });
@@ -97,8 +110,8 @@ export async function POST(req: NextRequest) {
       const result = await client.query(
         `INSERT INTO producto (
           codigo_producto, nombre_producto, precio_unitario, precio_mayoreo,
-          unidad_medida, estado_producto, caducidad, fecha_caducidad, exento_iva, id_categoria, id_marca
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+          unidad_medida, estado_producto, caducidad, fecha_caducidad, exento_iva, id_categoria, id_marca, id_categoria_2, id_categoria_3
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
         RETURNING id_producto`,
         [
           codigo_producto,
@@ -112,6 +125,8 @@ export async function POST(req: NextRequest) {
           exento_iva,
           id_categoria,
           id_marca,
+          id_categoria_2,
+          id_categoria_3,
         ]
       );
       const idProducto = result.rows[0].id_producto;
@@ -127,10 +142,10 @@ export async function POST(req: NextRequest) {
 
       for (const pres of presentacionesLimpias) {
         await client.query(
-          `INSERT INTO presentacion_producto (id_producto, nombre_presentacion, factor_conversion)
-           VALUES ($1, $2, $3)
-           ON CONFLICT (id_producto, nombre_presentacion) DO NOTHING`,
-          [idProducto, pres.nombre_presentacion.trim(), pres.factor_conversion]
+          `INSERT INTO presentacion_producto (id_producto, nombre_presentacion, factor_conversion, unidad_base)
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT (id_producto, unidad_base, nombre_presentacion) DO NOTHING`,
+          [idProducto, pres.nombre_presentacion.trim(), pres.factor_conversion, normalizarUnidad(unidad_medida)]
         );
       }
 
@@ -143,6 +158,7 @@ export async function POST(req: NextRequest) {
       client.release();
     }
   } catch (error: any) {
+    if (error.code === "23503") return NextResponse.json({ error: "La categoría o marca seleccionada no existe" }, { status: 400 });
     if (error.code === "23505") {
       return NextResponse.json({ error: "El código de producto ya existe" }, { status: 409 });
     }

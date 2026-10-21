@@ -167,6 +167,46 @@ describe("InventarioPage (Inventario + Catálogo unificados)", () => {
     expect(await screen.findByText("Libra · 1 libra")).toBeInTheDocument();
   });
 
+  it("replaces litre presentations with bottle presentations when correcting the unit", async () => {
+    server.use(
+      rest.get("/api/productos", (_req, res, ctx) => res(ctx.json({ productos: [{ ...producto, unidad_medida: "litro" }] }))),
+      rest.get("/api/presentaciones", (req, res, ctx) => res(ctx.json({ presentaciones: req.url.searchParams.has("id_producto")
+        ? [{ id_presentacion: 9, nombre_presentacion: "Litro", factor_conversion: "1.000" }] : [] }))),
+    );
+    const guardar = jest.fn();
+    server.use(rest.put("/api/productos/1", async (req, res, ctx) => { guardar(await req.json()); return res(ctx.json({ id_producto: 1 })); }));
+    const user = userEvent.setup();
+    render(<InventarioPage />);
+    await user.click(await screen.findByRole("button", { name: "Productos" }));
+    await user.click(await screen.findByRole("button", { name: "Editar" }));
+    await screen.findByText("Litro · 1 litro");
+    await user.clear(screen.getByLabelText("Unidad de medida"));
+    await user.type(screen.getByLabelText("Unidad de medida"), "botella");
+    expect(screen.getByText("Botella · 1 botella")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Quitar Litro" })).not.toBeInTheDocument();
+    expect(screen.getByText(/10 litro pasarán a ser 10 botella/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Guardar cambios" }));
+    await waitFor(() => expect(guardar).toHaveBeenCalledWith(expect.objectContaining({
+      unidad_medida: "botella", precio_unitario: 4.5,
+      presentaciones: [{ nombre_presentacion: "Botella", factor_conversion: 1 }],
+    })));
+  });
+
+  it("restores the original selection when reverting the unit before saving", async () => {
+    const user = userEvent.setup();
+    render(<InventarioPage />);
+    await user.click(await screen.findByRole("button", { name: "Productos" }));
+    await user.click(await screen.findByRole("button", { name: "Editar" }));
+    await screen.findByText("Libra · 1 libra");
+    const unidad = screen.getByLabelText("Unidad de medida");
+    await user.clear(unidad);
+    await user.type(unidad, "botella");
+    await user.clear(unidad);
+    await user.type(unidad, "lb");
+    expect(screen.getByText("Libra · 1 lb")).toBeInTheDocument();
+    expect(screen.queryByText(/Al guardar se corregirá la unidad/)).not.toBeInTheDocument();
+  });
+
   it("blocks saving if existing presentations fail to load and allows retrying", async () => {
     server.use(rest.get("/api/presentaciones", (_req, res, ctx) => res(ctx.status(500))));
     const user = userEvent.setup();
@@ -179,5 +219,76 @@ describe("InventarioPage (Inventario + Catálogo unificados)", () => {
     await user.click(screen.getByRole("button", { name: "Reintentar carga" }));
     expect(await screen.findByText("Libra · 1 libra")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Guardar cambios" })).toBeEnabled();
+  });
+
+  it("creates a brand and categories from product editing and selects them in the intended slots", async () => {
+    let siguienteCategoria = 2;
+    server.use(
+      rest.post("/api/categorias", async (req, res, ctx) => {
+        const body = await req.json();
+        return res(ctx.status(201), ctx.json({ categoria: { id_categoria: siguienteCategoria++, nombre_categoria: body.nombre_categoria } }));
+      }),
+      rest.post("/api/marcas", async (req, res, ctx) => {
+        const body = await req.json();
+        return res(ctx.status(201), ctx.json({ marca: { id_marca: 2, nombre_marca: body.nombre_marca } }));
+      }),
+    );
+    const guardar = jest.fn();
+    server.use(rest.put("/api/productos/1", async (req, res, ctx) => { guardar(await req.json()); return res(ctx.json({ id_producto: 1 })); }));
+    const user = userEvent.setup();
+    render(<InventarioPage />);
+    await user.click(await screen.findByRole("button", { name: "Productos" }));
+    await user.click(await screen.findByRole("button", { name: "Editar" }));
+    await screen.findByText("Libra · 1 libra");
+
+    for (const [numero, nombre] of [[2, "Alimentos"], [3, "Básicos"]] as const) {
+      await user.click(screen.getByRole("button", { name: `+ Crear categoría ${numero}` }));
+      await user.type(screen.getByLabelText("Nombre de nueva categoría"), nombre);
+      await user.click(screen.getByRole("button", { name: /^Crear categoría$/ }));
+      await waitFor(() => expect(screen.getByLabelText(`Categoría ${numero} (opcional)`)).toHaveValue(nombre));
+    }
+    await user.click(screen.getByRole("button", { name: "+ Crear marca" }));
+    await user.type(screen.getByLabelText("Nombre de nueva marca"), "Marca nueva");
+    await user.click(screen.getByRole("button", { name: /^Crear marca$/ }));
+    await waitFor(() => expect(screen.getByLabelText("Marca")).toHaveValue("2"));
+    await user.click(screen.getByRole("button", { name: "Guardar cambios" }));
+    await waitFor(() => expect(guardar).toHaveBeenCalledWith(expect.objectContaining({ id_categoria: 1, id_categoria_2: 2, id_categoria_3: 3, id_marca: 2 })));
+  });
+
+  it("preloads optional categories and can clear them to null", async () => {
+    server.use(
+      rest.get("/api/productos", (_req, res, ctx) => res(ctx.json({ productos: [{ ...producto, id_categoria_2: 2, id_categoria_3: 3, nombre_categoria_2: "Alimentos", nombre_categoria_3: "Básicos" }] }))),
+      rest.get("/api/categorias", (_req, res, ctx) => res(ctx.json({ categorias: [
+        { id_categoria: 1, nombre_categoria: "Granos" }, { id_categoria: 2, nombre_categoria: "Alimentos" }, { id_categoria: 3, nombre_categoria: "Básicos" },
+      ] }))),
+    );
+    const guardar = jest.fn();
+    server.use(rest.put("/api/productos/1", async (req, res, ctx) => { guardar(await req.json()); return res(ctx.json({ id_producto: 1 })); }));
+    const user = userEvent.setup();
+    render(<InventarioPage />);
+    await user.click(await screen.findByRole("button", { name: "Productos" }));
+    expect(await screen.findByText("Granos · Alimentos · Básicos")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Editar" }));
+    await screen.findByText("Libra · 1 libra");
+    expect(screen.getByLabelText("Categoría 2 (opcional)")).toHaveValue("Alimentos");
+    expect(screen.getByLabelText("Categoría 3 (opcional)")).toHaveValue("Básicos");
+    await user.click(screen.getByLabelText("Categoría 2 (opcional)"));
+    await user.click(screen.getByRole("button", { name: "Dejar Categoría 2 (opcional) sin categoría" }));
+    await user.click(screen.getByLabelText("Categoría 3 (opcional)"));
+    await user.click(screen.getByRole("button", { name: "Dejar Categoría 3 (opcional) sin categoría" }));
+    await user.click(screen.getByRole("button", { name: "Guardar cambios" }));
+    await waitFor(() => expect(guardar).toHaveBeenCalledWith(expect.objectContaining({ id_categoria: 1, id_categoria_2: null, id_categoria_3: null })));
+  });
+
+  it("also offers brand and category creation when adding a new product", async () => {
+    const user = userEvent.setup();
+    render(<InventarioPage />);
+    await user.click(await screen.findByRole("button", { name: "Productos" }));
+    await user.click(screen.getByRole("button", { name: "+ Nuevo producto" }));
+    expect(screen.getByLabelText("Categoría principal *")).toHaveValue("");
+    expect(screen.getByLabelText("Categoría 2 (opcional)")).toHaveValue("");
+    expect(screen.getByLabelText("Categoría 3 (opcional)")).toHaveValue("");
+    expect(screen.getByRole("button", { name: "+ Crear marca" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "+ Crear categoría 1" })).toBeInTheDocument();
   });
 });

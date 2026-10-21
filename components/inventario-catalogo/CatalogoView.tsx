@@ -4,6 +4,8 @@ import { Icon } from "@/components/Icon";
 import { matchesQuery, paginar, PaginationBar, type PageSize } from "@/lib/ui-table";
 import { PresentacionesProducto } from "@/components/inventario-catalogo/PresentacionesProducto";
 import { normalizarUnidad, presentacionesIniciales, validarPresentaciones, type Presentacion } from "@/lib/presentaciones";
+import { validarCategoriasProducto } from "@/lib/producto-categorias";
+import { CategoriaAutocompletar } from "@/components/inventario-catalogo/CategoriaAutocompletar";
 
 const MIS_ITEMS = [
   {label: "editar", icon: "pencil"},
@@ -16,6 +18,10 @@ interface Producto {
   nombre_producto: string;
   nombre_categoria: string;
   id_categoria: number;
+  id_categoria_2?: number | null;
+  id_categoria_3?: number | null;
+  nombre_categoria_2?: string | null;
+  nombre_categoria_3?: string | null;
   nombre_marca: string;
   id_marca: number;
   precio_unitario: string | null;
@@ -51,6 +57,8 @@ const EMPTY_FORM = {
   precio_mayoreo: "",
   unidad_medida: "",
   id_categoria: "",
+  id_categoria_2: "",
+  id_categoria_3: "",
   id_marca: "",
   caducidad: false,
   fecha_caducidad: "",
@@ -96,6 +104,7 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
 
   // Categoría / marca: alta rápida sin salir del modal
   const [creandoCategoria, setCreandoCategoria] = useState(false);
+  const [categoriaDestino, setCategoriaDestino] = useState<"id_categoria" | "id_categoria_2" | "id_categoria_3">("id_categoria");
   const [nuevaCategoriaNombre, setNuevaCategoriaNombre] = useState("");
   const [guardandoCategoria, setGuardandoCategoria] = useState(false);
   const [errorCategoria, setErrorCategoria] = useState("");
@@ -106,14 +115,19 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
 
   // Presentaciones por mayor (ej. "Caja de 24", "Saco de 50 libras")
   const [presentacionesForm, setPresentacionesForm] = useState<Presentacion[]>([]);
+  const [presentacionesOriginales, setPresentacionesOriginales] = useState<Presentacion[]>([]);
   const [presentacionesCargando, setPresentacionesCargando] = useState(false);
   const [presentacionesError, setPresentacionesError] = useState("");
   const [reintentoPresentaciones, setReintentoPresentaciones] = useState(0);
   const unidadBase = normalizarUnidad(form.unidad_medida);
+  const cambiaUnidad = !!editando && unidadBase !== normalizarUnidad(editando.unidad_medida);
 
   useEffect(() => {
-    if (modalOpen && !editando) setPresentacionesForm(presentacionesIniciales(unidadBase));
-  }, [modalOpen, editando, unidadBase]);
+    if (!modalOpen) return;
+    setPresentacionesForm(editando && unidadBase === normalizarUnidad(editando.unidad_medida)
+      ? presentacionesOriginales
+      : presentacionesIniciales(unidadBase));
+  }, [modalOpen, editando, unidadBase, presentacionesOriginales]);
 
   useEffect(() => {
     if (!modalOpen || !editando) return;
@@ -124,7 +138,7 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
       .then(async (res) => {
         if (!res.ok) throw new Error();
         const data = await res.json();
-        if (!controller.signal.aborted) setPresentacionesForm((data.presentaciones || []).map((p: Presentacion) => ({ ...p, factor_conversion: Number(p.factor_conversion) })));
+        if (!controller.signal.aborted) setPresentacionesOriginales((data.presentaciones || []).map((p: Presentacion) => ({ ...p, factor_conversion: Number(p.factor_conversion) })));
       })
       .catch(() => { if (!controller.signal.aborted) setPresentacionesError("No se pudieron cargar las presentaciones del producto."); })
       .finally(() => { if (!controller.signal.aborted) setPresentacionesCargando(false); });
@@ -183,6 +197,7 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
     setFormProveedorNuevo(PROVEEDOR_VACIO);
     setErrorProveedor("");
     setPresentacionesForm([]);
+    setPresentacionesOriginales([]);
     setPresentacionesCargando(false);
     setPresentacionesError("");
     setCreandoCategoria(false);
@@ -210,6 +225,8 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
       precio_mayoreo: p.precio_mayoreo ?? "",
       unidad_medida: p.unidad_medida,
       id_categoria: String(p.id_categoria),
+      id_categoria_2: p.id_categoria_2 == null ? "" : String(p.id_categoria_2),
+      id_categoria_3: p.id_categoria_3 == null ? "" : String(p.id_categoria_3),
       id_marca: String(p.id_marca),
       caducidad: p.caducidad,
       fecha_caducidad: p.fecha_caducidad?.slice(0, 10) ?? "",
@@ -272,7 +289,7 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
       if (!res.ok) setErrorCategoria(data.error || "Error al crear la categoría");
       else {
         setCategorias((prev) => [...prev, data.categoria].sort((a, b) => a.nombre_categoria.localeCompare(b.nombre_categoria)));
-        setForm((f) => ({ ...f, id_categoria: String(data.categoria.id_categoria) }));
+        setForm((f) => ({ ...f, [categoriaDestino]: String(data.categoria.id_categoria) }));
         setNuevaCategoriaNombre("");
         setCreandoCategoria(false);
       }
@@ -303,11 +320,14 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
   };
 
   const handleGuardar = async () => {
+    if (guardandoCategoria || guardandoMarca) return;
     if (!form.codigo_producto || !form.nombre_producto || !form.unidad_medida || !form.id_categoria || !form.id_marca) {
       setFormError("Completa todos los campos obligatorios (*)");
       return;
     }
     if (presentacionesCargando || presentacionesError) return;
+    const errorCategorias = validarCategoriasProducto([Number(form.id_categoria), form.id_categoria_2 ? Number(form.id_categoria_2) : null, form.id_categoria_3 ? Number(form.id_categoria_3) : null]);
+    if (errorCategorias) { setFormError(errorCategorias); return; }
     const errorPresentaciones = validarPresentaciones(presentacionesForm);
     if (errorPresentaciones) { setFormError(errorPresentaciones); return; }
     setSaving(true);
@@ -320,6 +340,8 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
       precio_mayoreo: form.precio_mayoreo ? Number(form.precio_mayoreo) : null,
       fecha_caducidad: form.caducidad && form.fecha_caducidad ? form.fecha_caducidad : null,
       id_categoria: Number(form.id_categoria),
+      id_categoria_2: form.id_categoria_2 ? Number(form.id_categoria_2) : null,
+      id_categoria_3: form.id_categoria_3 ? Number(form.id_categoria_3) : null,
       id_marca: Number(form.id_marca),
     };
     if (!editando) {
@@ -387,11 +409,11 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
     () =>
       productos.filter((p) => {
         if (soloActivos && !p.estado_producto) return false;
-        if (filtroCategoria && String(p.id_categoria) !== filtroCategoria) return false;
+        if (filtroCategoria && ![p.id_categoria, p.id_categoria_2, p.id_categoria_3].some((id) => String(id) === filtroCategoria)) return false;
         if (filtroMarca && String(p.id_marca) !== filtroMarca) return false;
         if (filtroExentoIva && !p.exento_iva) return false;
         if (filtroCaducidad && !p.caducidad) return false;
-        return matchesQuery(busqueda, p.nombre_producto, p.codigo_producto, p.nombre_categoria, p.nombre_marca);
+        return matchesQuery(busqueda, p.nombre_producto, p.codigo_producto, p.nombre_categoria, p.nombre_categoria_2, p.nombre_categoria_3, p.nombre_marca);
       }),
     [productos, busqueda, soloActivos, filtroCategoria, filtroMarca, filtroExentoIva, filtroCaducidad]
   );
@@ -466,7 +488,7 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
                         {p.exento_iva && <span style={{ ...s.badge, background: "rgba(88,166,255,.15)", color: "var(--blue)", borderColor: "rgba(88,166,255,.3)" }}>Exento IVA</span>}
                       </div>
                     </td>
-                    <td style={s.td}>{p.nombre_categoria}</td>
+                    <td style={s.td}>{[p.nombre_categoria, p.nombre_categoria_2, p.nombre_categoria_3].filter(Boolean).join(" · ")}</td>
                     <td style={s.td}>{p.nombre_marca}</td>
                     <td style={s.td}>{p.unidad_medida}</td>
                     <td style={{ ...s.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{p.precio_unitario ? `Q${Number(p.precio_unitario).toFixed(2)}` : "—"}</td>
@@ -685,27 +707,63 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
                 </Field>
               </div>
               <div style={s.fila}>
-                <Field label="Categoría *" style={{ flex: 1 }}>
-                  <select 
-                    style={{ ...s.input, backgroundColor: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)" }} 
-                    value={form.id_categoria} 
-                    onChange={(e) => setForm(f => ({ ...f, id_categoria: e.target.value }))}
-                  >
-                    <option value="">— Selecciona —</option>
-                    {categorias.map((c) => <option key={c.id_categoria} value={c.id_categoria}>{c.nombre_categoria}</option>)}
-                  </select>
-                </Field>
+                {([
+                  { key: "id_categoria", label: "Categoría principal *", numero: 1 },
+                  { key: "id_categoria_2", label: "Categoría 2 (opcional)", numero: 2 },
+                  { key: "id_categoria_3", label: "Categoría 3 (opcional)", numero: 3 },
+                ] as const).map(({ key, label, numero }) => (
+                  <Field key={key} label={label} style={{ flex: "1 1 170px" }}>
+                    <CategoriaAutocompletar
+                      ariaLabel={label} style={s.input} value={form[key]} disabled={saving || guardandoCategoria}
+                      opcional={numero !== 1}
+                      categorias={categorias.filter((c) => !["id_categoria", "id_categoria_2", "id_categoria_3"].some((otra) => otra !== key && form[otra as typeof key] === String(c.id_categoria)))}
+                      onChange={(id) => setForm((f) => ({ ...f, [key]: id }))}
+                    />
+                    <button type="button" style={s.btnSecondary} disabled={saving || guardandoCategoria}
+                      onClick={() => { setCategoriaDestino(key); setCreandoCategoria(true); setNuevaCategoriaNombre(""); setErrorCategoria(""); }}>
+                      + Crear categoría {numero}
+                    </button>
+                  </Field>
+                ))}
+              </div>
+              {creandoCategoria && (
+                <div style={{ padding: "0.75rem", border: "1px solid var(--border)", borderRadius: 8 }}>
+                  <Field label={"Nueva categoría para " + (categoriaDestino === "id_categoria" ? "categoría principal" : categoriaDestino === "id_categoria_2" ? "categoría 2" : "categoría 3")}>
+                    <input aria-label="Nombre de nueva categoría" style={s.input} maxLength={100} value={nuevaCategoriaNombre}
+                      onChange={(e) => setNuevaCategoriaNombre(e.target.value)} disabled={guardandoCategoria}
+                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); if (!guardandoCategoria) guardarCategoriaNueva(); } }} />
+                  </Field>
+                  {errorCategoria && <p role="alert" style={s.formError}>{errorCategoria}</p>}
+                  <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem" }}>
+                    <button type="button" onClick={guardarCategoriaNueva} disabled={guardandoCategoria} style={s.btnSave}>{guardandoCategoria ? "Creando…" : "Crear categoría"}</button>
+                    <button type="button" onClick={() => setCreandoCategoria(false)} disabled={guardandoCategoria} style={s.btnSecondary}>Cancelar categoría</button>
+                  </div>
+                </div>
+              )}
+              <div style={s.fila}>
                 <Field label="Marca *" style={{ flex: 1 }}>
-                  <select 
-                    style={{ ...s.input, backgroundColor: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)" }} 
-                    value={form.id_marca} 
-                    onChange={(e) => setForm(f => ({ ...f, id_marca: e.target.value }))}
-                  >
+                  <select aria-label="Marca" style={s.input} value={form.id_marca} disabled={saving || guardandoMarca}
+                    onChange={(e) => setForm((f) => ({ ...f, id_marca: e.target.value }))}>
                     <option value="">— Selecciona —</option>
                     {marcas.map((m) => <option key={m.id_marca} value={m.id_marca}>{m.nombre_marca}</option>)}
                   </select>
+                  <button type="button" onClick={() => { setCreandoMarca(true); setNuevaMarcaNombre(""); setErrorMarca(""); }} disabled={saving || guardandoMarca} style={s.btnSecondary}>+ Crear marca</button>
                 </Field>
               </div>
+              {creandoMarca && (
+                <div style={{ padding: "0.75rem", border: "1px solid var(--border)", borderRadius: 8 }}>
+                  <Field label="Nueva marca">
+                    <input aria-label="Nombre de nueva marca" style={s.input} maxLength={100} value={nuevaMarcaNombre}
+                      onChange={(e) => setNuevaMarcaNombre(e.target.value)} disabled={guardandoMarca}
+                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); if (!guardandoMarca) guardarMarcaNueva(); } }} />
+                  </Field>
+                  {errorMarca && <p role="alert" style={s.formError}>{errorMarca}</p>}
+                  <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem" }}>
+                    <button type="button" onClick={guardarMarcaNueva} disabled={guardandoMarca} style={s.btnSave}>{guardandoMarca ? "Creando…" : "Crear marca"}</button>
+                    <button type="button" onClick={() => setCreandoMarca(false)} disabled={guardandoMarca} style={s.btnSecondary}>Cancelar marca</button>
+                  </div>
+                </div>
+              )}
               <div style={s.fila}>
                 <Field label="Precio unitario" style={{ flex: 1 }}>
                   <input 
@@ -731,6 +789,8 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
                 </Field>
                 <Field label="Unidad de medida *" style={{ flex: 1 }}>
                   <input 
+                    aria-label="Unidad de medida"
+                    disabled={saving || presentacionesCargando || !!presentacionesError}
                     style={{ ...s.input, backgroundColor: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)" }} 
                     value={form.unidad_medida} 
                     onChange={(e) => setForm(f => ({ ...f, unidad_medida: e.target.value }))} 
@@ -738,6 +798,13 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
                   />
                 </Field>
               </div>
+              {cambiaUnidad && (
+                <p role="status" style={{ fontSize: "0.82rem", color: "var(--muted)", margin: 0 }}>
+                  Al guardar se corregirá la unidad de {editando.unidad_medida} a {form.unidad_medida || "la nueva unidad"}.
+                  Las cantidades y los precios actuales se conservan: por ejemplo, 10 {editando.unidad_medida} pasarán a ser 10 {form.unidad_medida || "unidades"}.
+                  Selecciona las presentaciones de la nueva unidad. Las anteriores quedarán inactivas y conservarán sus referencias históricas.
+                </p>
+              )}
               <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap", marginTop: "0.25rem", color: "var(--text)" }}>
                 <CheckField label="Producto con fecha de caducidad" checked={form.caducidad} onChange={(v) => setForm(f => ({ ...f, caducidad: v }))} />
                 <CheckField label="Exento de IVA" checked={form.exento_iva} onChange={(v) => setForm(f => ({ ...f, exento_iva: v }))} />
@@ -825,7 +892,7 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
             </div>
             <div style={{ ...s.modalFooter, padding: "1rem 1.5rem", display: "flex", justifyContent: "flex-end", gap: "0.75rem", borderTop: "1px solid var(--border)" }}>
               <button type="button" onClick={cerrarModal} style={s.btnSecondary} disabled={saving}>Cancelar</button>
-              <button type="button" onClick={handleGuardar} style={s.btnSecondary} disabled={saving || presentacionesCargando || !!presentacionesError}>{saving ? "Guardando…" : editando ? "Guardar cambios" : "Crear producto"}</button>
+              <button type="button" onClick={handleGuardar} style={s.btnSecondary} disabled={saving || guardandoCategoria || guardandoMarca || presentacionesCargando || !!presentacionesError}>{saving ? "Guardando…" : editando ? "Guardar cambios" : "Crear producto"}</button>
             </div>
           </div>
         </div>

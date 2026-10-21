@@ -263,6 +263,33 @@ Ambas son idempotentes (se pueden correr más de una vez). Sólo aplican sobre
 bases ya inicializadas: en bases nuevas el esquema de `init/01_schema.sql` ya
 incluye estos cambios.
 
+### Marcas y categorías desde el producto
+
+En **Inventario → Productos → Crear/Editar** se pueden crear marcas y
+categorías sin salir del formulario. Al crear una, se agrega al catálogo y se
+selecciona en el campo desde el que se inició la creación.
+
+Cada producto tiene una categoría principal obligatoria y dos adicionales
+opcionales. Las adicionales muestran **Sin categoría** y se guardan como
+`NULL`; no se crea una categoría ficticia. Las tres deben ser distintas.
+La búsqueda y el filtro del catálogo consideran cualquiera de las tres.
+Los tres campos de categoría muestran hasta cinco sugerencias aleatorias al
+abrirse. Al escribir buscan en todo el catálogo, sin distinguir mayúsculas ni
+acentos, y muestran hasta ocho coincidencias. Se excluyen las categorías ya
+seleccionadas en los otros campos; las opcionales permiten elegir «Sin categoría».
+
+En una base existente ejecutar:
+
+```bash
+psql -v ON_ERROR_STOP=1 -U <usuario> -d <basedatos> -f migrations/11_categorias_adicionales_producto.sql
+```
+
+La migración conserva la categoría principal de cada producto y agrega las
+dos columnas opcionales con claves foráneas. Es idempotente y se aplica
+automáticamente desde `init/11_categorias_adicionales_producto.sql` en bases
+nuevas. Las ediciones que omiten estos campos conservan sus valores actuales;
+enviar `null` los limpia explícitamente.
+
 ### Presentaciones desde el producto
 
 Las presentaciones se administran en **Inventario → Productos → Editar** y
@@ -276,6 +303,7 @@ Para completar una base existente, ejecutar:
 
 ```bash
 psql -v ON_ERROR_STOP=1 -U <usuario> -d <basedatos> -f migrations/09_presentaciones_por_producto.sql
+psql -v ON_ERROR_STOP=1 -U <usuario> -d <basedatos> -f migrations/10_unidad_base_presentaciones.sql
 ```
 
 La migración es idempotente: agrega la unidad base que falte y, para productos
@@ -287,9 +315,17 @@ esos empaques se seleccionan o crean en el formulario.
 
 Quitar una presentación la desactiva; no se elimina el historial. Si se vuelve
 a seleccionar con el mismo nombre y factor, se reutiliza su identificador.
-Una equivalencia existente no cambia de factor y un producto con presentaciones
-no cambia de unidad base (sí se aceptan alias, por ejemplo `lb` y `libra`).
-Para otra equivalencia se crea una presentación con un nombre diferente.
+Una equivalencia existente no cambia de factor. El dueño puede corregir la
+unidad base desde la edición: el formulario reemplaza la selección por las
+presentaciones de la nueva unidad, que se pueden ajustar antes de guardar.
+La corrección conserva los valores numéricos de cantidades y precios (10 litros
+pasan a ser 10 botellas); no convierte volúmenes ni recalcula existencias.
+Las presentaciones previas quedan inactivas y mantienen sus IDs, factores y
+unidad original. Al volver a una unidad anterior se pueden seleccionar de
+nuevo, incluso con el mismo nombre usado en otra unidad.
+La migración 10 agrega esa unidad original a cada presentación sin alterar
+cantidades ni precios; también se ejecuta desde `init` en instalaciones nuevas.
+Los alias de la misma unidad (`lb` y `libra`) no reemplazan la selección.
 
 **Antes de desplegar**, rotá la contraseña de las cuentas que usaban la clave
 publicada en el repo: después de correr la 06 quedan marcadas para cambiar y no

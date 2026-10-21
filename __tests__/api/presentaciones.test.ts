@@ -12,7 +12,8 @@ describe("GET /api/presentaciones", () => {
     const res = await GET(createMockRequest("/api/presentaciones?unidad_medida=lbs", { user: testUserDueno }));
     const data = await res.json();
     expect(res.status).toBe(200);
-    expect(query.mock.calls[0][1]).toEqual([["libra", "libras", "lb", "lbs"]]);
+    expect(query.mock.calls[0][1]).toEqual(["libra"]);
+    expect(query.mock.calls[0][0]).toContain("pp.unidad_base = $1");
     expect(query.mock.calls[0][0]).toContain("pp.estado_presentacion = TRUE");
     expect(data.presentaciones).toEqual(expect.arrayContaining([
       { nombre_presentacion: "Arroba (25 libras)", factor_conversion: 25 },

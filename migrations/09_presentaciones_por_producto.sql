@@ -25,7 +25,7 @@ WHERE NOT EXISTS (
     AND (LOWER(TRIM(pp.nombre_presentacion)) = LOWER(COALESCE(u.nombre, TRIM(p.unidad_medida)))
          OR (pp.estado_presentacion AND pp.factor_conversion = 1))
 )
-ON CONFLICT (id_producto, nombre_presentacion) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 INSERT INTO presentacion_producto (id_producto, nombre_presentacion, factor_conversion)
 SELECT p.id_producto, v.nombre, v.factor
@@ -40,7 +40,7 @@ WHERE LOWER(TRIM(p.unidad_medida)) IN ('libra','libras','lb','lbs')
     SELECT 1 FROM presentacion_producto pp
     WHERE pp.id_producto = p.id_producto AND LOWER(TRIM(pp.nombre_presentacion)) = LOWER(v.nombre)
   )
-ON CONFLICT (id_producto, nombre_presentacion) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 -- Si el nombre de la unidad base ya existía desactivado, se conserva ese
 -- registro y se agrega una alternativa libre para que el producto tenga
