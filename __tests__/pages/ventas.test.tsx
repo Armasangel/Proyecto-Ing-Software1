@@ -53,9 +53,9 @@ async function llenarFormulario(user: ReturnType<typeof userEvent.setup>) {
 
   // El cliente ya no es un <select>: es un buscador con sugerencias. Al
   // enfocarlo (sin escribir nada) debe aparecer como sugerencia frecuente.
-  const buscadorCliente = await screen.findByPlaceholderText("Buscar cliente por nombre o correo…");
+  const buscadorCliente = await screen.findByPlaceholderText("Buscar cliente por código, nombre, NIT o teléfono…");
   await user.click(buscadorCliente);
-  await user.click(await screen.findByText("Carlos Ruiz (carlos@email.com)"));
+  await user.click(await screen.findByText("Carlos Ruiz"));
 
   // El producto tampoco es un <select>: es un buscador que sugiere 5 al azar
   // al enfocarlo (acá solo hay uno en el catálogo).
@@ -147,11 +147,11 @@ describe("VentasPage", () => {
     const user = userEvent.setup();
     render(<VentasPage />);
 
-    const buscadorCliente = await screen.findByPlaceholderText("Buscar cliente por nombre o correo…");
+    const buscadorCliente = await screen.findByPlaceholderText("Buscar cliente por código, nombre, NIT o teléfono…");
     await user.click(buscadorCliente);
 
     // Cliente minorista → se detecta Minorista.
-    await user.click(await screen.findByText("Carlos Ruiz (carlos@email.com)"));
+    await user.click(await screen.findByText("Carlos Ruiz"));
     expect(await screen.findByText("Minorista")).toBeInTheDocument();
 
     // Cambiar a un cliente mayorista (buscándolo) → se re-detecta Mayorista
@@ -159,7 +159,7 @@ describe("VentasPage", () => {
     await user.click(buscadorCliente);
     await user.clear(buscadorCliente);
     await user.type(buscadorCliente, "Sol");
-    await user.click(await screen.findByText("Distribuidora El Sol (sol@email.com)"));
+    await user.click(await screen.findByText("Distribuidora El Sol"));
     expect(await screen.findByText("Mayorista")).toBeInTheDocument();
     expect(screen.getByText("detectado del cliente")).toBeInTheDocument();
 
@@ -174,13 +174,13 @@ describe("VentasPage", () => {
     const user = userEvent.setup();
     render(<VentasPage />);
 
-    const buscadorCliente = await screen.findByPlaceholderText("Buscar cliente por nombre o correo…");
+    const buscadorCliente = await screen.findByPlaceholderText("Buscar cliente por código, nombre, NIT o teléfono…");
     await user.click(buscadorCliente);
 
     // Sin escribir nada, aparecen los clientes frecuentes.
     expect(await screen.findByText("Clientes frecuentes")).toBeInTheDocument();
-    expect(screen.getByText("Carlos Ruiz (carlos@email.com)")).toBeInTheDocument();
-    expect(screen.getByText("Distribuidora El Sol (sol@email.com)")).toBeInTheDocument();
+    expect(screen.getByText("Carlos Ruiz")).toBeInTheDocument();
+    expect(screen.getByText("Distribuidora El Sol")).toBeInTheDocument();
     // El de más ventas (3) aparece marcado.
     expect(screen.getByText("3 ventas")).toBeInTheDocument();
 
@@ -189,8 +189,8 @@ describe("VentasPage", () => {
     await waitFor(() => {
       expect(screen.queryByText("Clientes frecuentes")).not.toBeInTheDocument();
     });
-    expect(screen.getByText("Distribuidora El Sol (sol@email.com)")).toBeInTheDocument();
-    expect(screen.queryByText("Carlos Ruiz (carlos@email.com)")).not.toBeInTheDocument();
+    expect(screen.getByText("Distribuidora El Sol")).toBeInTheDocument();
+    expect(screen.queryByText("Carlos Ruiz")).not.toBeInTheDocument();
   });
 
   it("no se cae al buscar cuando hay un cliente sin correo, y no muestra '(null)'", async () => {
@@ -207,13 +207,13 @@ describe("VentasPage", () => {
     const user = userEvent.setup();
     render(<VentasPage />);
 
-    const buscadorCliente = await screen.findByPlaceholderText("Buscar cliente por nombre o correo…");
+    const buscadorCliente = await screen.findByPlaceholderText("Buscar cliente por código, nombre, NIT o teléfono…");
     await user.type(buscadorCliente, "rob");
 
     // Antes del arreglo, escribir aquí tiraba la página completa ("Algo salió mal en esta pantalla").
     expect(await screen.findByText("Roberto Sin Correo")).toBeInTheDocument();
     expect(screen.queryByText(/null/)).not.toBeInTheDocument();
-    expect(screen.getByPlaceholderText("Buscar cliente por nombre o correo…")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Buscar cliente por código, nombre, NIT o teléfono…")).toBeInTheDocument();
   });
 
   it("keeps the submit disabled while the form is incomplete", async () => {
@@ -302,7 +302,7 @@ describe("VentasPage — cliente nuevo", () => {
   });
 
   async function abrirFormulario(user: ReturnType<typeof userEvent.setup>) {
-    await screen.findByPlaceholderText("Buscar cliente por nombre o correo…");
+    await screen.findByPlaceholderText("Buscar cliente por código, nombre, NIT o teléfono…");
     await user.click(screen.getByRole("button", { name: "+ Cliente nuevo" }));
     return {
       nombre: screen.getByPlaceholderText("Nombre del cliente"),
@@ -358,7 +358,7 @@ describe("VentasPage — cliente nuevo", () => {
 
     expect(await screen.findByText(/Cliente "Pedro Nuevo" creado y seleccionado/)).toBeInTheDocument();
     expect(body).toMatchObject({ nombre: "Pedro Nuevo", correo: "pedro@correo.com", tipo_cliente: "MAYORISTA" });
-    expect(screen.getByPlaceholderText("Buscar cliente por nombre o correo…")).toHaveValue("Pedro Nuevo (pedro@correo.com)");
+    expect(screen.getByPlaceholderText("Buscar cliente por código, nombre, NIT o teléfono…")).toHaveValue("Pedro Nuevo");
     expect(await screen.findByText("Mayorista")).toBeInTheDocument();
     // El formulario se cierra tras crear.
     expect(screen.queryByPlaceholderText("Nombre del cliente")).not.toBeInTheDocument();
@@ -568,16 +568,16 @@ describe("VentasPage — Consumidor Final", () => {
     const user = userEvent.setup();
     render(<VentasPage />);
 
-    const buscador = await screen.findByPlaceholderText("Buscar cliente por nombre o correo…");
+    const buscador = await screen.findByPlaceholderText("Buscar cliente por código, nombre, NIT o teléfono…");
     await user.click(buscador);
     const dropdown = dropdownDeClientes(buscador);
 
     expect(await within(dropdown).findByText("Clientes frecuentes")).toBeInTheDocument();
     // Nombre + insignia del registro genérico, fijados antes que los frecuentes.
     const [nombreCF, insigniaCF] = within(dropdown).getAllByText("Consumidor Final");
-    expect(insigniaCF.className).toContain("uppercase");
+    expect(insigniaCF).toHaveStyle({ textTransform: "uppercase" });
 
-    const nombreCarlos = within(dropdown).getByText("Carlos Ruiz (carlos@email.com)");
+    const nombreCarlos = within(dropdown).getByText("Carlos Ruiz");
     expect(
       nombreCF.compareDocumentPosition(nombreCarlos) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
@@ -588,7 +588,7 @@ describe("VentasPage — Consumidor Final", () => {
       expect(within(dropdown).queryByText("Consumidor Final")).not.toBeInTheDocument();
     });
     expect(
-      within(dropdown).getByText("Distribuidora El Sol (sol@email.com)")
+      within(dropdown).getByText("Distribuidora El Sol")
     ).toBeInTheDocument();
   });
 
@@ -597,7 +597,7 @@ describe("VentasPage — Consumidor Final", () => {
     const user = userEvent.setup();
     render(<VentasPage />);
 
-    const buscador = await screen.findByPlaceholderText("Buscar cliente por nombre o correo…");
+    const buscador = await screen.findByPlaceholderText("Buscar cliente por código, nombre, NIT o teléfono…");
     await user.click(buscador);
     const [nombreCF] = within(dropdownDeClientes(buscador)).getAllByText("Consumidor Final");
     await user.click(nombreCF);
@@ -613,7 +613,7 @@ describe("VentasPage — Consumidor Final", () => {
     await user.clear(buscador);
     await user.type(buscador, "Carlos");
     await user.click(
-      await within(dropdownDeClientes(buscador)).findByText("Carlos Ruiz (carlos@email.com)")
+      await within(dropdownDeClientes(buscador)).findByText("Carlos Ruiz")
     );
     expect(screen.getByRole("button", { name: "Crédito" })).toBeEnabled();
   });

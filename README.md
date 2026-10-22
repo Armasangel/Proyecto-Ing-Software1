@@ -259,13 +259,19 @@ psql -U <usuario> -d <basedatos> -f migrations/06_seguridad_credenciales.sql
 psql -U <usuario> -d <basedatos> -f migrations/07_auditoria_credenciales.sql
 psql -U <usuario> -d <basedatos> -f migrations/09_descuentos.sql
 psql -U <usuario> -d <basedatos> -f migrations/11_cliente_datos_extra.sql
+psql -U <usuario> -d <basedatos> -f migrations/12_cliente_codigo.sql
 ```
 
 Todas son idempotentes (se pueden correr más de una vez). Las 06/07/09 sólo
 aplican sobre bases ya inicializadas: en bases nuevas el esquema de
 `init/01_schema.sql` ya incluye estos cambios. La 11 (dirección, código postal y
-tipos de cliente EMPRESA/GOBIERNO) hay que correrla también en bases nuevas,
-porque todavía no forma parte del esquema base.
+tipos de cliente EMPRESA/GOBIERNO) y la 12 (código de cliente) hay que correrlas
+también en bases nuevas, porque todavía no forman parte del esquema base.
+
+La 12 agrega `cliente.codigo_cliente` (código corto y único del cliente, ej.
+`CLI-00001`), la secuencia `cliente_codigo_seq` que genera el correlativo
+cuando el cliente se registra sin código, y le asigna un código a los clientes
+que ya existían.
 
 **Antes de desplegar**, rotá la contraseña de las cuentas que usaban la clave
 publicada en el repo: después de correr la 06 quedan marcadas para cambiar y no
@@ -540,7 +546,11 @@ una vista propia tras el login (`lib/roles.ts` → `postLoginPath`):
 - [x] Facturación con número correlativo atómico (secuencia de Postgres)
 - [x] Historial de ventas con filtros y paginación
 - [x] Gestión de clientes (minorista, mayorista, empresa o gobierno) con NIT,
-      dirección y código postal, límite de deuda y bloqueo automático
+      dirección y código postal, código único (CLI-00001), límite de deuda y
+      bloqueo automático
+- [x] Código de cliente visible en órdenes, ventas, historial, facturas y
+      reportes, con autocompletado por código, nombre, NIT, teléfono o correo
+      que rellena nombre, NIT y dirección
 
 ### Descuentos
 - [x] Descuentos configurables por el dueño: por porcentaje, por cantidad o por escala de tramos

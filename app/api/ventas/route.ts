@@ -86,6 +86,8 @@ export async function GET(req: NextRequest) {
         o.estado AS estado_pedido,
         uc.nombre AS nombre_cliente,
         uc.correo AS correo_cliente,
+        uc.codigo_cliente,
+        uc.nit_cliente,
         ue.nombre AS nombre_colaborador,
         COALESCE(
           json_agg(
@@ -111,7 +113,8 @@ export async function GET(req: NextRequest) {
       GROUP BY
         v.id_venta, v.id_cliente, v.id_empleado, v.fecha_venta,
         v.estado_venta, v.tipo_venta, v.tipo_entrega, v.direccion_entrega,
-        v.total, v.fecha_limite_pago, v.condicion_pago, o.id_orden, o.estado, uc.nombre, uc.correo, ue.nombre
+        v.total, v.fecha_limite_pago, v.condicion_pago, o.id_orden, o.estado,
+        uc.nombre, uc.correo, uc.codigo_cliente, uc.nit_cliente, ue.nombre
       ORDER BY v.fecha_venta DESC
       LIMIT $1 OFFSET $2
     `, [limit, offset]);

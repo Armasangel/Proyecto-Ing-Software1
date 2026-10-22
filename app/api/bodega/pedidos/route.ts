@@ -29,6 +29,7 @@ export async function GET(req: NextRequest) {
         o.notas,
         o.total,
         c.nombre AS nombre_cliente,
+        c.codigo_cliente AS codigo_cliente,
         COALESCE(
           json_agg(
             json_build_object(
@@ -53,7 +54,7 @@ export async function GET(req: NextRequest) {
           SELECT 1 FROM detalle_orden d2
           WHERE d2.id_orden = o.id_orden AND d2.id_bodega = $1
         )
-      GROUP BY o.id_orden, o.fecha_orden, o.estado, o.notas, o.total, c.nombre
+      GROUP BY o.id_orden, o.fecha_orden, o.estado, o.notas, o.total, c.nombre, c.codigo_cliente
       ORDER BY
         CASE o.estado WHEN 'CONFIRMADO' THEN 0 WHEN 'EN_PREPARACION' THEN 1 ELSE 2 END,
         o.fecha_orden ASC

@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
   try {
     const result = await pool.query(
       `SELECT c.id_cliente, c.nombre, c.correo, c.telefono, c.tipo_cliente,
-              c.estado_cliente, c.limite_deuda,
+              c.estado_cliente, c.limite_deuda, c.codigo_cliente, c.nit_cliente, c.direccion,
               COUNT(o.id_orden)::int AS total_ordenes
          FROM cliente c
          LEFT JOIN orden o

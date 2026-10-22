@@ -26,6 +26,7 @@ type VentaHistorial = {
   total: string | number;
   nombre_cliente: string;
   correo_cliente: string;
+  codigo_cliente?: string | null;
   nombre_colaborador: string | null;
   productos: LineaHistorial[];
 };
@@ -45,9 +46,12 @@ type ProductoOpt = {
 };
 
 type ClienteOpt = {
-  id_usuario: number;
+  // El API de clientes devuelve id_cliente (no id_usuario): con el nombre
+  // equivocado el filtro por cliente nunca encontraba al cliente elegido.
+  id_cliente: number;
   nombre: string;
   correo: string | null;
+  codigo_cliente?: string | null;
 };
 
 type ProveedorOpt = {
@@ -339,7 +343,7 @@ export default function HistorialVentasPage() {
   };
 
   const nombreProductoSel = productosCat.find((p) => p.id_producto === idProducto);
-  const nombreClienteSel = clientesCat.find((c) => c.id_usuario === idCliente);
+  const nombreClienteSel = clientesCat.find((c) => c.id_cliente === idCliente);
   const nombreProveedorSel = proveedoresCat.find((p) => p.id_proveedor === idProveedor);
 
   const productosPickerFiltrados = useMemo(() => {
@@ -456,7 +460,10 @@ export default function HistorialVentasPage() {
                   </td>
                   <td className={cls.td}>
                     <div className="font-medium">{v.nombre_cliente}</div>
-                    <div className="text-[0.78rem] text-ink-muted">{v.correo_cliente}</div>
+                    <div className="text-[0.78rem] text-ink-muted">
+                      {v.codigo_cliente ? `${v.codigo_cliente} · ` : ""}
+                      {v.correo_cliente}
+                    </div>
                   </td>
                   <td className={`${cls.td} max-w-[220px]`}>{resumenLineas(v)}</td>
                   <td className={`${cls.td} text-right font-semibold`}>Q{num(v.total).toFixed(2)}</td>
@@ -712,16 +719,19 @@ export default function HistorialVentasPage() {
               {picker === "cliente" &&
                 clientesPickerFiltrados.map((c) => (
                   <button
-                    key={c.id_usuario}
+                    key={c.id_cliente}
                     type="button"
                     className={cls.listItem}
                     onClick={() => {
-                      setIdCliente(c.id_usuario);
+                      setIdCliente(c.id_cliente);
                       setPicker(null);
                     }}
                   >
                     <span className="font-semibold block">{c.nombre}</span>
-                    <span className="text-ink-muted text-[0.85rem]">{c.correo}</span>
+                    <span className="text-ink-muted text-[0.85rem]">
+                      {c.codigo_cliente ? `${c.codigo_cliente} · ` : ""}
+                      {c.correo}
+                    </span>
                   </button>
                 ))}
               {picker === "proveedor" &&

@@ -30,6 +30,7 @@ export async function GET(
         v.estado_venta,
         u.nombre,
         u.correo,
+        u.codigo_cliente,
         f.id_factura,
         f.numero_factura,
         f.nombre_cliente,
@@ -57,7 +58,7 @@ export async function GET(
       WHERE v.id_venta = $1
       GROUP BY
         v.id_venta, v.fecha_venta, v.total, v.estado_venta,
-        u.nombre, u.correo,
+        u.nombre, u.correo, u.codigo_cliente,
         f.id_factura, f.numero_factura, f.nombre_cliente, f.nit_cliente, f.total_factura
       `,
       [id_venta]

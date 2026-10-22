@@ -4,6 +4,7 @@ import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { isStaffTipo } from "@/lib/roles";
 import { apiError, unauthorizedError, validationError } from "@/lib/api-error";
 import { esTipoCliente } from "@/lib/tipos-cliente";
+import { errorCodigoCliente, normalizarCodigoCliente } from "@/lib/clientes-codigo";
 
 // Límites de las columnas nuevas (mismos tamaños que la tabla cliente).
 const NIT_MAX = 20;
@@ -33,13 +34,28 @@ export async function GET(req: NextRequest) {
   // este parámetro, así que siguen viendo solo clientes activos como antes.
   const incluirTodos = req.nextUrl.searchParams.get("todos") === "1";
 
+  // ?codigo=CLI-00001 busca un cliente puntual por su código. La comparación
+  // es insensible a mayúsculas porque los códigos se guardan normalizados
+  // (ver lib/clientes-codigo.ts).
+  const codigo = normalizarCodigoCliente(req.nextUrl.searchParams.get("codigo"));
+
   try {
+    const condiciones: string[] = [];
+    const params: unknown[] = [];
+    if (!incluirTodos) condiciones.push("estado_cliente = TRUE");
+    if (codigo) {
+      params.push(codigo);
+      condiciones.push(`UPPER(codigo_cliente) = $${params.length}`);
+    }
+    const where = condiciones.length ? `WHERE ${condiciones.join(" AND ")}` : "";
+
     const result = await pool.query(
       `SELECT id_cliente, nombre, correo, telefono, tipo_cliente, estado_cliente, limite_deuda,
-              es_consumidor_final, nit_cliente, codigo_postal, direccion
+              es_consumidor_final, nit_cliente, codigo_postal, direccion, codigo_cliente
        FROM cliente
-       ${incluirTodos ? "" : "WHERE estado_cliente = TRUE"}
-       ORDER BY nombre`
+       ${where}
+       ORDER BY nombre`,
+      params
     );
     return NextResponse.json(
       { clientes: result.rows },
@@ -67,6 +83,7 @@ export async function POST(req: NextRequest) {
     nit_cliente,
     codigo_postal,
     direccion,
+    codigo_cliente,
   } = await req.json();
 
   if (!nombre || !nombre.trim()) {
@@ -90,6 +107,15 @@ export async function POST(req: NextRequest) {
     return validationError(`La dirección no puede superar los ${DIRECCION_MAX} caracteres`);
   }
 
+  // El código es opcional: si el colaborador no escribe uno, la base genera
+  // el siguiente correlativo (CLI-00007, CLI-00008, ...). Si escribe uno se
+  // normaliza a mayúsculas para que "cli-12" y "CLI-12" sean el mismo.
+  const codigoFinal = normalizarCodigoCliente(codigo_cliente);
+  const errorCodigo = errorCodigoCliente(codigoFinal);
+  if (errorCodigo) {
+    return validationError(errorCodigo);
+  }
+
   let limiteNum: number | null = null;
   if (limite_deuda !== null && limite_deuda !== undefined && limite_deuda !== "") {
     limiteNum = Number(limite_deuda);
@@ -100,15 +126,20 @@ export async function POST(req: NextRequest) {
 
   try {
     const result = await pool.query(
-      `INSERT INTO cliente (nombre, correo, telefono, tipo_cliente, limite_deuda, nit_cliente, codigo_postal, direccion)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO cliente (nombre, correo, telefono, tipo_cliente, limite_deuda, nit_cliente, codigo_postal, direccion, codigo_cliente)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
+               CASE WHEN $9 = '' THEN (SELECT 'CLI-' || LPAD(nextval('cliente_codigo_seq')::text, 5, '0'))
+                    ELSE $9 END)
        RETURNING id_cliente, nombre, correo, telefono, tipo_cliente, estado_cliente, limite_deuda,
-                 es_consumidor_final, nit_cliente, codigo_postal, direccion`,
-      [nombre.trim(), correo || null, telefono || null, tipoFinal, limiteNum, nitFinal, codigoPostalFinal || null, direccionFinal || null]
+                 es_consumidor_final, nit_cliente, codigo_postal, direccion, codigo_cliente`,
+      [nombre.trim(), correo || null, telefono || null, tipoFinal, limiteNum, nitFinal, codigoPostalFinal || null, direccionFinal || null, codigoFinal]
     );
     return NextResponse.json({ cliente: result.rows[0] }, { status: 201 });
   } catch (error: any) {
     if (error?.code === "23505") {
+      if (error?.constraint === "uq_cliente_codigo") {
+        return validationError("Ya existe un cliente con ese código");
+      }
       // uq_cliente_correo
       return validationError("Ya existe un cliente registrado con ese correo");
     }

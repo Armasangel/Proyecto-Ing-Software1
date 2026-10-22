@@ -13,8 +13,8 @@ jest.mock("@/lib/deuda-alertas", () => ({
 const mockPool = jest.requireMock("@/lib/db").pool as { query: jest.Mock };
 
 const mockClientes = [
-  { id_cliente: 1, nombre: "Carlos Ruiz", correo: "carlos@email.com", tipo_cliente: "MINORISTA" },
-  { id_cliente: 2, nombre: "Ana García", correo: "ana@email.com", tipo_cliente: "MAYORISTA" },
+  { id_cliente: 1, nombre: "Carlos Ruiz", correo: "carlos@email.com", tipo_cliente: "MINORISTA", codigo_cliente: "CLI-00001" },
+  { id_cliente: 2, nombre: "Ana García", correo: "ana@email.com", tipo_cliente: "MAYORISTA", codigo_cliente: "CLI-00002" },
 ];
 
 describe("GET /api/clientes", () => {
@@ -71,6 +71,31 @@ describe("GET /api/clientes", () => {
     expect(sql).toContain("codigo_postal");
     expect(sql).toContain("direccion");
   });
+
+  it("exposes codigo_cliente for the listing", async () => {
+    const req = createMockRequest("/api/clientes", { user: testUserDueno });
+    await GET(req);
+    const sql = mockPool.query.mock.calls[0][0] as string;
+    expect(sql).toContain("codigo_cliente");
+  });
+
+  it("filters by ?codigo= comparing the code without case sensitivity", async () => {
+    const req = createMockRequest("/api/clientes?codigo=cli-00001", { user: testUserDueno });
+    const res = await GET(req);
+    expect(res.status).toBe(200);
+
+    const [sql, params] = mockPool.query.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain("UPPER(codigo_cliente)");
+    expect(params).toEqual(["CLI-00001"]);
+  });
+
+  it("ignores an empty ?codigo= (no filter)", async () => {
+    const req = createMockRequest("/api/clientes?codigo=", { user: testUserDueno });
+    await GET(req);
+    const [sql, params] = mockPool.query.mock.calls[0] as [string, unknown[]];
+    expect(sql).not.toContain("UPPER(codigo_cliente)");
+    expect(params).toEqual([]);
+  });
 });
 
 describe("POST /api/clientes — datos del cliente", () => {
@@ -112,6 +137,7 @@ describe("POST /api/clientes — datos del cliente", () => {
       "1234567-8",
       "01001",
       "6a. avenida 12-34, zona 1",
+      "",
     ]);
   });
 
@@ -120,8 +146,8 @@ describe("POST /api/clientes — datos del cliente", () => {
     expect(res.status).toBe(201);
 
     const [, params] = mockPool.query.mock.calls[0] as [string, unknown[]];
-    // [nombre, correo, telefono, tipo, limite, nit, codigo_postal, direccion]
-    expect(params.slice(4)).toEqual([null, "CF", null, null]);
+    // [nombre, correo, telefono, tipo, limite, nit, codigo_postal, direccion, codigo]
+    expect(params.slice(4)).toEqual([null, "CF", null, null, ""]);
     expect(params[3]).toBe("MINORISTA");
   });
 
@@ -152,6 +178,70 @@ describe("POST /api/clientes — datos del cliente", () => {
     const data = await res.json();
     expect(data.error).toMatch(/nombre del cliente es obligatorio/);
     expect(mockPool.query).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/clientes — código de cliente", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPool.query.mockResolvedValue(mockQueryResult([{ id_cliente: 9, codigo_cliente: "CLI-00009" }]));
+  });
+
+  function post(body: unknown, user = testUserDueno) {
+    return POST(createMockRequest("/api/clientes", { method: "POST", body, user }));
+  }
+
+  it("normalizes the code to uppercase and trims it", async () => {
+    const res = await post({ nombre: "Cliente", codigo_cliente: "  cli-12  " });
+    expect(res.status).toBe(201);
+
+    const [, params] = mockPool.query.mock.calls[0] as [string, unknown[]];
+    expect(params[8]).toBe("CLI-12");
+  });
+
+  it("lets the database autogenerate the code when it comes empty", async () => {
+    const res = await post({ nombre: "Cliente" });
+    expect(res.status).toBe(201);
+
+    const [sql, params] = mockPool.query.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain("nextval('cliente_codigo_seq')");
+    expect(params[8]).toBe("");
+  });
+
+  it("rejects a code with spaces or symbols", async () => {
+    const res = await post({ nombre: "Cliente", codigo_cliente: "CLI 12" });
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toMatch(/letras, números, guiones, puntos o guiones bajos/);
+    expect(mockPool.query).not.toHaveBeenCalled();
+  });
+
+  it("rejects a code longer than the column", async () => {
+    const res = await post({ nombre: "Cliente", codigo_cliente: "X".repeat(21) });
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toMatch(/20 caracteres/);
+    expect(mockPool.query).not.toHaveBeenCalled();
+  });
+
+  it("explains that the code is already taken when it collides", async () => {
+    mockPool.query.mockRejectedValueOnce(
+      Object.assign(new Error("duplicate key value"), { code: "23505", constraint: "uq_cliente_codigo" })
+    );
+    const res = await post({ nombre: "Cliente", codigo_cliente: "CLI-00001" });
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toMatch(/Ya existe un cliente con ese código/);
+  });
+
+  it("keeps the duplicate-email message when the email is the one that collides", async () => {
+    mockPool.query.mockRejectedValueOnce(
+      Object.assign(new Error("duplicate key value"), { code: "23505", constraint: "uq_cliente_correo" })
+    );
+    const res = await post({ nombre: "Cliente", correo: "ya@existe.com", codigo_cliente: "CLI-00042" });
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toMatch(/Ya existe un cliente registrado con ese correo/);
   });
 });
 

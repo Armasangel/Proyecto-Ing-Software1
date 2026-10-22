@@ -52,6 +52,7 @@ export async function GET(req: NextRequest) {
         v.fecha_limite_pago,
         uc.nombre AS nombre_cliente,
         uc.correo AS correo_cliente,
+        uc.codigo_cliente,
         ue.nombre AS nombre_colaborador,
         COALESCE(
           json_agg(
@@ -87,6 +88,7 @@ export async function GET(req: NextRequest) {
         v.fecha_limite_pago,
         uc.nombre,
         uc.correo,
+        uc.codigo_cliente,
         ue.nombre
       ORDER BY v.fecha_venta DESC, v.id_venta DESC
       LIMIT $${limIdx} OFFSET $${offIdx}

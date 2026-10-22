@@ -21,6 +21,7 @@ export async function GET(req: NextRequest) {
         v.estado_venta,
         c.nombre,
         c.correo,
+        c.codigo_cliente,
         f.id_factura,
         f.numero_factura,
         f.total_factura

@@ -12,6 +12,7 @@ type Venta = {
   estado_venta: string;
   nombre: string;
   correo: string;
+  codigo_cliente?: string | null;
   id_factura: number | null;
   numero_factura: string | null;
   total_factura: number | null;
@@ -33,6 +34,7 @@ type FacturaDetalle = {
   estado_venta: string;
   nombre: string;
   correo: string;
+  codigo_cliente?: string | null;
   id_factura: number;
   numero_factura: string;
   nombre_cliente: string;
@@ -84,7 +86,7 @@ export default function FacturacionPage() {
       if (filtroEstado && v.estado_venta !== filtroEstado) return false;
       if (filtroFactura === "facturadas" && !v.numero_factura) return false;
       if (filtroFactura === "sin_facturar" && v.numero_factura) return false;
-      return matchesQuery(q, v.nombre, v.correo, v.numero_factura, v.id_venta);
+      return matchesQuery(q, v.nombre, v.codigo_cliente, v.correo, v.numero_factura, v.id_venta);
     });
   }, [ventas, q, filtroEstado, filtroFactura]);
 
@@ -160,7 +162,7 @@ export default function FacturacionPage() {
               type="search"
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Buscar por cliente, correo o factura…"
+              placeholder="Buscar por cliente, código, correo o factura…"
               aria-label="Buscar en facturación"
               className={`${inputClsTabla} flex-1 min-w-[220px]`}
             />
@@ -214,7 +216,12 @@ export default function FacturacionPage() {
                   ventasPage.slice.map((v, i) => (
                     <tr key={v.id_venta} className={i % 2 === 0 ? "bg-cream/40" : "bg-white"}>
                       <td className="px-3.5 py-2.5 border-b border-[var(--border)] text-ink-muted">{v.id_venta}</td>
-                      <td className="px-3.5 py-2.5 border-b border-[var(--border)] text-ink">{v.nombre}</td>
+                      <td className="px-3.5 py-2.5 border-b border-[var(--border)] text-ink">
+                        {v.codigo_cliente ? (
+                          <span className="text-ink-muted mr-1.5">{v.codigo_cliente}</span>
+                        ) : null}
+                        {v.nombre}
+                      </td>
                       <td className="px-3.5 py-2.5 border-b border-[var(--border)] text-ink-muted">
                         {new Date(v.fecha_venta).toLocaleDateString("es-GT")}
                       </td>
@@ -284,6 +291,9 @@ export default function FacturacionPage() {
                 <p className="text-ink">
                   <span className="font-semibold">Cliente:</span> {facturaDetalle.nombre_cliente}
                 </p>
+                {facturaDetalle.codigo_cliente && (
+                  <p className="text-ink-muted">Código: {facturaDetalle.codigo_cliente}</p>
+                )}
                 <p className="text-ink-muted">NIT: {facturaDetalle.nit_cliente}</p>
                 <p className="text-ink-muted">{facturaDetalle.correo}</p>
               </div>

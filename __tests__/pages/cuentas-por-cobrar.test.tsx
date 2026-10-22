@@ -410,7 +410,7 @@ describe("CuentasPorCobrarPage — saldo anterior", () => {
     expect(screen.queryByText("Productos *")).not.toBeInTheDocument();
     expect(screen.queryByText("+ Agregar producto")).not.toBeInTheDocument();
 
-    await user.type(screen.getByPlaceholderText("Escribe el nombre para buscar…"), "Pedro");
+    await user.type(screen.getByPlaceholderText("Buscar cliente por código, nombre, NIT o teléfono…"), "Pedro");
     await user.click(await screen.findByText("Pedro Díaz"));
     await user.type(screen.getByLabelText("Saldo anterior"), "350.50");
     await user.click(screen.getByRole("button", { name: "Guardar saldo anterior" }));
@@ -426,7 +426,7 @@ describe("CuentasPorCobrarPage — saldo anterior", () => {
     const user = userEvent.setup();
     render(<CuentasPorCobrarPage />);
     await user.click(await screen.findByRole("button", { name: "+ Saldo anterior (sin venta)" }));
-    await user.type(screen.getByPlaceholderText("Escribe el nombre para buscar…"), "Pedro");
+    await user.type(screen.getByPlaceholderText("Buscar cliente por código, nombre, NIT o teléfono…"), "Pedro");
     await user.click(await screen.findByText("Pedro Díaz"));
     await user.click(screen.getByRole("button", { name: "Guardar saldo anterior" }));
     expect(await screen.findByText("El saldo anterior debe ser un monto mayor a 0.")).toBeInTheDocument();
@@ -481,7 +481,7 @@ describe("CuentasPorCobrarPage — listado de clientes (Límites de crédito)", 
     render(<CuentasPorCobrarPage />);
 
     await user.click(await screen.findByRole("button", { name: "Límites de crédito" }));
-    const buscador = await screen.findByPlaceholderText("Buscar cliente por nombre, teléfono, correo o NIT…");
+    const buscador = await screen.findByPlaceholderText("Buscar cliente por nombre, código, teléfono, correo o NIT…");
 
     await user.type(buscador, "1234567");
     expect(await screen.findByText("Distribuidora X")).toBeInTheDocument();

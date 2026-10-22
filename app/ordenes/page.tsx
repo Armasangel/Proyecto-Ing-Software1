@@ -36,6 +36,9 @@ type OrdenListada = {
   nombre_cliente: string;
   correo_cliente: string;
   tipo_cliente: string;
+  codigo_cliente?: string | null;
+  nit_cliente?: string | null;
+  direccion?: string | null;
   nombre_usuario: string | null;
   productos: DetalleOrdenRow[];
 };
@@ -189,6 +192,15 @@ export default function PedidosPage() {
                     <td style={td}>{new Date(o.fecha_orden).toLocaleString("es-GT", { dateStyle: "short", timeStyle: "short" })}</td>
                     <td style={td}>
                       <div style={{ fontWeight: 500 }}>{o.nombre_cliente}</div>
+                      {o.codigo_cliente && (
+                        <div style={{ fontSize: "0.78rem", color: "var(--muted)" }}>{o.codigo_cliente}</div>
+                      )}
+                      {o.nit_cliente && o.nit_cliente !== "CF" && (
+                        <div style={{ fontSize: "0.78rem", color: "var(--muted)" }}>NIT {o.nit_cliente}</div>
+                      )}
+                      {o.direccion && (
+                        <div style={{ fontSize: "0.78rem", color: "var(--muted)" }}>{o.direccion}</div>
+                      )}
                       {o.notas && <div style={{ fontSize: "0.78rem", color: "var(--muted)" }}>{o.notas}</div>}
                     </td>
                     <td style={td}>

@@ -8,10 +8,10 @@ import { isStaffTipo } from "@/lib/roles";
 import { Icon } from "@/components/Icon";
 import { CantidadInput } from "@/components/CantidadInput";
 import { ProductoAutocompletar } from "@/components/ProductoAutocompletar";
+import { ClienteAutocompletar } from "@/components/ClienteAutocompletar";
 import Link from "next/link";
 import { CUOTAS_MAXIMAS, PLAZO_MAXIMO_DIAS, generarCuotas, sumarDias, validarCondicionesCredito } from "@/lib/credito";
 import { elegirMejorDescuento, type Descuento as ReglaDescuento } from "@/lib/descuentos";
-import { etiquetaCliente, filtrarClientesPorTexto } from "@/lib/clientes-busqueda";
 import { ETIQUETAS_TIPO_CLIENTE, TIPOS_CLIENTE } from "@/lib/tipos-cliente";
 
 type Cliente = {
@@ -26,6 +26,7 @@ type Cliente = {
   nit_cliente?: string | null;
   codigo_postal?: string | null;
   direccion?: string | null;
+  codigo_cliente?: string | null;
 };
 
 type Producto = {
@@ -90,6 +91,7 @@ type VentaListada = {
   estado_pedido?: string | null;
   nombre_cliente: string;
   correo_cliente: string;
+  codigo_cliente?: string | null;
   nombre_colaborador: string | null;
   productos: ProductoVentaRow[];
 };
@@ -137,12 +139,14 @@ const clienteFormVacio = {
   nit_cliente: "",
   codigo_postal: "",
   direccion: "",
+  codigo_cliente: "",
 };
 const CORREO_VALIDO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // Mismos límites que las columnas de la tabla cliente (valida también el API).
 const NIT_MAX = 20;
 const CODIGO_POSTAL_MAX = 10;
 const DIRECCION_MAX = 255;
+const CODIGO_CLIENTE_MAX = 20;
 
 function nuevaLinea(): LineaVenta {
   return {
@@ -178,10 +182,6 @@ export default function VentasPage() {
   const [deshaciendo, setDeshaciendo] = useState(false);
 
   const [idCliente, setIdCliente] = useState("");
-  // Buscador de cliente: en vez de un <select> con todos los clientes, se
-  // sugieren de entrada los más frecuentes y se busca el resto por texto.
-  const [busquedaCliente, setBusquedaCliente] = useState("");
-  const [sugerenciasClienteAbiertas, setSugerenciasClienteAbiertas] = useState(false);
   // Alta rápida de cliente sin salir de Ventas
   const [creandoCliente, setCreandoCliente] = useState(false);
   const [formCliente, setFormCliente] = useState(clienteFormVacio);
@@ -319,21 +319,14 @@ export default function VentasPage() {
       .slice(0, 5);
   }, [clientes]);
 
-  const clientesSugeridos = useMemo(() => {
-    const vacia = busquedaCliente.trim() === "";
-    const base = vacia
-      ? clientesDestacados
-      : filtrarClientesPorTexto(clientes, busquedaCliente).slice(0, 8);
-    // Consumidor Final siempre queda fijado arriba del dropdown: es el
-    // registro genérico para ventas rápidas a personas que no quieren
-    // registrarse. Con búsqueda vacía se incluye aunque no esté entre los
-    // más frecuentes; al escribir solo aparece si coincide con el texto.
-    const consumidorFinal = clientes.filter(
-      (c) => c.es_consumidor_final && (vacia || base.includes(c))
-    );
-    const resto = base.filter((c) => !c.es_consumidor_final);
-    return vacia ? [...consumidorFinal, ...resto].slice(0, 6) : [...consumidorFinal, ...resto];
-  }, [busquedaCliente, clientes, clientesDestacados]);
+  // Sugerencias por defecto del buscador de cliente: el registro genérico
+  // "Consumidor Final" va siempre arriba (es para las ventas rápidas a personas
+  // que no quieren registrarse) y después los más frecuentes.
+  const sugeridosCliente = useMemo(() => {
+    const consumidorFinal = clientes.filter((c) => c.es_consumidor_final);
+    const resto = clientesDestacados.filter((c) => !c.es_consumidor_final);
+    return [...consumidorFinal, ...resto].slice(0, 6);
+  }, [clientes, clientesDestacados]);
 
   const stockDisponible = useCallback((idProducto: string, idBodega: string): number => {
     const idP = Number(idProducto);
@@ -482,10 +475,12 @@ export default function VentasPage() {
     }
   }
 
+  // Al elegir un cliente se rellenan sus datos: la dirección de la entrega
+  // toma la que tiene registrada (si tiene), y el NIT queda a la vista para
+  // que el collaborator vea con qué se va a facturar.
   function seleccionarCliente(c: Cliente) {
     onClienteChange(String(c.id_cliente));
-    setBusquedaCliente(etiquetaCliente(c));
-    setSugerenciasClienteAbiertas(false);
+    if (c.direccion) setDireccionEntrega(c.direccion);
   }
 
   async function crearCliente() {
@@ -520,6 +515,15 @@ export default function VentasPage() {
       setErrorCliente(`La dirección no puede superar los ${DIRECCION_MAX} caracteres`);
       return;
     }
+    const codigoCliente = formCliente.codigo_cliente.trim().toUpperCase();
+    if (codigoCliente.length > CODIGO_CLIENTE_MAX) {
+      setErrorCliente(`El código del cliente no puede superar los ${CODIGO_CLIENTE_MAX} caracteres`);
+      return;
+    }
+    if (codigoCliente && !/^[A-Z0-9][A-Z0-9._-]*$/.test(codigoCliente)) {
+      setErrorCliente("El código del cliente solo puede tener letras, números, guiones, puntos o guiones bajos");
+      return;
+    }
 
     setGuardandoCliente(true);
     setErrorCliente(null);
@@ -536,6 +540,7 @@ export default function VentasPage() {
           nit_cliente: formCliente.nit_cliente.trim(),
           codigo_postal: formCliente.codigo_postal.trim(),
           direccion: formCliente.direccion.trim(),
+          codigo_cliente: codigoCliente,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -549,15 +554,18 @@ export default function VentasPage() {
       // Se deja seleccionado de una vez. onClienteChange no sirve acá porque
       // busca en `clientes`, que todavía no incluye al recién creado.
       setIdCliente(String(nuevo.id_cliente));
-      setBusquedaCliente(`${nuevo.nombre} (${nuevo.correo})`);
-      setSugerenciasClienteAbiertas(false);
+      if (nuevo.direccion) setDireccionEntrega(nuevo.direccion);
       if (!forzarTipoVenta) {
         const detectado = nuevo.tipo_cliente === "MAYORISTA" ? "MAYORISTA" : "MINORISTA";
         setTipoVenta(detectado);
         aplicarPreciosPorTipo(detectado);
       }
       setError(null);
-      setAvisoCliente(`Cliente "${nuevo.nombre}" creado y seleccionado ✓`);
+      setAvisoCliente(
+        `Cliente "${nuevo.nombre}" creado y seleccionado ✓${
+          nuevo.codigo_cliente ? ` · código ${nuevo.codigo_cliente}` : ""
+        }`
+      );
       setCreandoCliente(false);
       setFormCliente(clienteFormVacio);
     } catch {
@@ -569,8 +577,6 @@ export default function VentasPage() {
 
   function limpiarClienteSeleccionado() {
     setAvisoCliente(null);
-    setBusquedaCliente("");
-    setSugerenciasClienteAbiertas(false);
     onClienteChange("");
   }
 
@@ -625,7 +631,7 @@ export default function VentasPage() {
       }
       setVentaDeshacer({ id: data.id_venta, total: Number(data.total) });
       setSegundosRestantes(VENTANA_DESHACER_SEGUNDOS);
-      setIdCliente(""); setBusquedaCliente(""); setCondicionPago("CONTADO"); setOtraFechaFactura(false); setFechaFactura(""); setPlazoDias("30"); setNumeroCuotas("1"); setTipoVenta("MINORISTA"); setForzarTipoVenta(false); setTipoEntrega("EN_TIENDA");
+      setIdCliente(""); setCondicionPago("CONTADO"); setOtraFechaFactura(false); setFechaFactura(""); setPlazoDias("30"); setNumeroCuotas("1"); setTipoVenta("MINORISTA"); setForzarTipoVenta(false); setTipoEntrega("EN_TIENDA");
       setDireccionEntrega(""); setLineas([nuevaLinea()]);
       await cargarVentas();
     } catch { setError("No se pudo conectar con el servidor"); }
@@ -675,17 +681,21 @@ export default function VentasPage() {
             <div className="flex flex-col gap-1.5">
               <label className={labelCls}>Cliente *</label>
               <div className="relative">
-                <input
+                <ClienteAutocompletar
+                  clientes={clientes}
+                  sugeridos={sugeridosCliente}
+                  value={idCliente}
+                  onChange={onClienteChange}
+                  onSelect={seleccionarCliente}
+                  placeholder="Buscar cliente por código, nombre, NIT o teléfono…"
+                  ariaLabel="Buscar cliente"
                   className={inputCls}
-                  placeholder="Buscar cliente por nombre o correo…"
-                  value={busquedaCliente}
-                  onChange={(e) => {
-                    setBusquedaCliente(e.target.value);
-                    setSugerenciasClienteAbiertas(true);
-                    if (idCliente) onClienteChange("");
-                  }}
-                  onFocus={() => setSugerenciasClienteAbiertas(true)}
-                  onBlur={() => setTimeout(() => setSugerenciasClienteAbiertas(false), 150)}
+                  tituloSugeridos="Clientes frecuentes"
+                  detalle={(c) =>
+                    c.total_ventas
+                      ? `${c.total_ventas} ${c.total_ventas === 1 ? "venta" : "ventas"}`
+                      : null
+                  }
                 />
                 {idCliente && (
                   <button
@@ -698,48 +708,28 @@ export default function VentasPage() {
                     ✕
                   </button>
                 )}
-                {sugerenciasClienteAbiertas && (
-                  <div className="absolute z-20 top-[calc(100%+4px)] left-0 right-0 bg-white border border-[var(--border)] rounded-control shadow-warm max-h-56 overflow-y-auto">
-                    {busquedaCliente.trim() === "" && (
-                      <div className="px-3 py-1.5 text-[0.72rem] text-ink-muted uppercase tracking-wide">
-                        Clientes frecuentes
-                      </div>
-                    )}
-                    {clientesSugeridos.length === 0 && (
-                      <div className="px-3 py-2 text-[0.85rem] text-ink-muted">Sin resultados</div>
-                    )}
-                    {clientesSugeridos.map((c) => (
-                      <div
-                        key={c.id_cliente}
-                        onMouseDown={(e) => {
-                          // Sin esto, el navegador le quita el foco al input
-                          // ANTES de que corra este click (mousedown ocurre
-                          // antes del blur), lo que dispara un blur real de
-                          // más que compite con el cierre del dropdown que
-                          // ya hace seleccionarCliente.
-                          e.preventDefault();
-                          seleccionarCliente(c);
-                        }}
-                        className="px-3 py-2 text-[0.88rem] text-ink cursor-pointer hover:bg-cream/60 border-b border-[var(--border)] last:border-b-0 flex justify-between items-center gap-2"
-                      >
-                        <span className="flex items-center gap-2 min-w-0">
-                          <span className="truncate">{etiquetaCliente(c)}</span>
-                          {c.es_consumidor_final && (
-                            <span className="text-[0.66rem] font-semibold uppercase tracking-wide whitespace-nowrap bg-market/10 text-market-600 border border-market/25 rounded px-1.5 py-0.5">
-                              Consumidor Final
-                            </span>
-                          )}
-                        </span>
-                        {!!c.total_ventas && (
-                          <span className="text-[0.72rem] text-ink-muted whitespace-nowrap">
-                            {c.total_ventas} venta{c.total_ventas === 1 ? "" : "s"}
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
+
+              {/* Datos del cliente elegido: el código con el que el negocio lo
+                  reconoce y los datos que se usan en la venta (el NIT va a la
+                  factura y la dirección a la entrega a domicilio). */}
+              {clienteSeleccionado && (
+                <div className="flex flex-wrap gap-x-6 gap-y-1 px-3 py-2 rounded-control bg-cream/40 border border-[var(--border)] text-[0.82rem]">
+                  <span>
+                    <span className="text-ink-muted">Código: </span>
+                    <strong className="font-semibold">{clienteSeleccionado.codigo_cliente || "—"}</strong>
+                  </span>
+                  <span>
+                    <span className="text-ink-muted">NIT: </span>
+                    <strong className="font-semibold">{clienteSeleccionado.nit_cliente || "CF"}</strong>
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="text-ink-muted">Dirección: </span>
+                    <strong className="font-semibold">{clienteSeleccionado.direccion || "—"}</strong>
+                  </span>
+                </div>
+              )}
+
               <div>
                 <button
                   type="button"
@@ -823,6 +813,17 @@ export default function VentasPage() {
                         onChange={(e) => setFormCliente((f) => ({ ...f, codigo_postal: e.target.value }))}
                         placeholder="Ej. 01001"
                         maxLength={CODIGO_POSTAL_MAX}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className={labelCls}>Código de cliente</label>
+                      <input
+                        className={inputCls}
+                        aria-label="Código del cliente"
+                        value={formCliente.codigo_cliente}
+                        onChange={(e) => setFormCliente((f) => ({ ...f, codigo_cliente: e.target.value }))}
+                        placeholder="Vacío = se genera solo"
+                        maxLength={CODIGO_CLIENTE_MAX}
                       />
                     </div>
                   </div>
@@ -943,7 +944,21 @@ export default function VentasPage() {
             <div className="flex gap-4 flex-wrap">
               <div className="flex-1 min-w-[200px] flex flex-col gap-1.5">
                 <label className={labelCls}>Tipo de entrega *</label>
-                <select value={tipoEntrega} onChange={(e) => { setTipoEntrega(e.target.value); setError(null); }} className={inputCls}>
+                <select
+                  value={tipoEntrega}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setTipoEntrega(v);
+                    // Si la entrega es a domicilio y el cliente ya tiene una
+                    // dirección registrada, se propone como dirección de
+                    // entrega (el colaborador puede editarla).
+                    if (v === "DOMICILIO" && !direccionEntrega.trim() && clienteSeleccionado?.direccion) {
+                      setDireccionEntrega(clienteSeleccionado.direccion);
+                    }
+                    setError(null);
+                  }}
+                  className={inputCls}
+                >
                   <option value="EN_TIENDA">En tienda</option>
                   <option value="DOMICILIO">Domicilio</option>
                 </select>
@@ -1288,7 +1303,10 @@ export default function VentasPage() {
                       <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">{new Date(v.fecha_venta).toLocaleString("es-GT", { dateStyle: "short", timeStyle: "short" })}</td>
                       <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">
                         <div className="font-medium">{v.nombre_cliente}</div>
-                        <div className="text-[0.78rem] text-ink-muted">{v.correo_cliente}</div>
+                        <div className="text-[0.78rem] text-ink-muted">
+                          {v.codigo_cliente ? `${v.codigo_cliente} · ` : ""}
+                          {v.correo_cliente}
+                        </div>
                       </td>
                       <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">{v.nombre_colaborador ?? "—"}</td>
                       <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">{v.condicion_pago === "CREDITO" ? `Crédito · ${v.estado_venta}` : v.estado_venta}

@@ -228,6 +228,7 @@ export async function GET(req: NextRequest) {
   nombre: string;
   correo: string;
   tipo_cliente: string;
+  codigo_cliente: string | null;
   total_compras: string;
   cantidad_pedidos: string;
 }>(
@@ -236,13 +237,14 @@ export async function GET(req: NextRequest) {
      c.nombre,
      c.correo,
      c.tipo_cliente,
+     c.codigo_cliente,
      SUM(v.total)::numeric          AS total_compras,
      COUNT(v.id_venta)::int         AS cantidad_pedidos
    FROM venta v
    JOIN cliente c ON c.id_cliente = v.id_cliente
    WHERE ${fechaWhere}
      AND v.estado_venta != 'CANCELADO'
-   GROUP BY c.id_cliente, c.nombre, c.correo, c.tipo_cliente
+   GROUP BY c.id_cliente, c.nombre, c.correo, c.tipo_cliente, c.codigo_cliente
    ORDER BY total_compras DESC
    LIMIT 5`,
   fechaParams
@@ -385,6 +387,7 @@ export async function GET(req: NextRequest) {
       id_cliente: string | null;
       nombre: string;
       telefono: string | null;
+      codigo_cliente: string | null;
       limite_deuda: string | null;
       puede_comprar: boolean;
       deuda_pendiente: string;
@@ -394,6 +397,7 @@ export async function GET(req: NextRequest) {
          MIN(d.id_cliente)::text                                AS id_cliente,
          MIN(COALESCE(c.nombre, d.nombre_deudor))                AS nombre,
          MIN(d.telefono_deudor)                                  AS telefono,
+         MIN(c.codigo_cliente)                                   AS codigo_cliente,
          MAX(c.limite_deuda)::numeric                            AS limite_deuda,
          BOOL_AND(COALESCE(c.estado_cliente, TRUE))              AS puede_comprar,
          SUM(d.monto_total)::numeric                             AS deuda_pendiente,
@@ -654,7 +658,10 @@ export async function GET(req: NextRequest) {
         nombre:           r.nombre,
         correo:           r.correo,
         tipo_cliente:     r.tipo_cliente,
-        tipo_usuario:     r.tipo_cliente,
+        tipo_usuario:     r.tipo_cliente,
+
+        codigo_cliente:   r.codigo_cliente,
+
         total_compras:    Number(r.total_compras),
         cantidad_pedidos: Number(r.cantidad_pedidos),
       })),
@@ -692,6 +699,7 @@ export async function GET(req: NextRequest) {
           id_cliente:      r.id_cliente !== null ? Number(r.id_cliente) : null,
           nombre:          r.nombre,
           telefono:        r.telefono,
+          codigo_cliente:  r.codigo_cliente,
           limite_deuda:    r.limite_deuda !== null ? Number(r.limite_deuda) : null,
           puede_comprar:   r.id_cliente !== null ? r.puede_comprar : null,
           deuda_pendiente: Number(r.deuda_pendiente),

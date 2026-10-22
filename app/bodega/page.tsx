@@ -66,6 +66,7 @@ type Pedido = {
   notas: string | null;
   total: string;
   nombre_cliente: string;
+  codigo_cliente?: string | null;
   productos: ProductoPedido[];
 };
 
@@ -354,6 +355,7 @@ export default function BodegaPage() {
                             </span>
                           </div>
                           <div style={{ fontSize: "0.82rem", color: "var(--muted)", marginBottom: "0.4rem" }}>
+                            {p.codigo_cliente ? `${p.codigo_cliente} · ` : ""}
                             {p.nombre_cliente}
                           </div>
                           <div style={{ display: "flex", flexDirection: "column", gap: "0.2rem", marginBottom: "0.6rem" }}>

@@ -28,7 +28,7 @@ type Descuento = {
   asignaciones: Asignacion[];
 };
 
-type Cliente = { id_cliente: number; nombre: string; tipo_cliente: string };
+type Cliente = { id_cliente: number; nombre: string; tipo_cliente: string; codigo_cliente?: string | null };
 
 const TIPOS: { valor: Descuento["tipo"]; etiqueta: string; ayuda: string }[] = [
   { valor: "PORCENTAJE", etiqueta: "Porcentaje", ayuda: "Un porcentaje fijo que aplica desde la primera unidad." },
@@ -422,6 +422,7 @@ export default function DescuentosPage() {
                       <option value="">Asignar a un cliente…</option>
                       {clientes.map((c) => (
                         <option key={c.id_cliente} value={c.id_cliente}>
+                          {c.codigo_cliente ? `${c.codigo_cliente} · ` : ""}
                           {c.nombre} ({c.tipo_cliente})
                         </option>
                       ))}
