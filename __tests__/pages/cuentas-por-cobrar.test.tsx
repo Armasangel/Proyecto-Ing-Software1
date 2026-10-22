@@ -432,3 +432,59 @@ describe("CuentasPorCobrarPage — saldo anterior", () => {
     expect(await screen.findByText("El saldo anterior debe ser un monto mayor a 0.")).toBeInTheDocument();
   });
 });
+
+describe("CuentasPorCobrarPage — listado de clientes (Límites de crédito)", () => {
+  beforeEach(() => {
+    (useRouter as jest.Mock).mockReturnValue({ replace: mockReplace });
+    (usePathname as jest.Mock).mockReturnValue("/cuentas-por-cobrar");
+  });
+
+  const clienteDetalle = {
+    id_cliente: 4,
+    nombre: "Distribuidora X",
+    telefono: "55551234",
+    correo: "ventas@disolx.com",
+    tipo_cliente: "EMPRESA",
+    estado_cliente: true,
+    limite_deuda: null,
+    nit_cliente: "1234567-8",
+    codigo_postal: "01001",
+    direccion: "6a. avenida 12-34, zona 1",
+  };
+
+  it("muestra NIT, dirección y código postal de cada cliente", async () => {
+    setupServerDeudas([]);
+    server.use(
+      rest.get("/api/clientes", (_req, res, ctx) => res(ctx.json({ clientes: [clienteDetalle] })))
+    );
+    const user = userEvent.setup();
+    render(<CuentasPorCobrarPage />);
+
+    await user.click(await screen.findByRole("button", { name: "Límites de crédito" }));
+
+    expect(await screen.findByRole("columnheader", { name: "NIT" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Dirección" })).toBeInTheDocument();
+    expect(screen.getByText("1234567-8")).toBeInTheDocument();
+    expect(screen.getByText("6a. avenida 12-34, zona 1")).toBeInTheDocument();
+    expect(screen.getByText("CP 01001")).toBeInTheDocument();
+    expect(screen.getByText("Empresa")).toBeInTheDocument();
+  });
+
+  it("busca clientes también por NIT y dirección", async () => {
+    setupServerDeudas([]);
+    server.use(
+      rest.get("/api/clientes", (_req, res, ctx) =>
+        res(ctx.json({ clientes: [clienteDetalle, { ...clienteDetalle, id_cliente: 5, nombre: "Otro Cliente", nit_cliente: "9999999-9", codigo_postal: null, direccion: null }] }))
+      )
+    );
+    const user = userEvent.setup();
+    render(<CuentasPorCobrarPage />);
+
+    await user.click(await screen.findByRole("button", { name: "Límites de crédito" }));
+    const buscador = await screen.findByPlaceholderText("Buscar cliente por nombre, teléfono, correo o NIT…");
+
+    await user.type(buscador, "1234567");
+    expect(await screen.findByText("Distribuidora X")).toBeInTheDocument();
+    expect(screen.queryByText("Otro Cliente")).not.toBeInTheDocument();
+  });
+});

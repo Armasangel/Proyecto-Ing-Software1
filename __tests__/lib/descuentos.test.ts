@@ -123,11 +123,19 @@ describe("validarAsignacion", () => {
     expect(validarAsignacion(null, "MAYORISTA")).toBeNull();
   });
 
+  it("accepts every tipo de cliente del catálogo (MINORISTA/MAYORISTA/EMPRESA/GOBIERNO)", () => {
+    expect(validarAsignacion(null, "MINORISTA")).toBeNull();
+    expect(validarAsignacion(null, "MAYORISTA")).toBeNull();
+    expect(validarAsignacion(null, "EMPRESA")).toBeNull();
+    expect(validarAsignacion(null, "GOBIERNO")).toBeNull();
+  });
+
   it.each([
     [null, null],
     [5, "MINORISTA"],
     [0, null],
     [null, "OTRO"],
+    [null, "Empresa"],
   ])("rejects invalid assignment %#", (idCliente, tipoCliente) => {
     expect(validarAsignacion(idCliente, tipoCliente)).not.toBeNull();
   });

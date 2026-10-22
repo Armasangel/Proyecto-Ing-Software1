@@ -12,6 +12,7 @@ import Link from "next/link";
 import { CUOTAS_MAXIMAS, PLAZO_MAXIMO_DIAS, generarCuotas, sumarDias, validarCondicionesCredito } from "@/lib/credito";
 import { elegirMejorDescuento, type Descuento as ReglaDescuento } from "@/lib/descuentos";
 import { etiquetaCliente, filtrarClientesPorTexto } from "@/lib/clientes-busqueda";
+import { ETIQUETAS_TIPO_CLIENTE, TIPOS_CLIENTE } from "@/lib/tipos-cliente";
 
 type Cliente = {
   id_cliente: number;
@@ -22,6 +23,9 @@ type Cliente = {
   limite_deuda?: string | null;
   total_ventas?: number;
   es_consumidor_final?: boolean;
+  nit_cliente?: string | null;
+  codigo_postal?: string | null;
+  direccion?: string | null;
 };
 
 type Producto = {
@@ -130,8 +134,15 @@ const clienteFormVacio = {
   correo: "",
   tipo_cliente: "MINORISTA",
   limite_deuda: "",
+  nit_cliente: "",
+  codigo_postal: "",
+  direccion: "",
 };
 const CORREO_VALIDO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// Mismos límites que las columnas de la tabla cliente (valida también el API).
+const NIT_MAX = 20;
+const CODIGO_POSTAL_MAX = 10;
+const DIRECCION_MAX = 255;
 
 function nuevaLinea(): LineaVenta {
   return {
@@ -497,6 +508,18 @@ export default function VentasPage() {
       setErrorCliente("El límite de crédito debe ser un número mayor o igual a 0");
       return;
     }
+    if (formCliente.nit_cliente.trim().length > NIT_MAX) {
+      setErrorCliente(`El NIT no puede superar los ${NIT_MAX} caracteres`);
+      return;
+    }
+    if (formCliente.codigo_postal.trim().length > CODIGO_POSTAL_MAX) {
+      setErrorCliente(`El código postal no puede superar los ${CODIGO_POSTAL_MAX} caracteres`);
+      return;
+    }
+    if (formCliente.direccion.trim().length > DIRECCION_MAX) {
+      setErrorCliente(`La dirección no puede superar los ${DIRECCION_MAX} caracteres`);
+      return;
+    }
 
     setGuardandoCliente(true);
     setErrorCliente(null);
@@ -510,6 +533,9 @@ export default function VentasPage() {
           telefono: formCliente.telefono.trim(),
           tipo_cliente: formCliente.tipo_cliente,
           limite_deuda: limite,
+          nit_cliente: formCliente.nit_cliente.trim(),
+          codigo_postal: formCliente.codigo_postal.trim(),
+          direccion: formCliente.direccion.trim(),
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -770,10 +796,46 @@ export default function VentasPage() {
                         value={formCliente.tipo_cliente}
                         onChange={(e) => setFormCliente((f) => ({ ...f, tipo_cliente: e.target.value }))}
                       >
-                        <option value="MINORISTA">Minorista</option>
-                        <option value="MAYORISTA">Mayorista</option>
+                        {TIPOS_CLIENTE.map((t) => (
+                          <option key={t} value={t}>
+                            {ETIQUETAS_TIPO_CLIENTE[t]}
+                          </option>
+                        ))}
                       </select>
                     </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className={labelCls}>NIT (opcional)</label>
+                      <input
+                        className={inputCls}
+                        aria-label="NIT del cliente"
+                        value={formCliente.nit_cliente}
+                        onChange={(e) => setFormCliente((f) => ({ ...f, nit_cliente: e.target.value }))}
+                        placeholder="Ej. 1234567-8 · vacío = CF"
+                        maxLength={NIT_MAX}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className={labelCls}>Código postal</label>
+                      <input
+                        className={inputCls}
+                        aria-label="Código postal del cliente"
+                        value={formCliente.codigo_postal}
+                        onChange={(e) => setFormCliente((f) => ({ ...f, codigo_postal: e.target.value }))}
+                        placeholder="Ej. 01001"
+                        maxLength={CODIGO_POSTAL_MAX}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label className={labelCls}>Dirección</label>
+                    <input
+                      className={inputCls}
+                      aria-label="Dirección del cliente"
+                      value={formCliente.direccion}
+                      onChange={(e) => setFormCliente((f) => ({ ...f, direccion: e.target.value }))}
+                      placeholder="Calle, zona, municipio (opcional)"
+                      maxLength={DIRECCION_MAX}
+                    />
                   </div>
                   <div className="flex flex-col gap-1.5">
                     <label className={labelCls}>Límite de crédito (opcional)</label>

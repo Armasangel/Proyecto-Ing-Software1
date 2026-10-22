@@ -252,17 +252,20 @@ flujo (que exige confirmar por correo) es lo que levanta la marca.
 
 ### Despliegue: aplicar las migraciones
 
-Sobre una base ya inicializada hay que correr las dos:
+Sobre una base ya inicializada hay que correr (en orden):
 
 ```bash
 psql -U <usuario> -d <basedatos> -f migrations/06_seguridad_credenciales.sql
 psql -U <usuario> -d <basedatos> -f migrations/07_auditoria_credenciales.sql
 psql -U <usuario> -d <basedatos> -f migrations/09_descuentos.sql
+psql -U <usuario> -d <basedatos> -f migrations/11_cliente_datos_extra.sql
 ```
 
-Ambas son idempotentes (se pueden correr más de una vez). Sólo aplican sobre
-bases ya inicializadas: en bases nuevas el esquema de `init/01_schema.sql` ya
-incluye estos cambios.
+Todas son idempotentes (se pueden correr más de una vez). Las 06/07/09 sólo
+aplican sobre bases ya inicializadas: en bases nuevas el esquema de
+`init/01_schema.sql` ya incluye estos cambios. La 11 (dirección, código postal y
+tipos de cliente EMPRESA/GOBIERNO) hay que correrla también en bases nuevas,
+porque todavía no forma parte del esquema base.
 
 **Antes de desplegar**, rotá la contraseña de las cuentas que usaban la clave
 publicada en el repo: después de correr la 06 quedan marcadas para cambiar y no
@@ -536,11 +539,12 @@ una vista propia tras el login (`lib/roles.ts` → `postLoginPath`):
 - [x] Registro de ventas con descuento transaccional de stock (concurrencia segura)
 - [x] Facturación con número correlativo atómico (secuencia de Postgres)
 - [x] Historial de ventas con filtros y paginación
-- [x] Gestión de clientes (minorista / mayorista) con límite de deuda y bloqueo automático
+- [x] Gestión de clientes (minorista, mayorista, empresa o gobierno) con NIT,
+      dirección y código postal, límite de deuda y bloqueo automático
 
 ### Descuentos
 - [x] Descuentos configurables por el dueño: por porcentaje, por cantidad o por escala de tramos
-- [x] Asignables a un cliente puntual o a un tipo de cliente (MINORISTA / MAYORISTA)
+- [x] Asignables a un cliente puntual o a un tipo de cliente (MINORISTA / MAYORISTA / EMPRESA / GOBIERNO)
 - [x] Se aplican por línea al registrar la venta (el servidor recalcula; la UI solo previsualiza)
 - [x] Snapshot por línea en el historial (editar o borrar la regla no altera ventas pasadas)
 

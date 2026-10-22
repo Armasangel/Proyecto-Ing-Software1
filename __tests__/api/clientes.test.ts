@@ -1,4 +1,4 @@
-import { GET } from "@/app/api/clientes/route";
+import { GET, POST } from "@/app/api/clientes/route";
 import { PATCH } from "@/app/api/clientes/[id]/route";
 import { createMockRequest, testUserDueno, testUserEmpleado, mockQueryResult } from "@/__tests__/utils/api-test-utils";
 
@@ -61,6 +61,97 @@ describe("GET /api/clientes", () => {
     await GET(req);
     const sql = mockPool.query.mock.calls[0][0] as string;
     expect(sql).toContain("es_consumidor_final");
+  });
+
+  it("exposes nit_cliente, codigo_postal and direccion for the listing", async () => {
+    const req = createMockRequest("/api/clientes", { user: testUserDueno });
+    await GET(req);
+    const sql = mockPool.query.mock.calls[0][0] as string;
+    expect(sql).toContain("nit_cliente");
+    expect(sql).toContain("codigo_postal");
+    expect(sql).toContain("direccion");
+  });
+});
+
+describe("POST /api/clientes — datos del cliente", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPool.query.mockResolvedValue(mockQueryResult([{ id_cliente: 7 }]));
+  });
+
+  function post(body: unknown, user = testUserDueno) {
+    return POST(createMockRequest("/api/clientes", { method: "POST", body, user }));
+  }
+
+  it("rejects unauthenticated requests", async () => {
+    const res = await POST(createMockRequest("/api/clientes", { method: "POST", body: { nombre: "X" } }));
+    expect(res.status).toBe(403);
+    expect(mockPool.query).not.toHaveBeenCalled();
+  });
+
+  it("stores NIT, código postal y dirección (recortados) y acepta tipo EMPRESA", async () => {
+    const res = await post({
+      nombre: "  Distribuidora X  ",
+      correo: "x@correo.com",
+      telefono: "55551234",
+      tipo_cliente: "EMPRESA",
+      nit_cliente: " 1234567-8 ",
+      codigo_postal: " 01001 ",
+      direccion: " 6a. avenida 12-34, zona 1 ",
+    });
+    expect(res.status).toBe(201);
+
+    const [sql, params] = mockPool.query.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain("INSERT INTO cliente");
+    expect(params).toEqual([
+      "Distribuidora X",
+      "x@correo.com",
+      "55551234",
+      "EMPRESA",
+      null,
+      "1234567-8",
+      "01001",
+      "6a. avenida 12-34, zona 1",
+    ]);
+  });
+
+  it("saves 'CF' and NULLs when the optional fields are empty", async () => {
+    const res = await post({ nombre: "Sin NIT", correo: null });
+    expect(res.status).toBe(201);
+
+    const [, params] = mockPool.query.mock.calls[0] as [string, unknown[]];
+    // [nombre, correo, telefono, tipo, limite, nit, codigo_postal, direccion]
+    expect(params.slice(4)).toEqual([null, "CF", null, null]);
+    expect(params[3]).toBe("MINORISTA");
+  });
+
+  it("accepts GOBIERNO as tipo and falls back to MINORISTA for unknown types", async () => {
+    await post({ nombre: "Muni", tipo_cliente: "GOBIERNO" });
+    expect((mockPool.query.mock.calls[0] as [string, unknown[]])[1][3]).toBe("GOBIERNO");
+
+    await post({ nombre: "Otro", tipo_cliente: "PARTICULAR" });
+    expect((mockPool.query.mock.calls[1] as [string, unknown[]])[1][3]).toBe("MINORISTA");
+  });
+
+  it("rejects a NIT, código postal or dirección longer than the column", async () => {
+    const largo = (n: number) => "X".repeat(n);
+    for (const body of [
+      { nombre: "A", nit_cliente: largo(21) },
+      { nombre: "A", codigo_postal: largo(11) },
+      { nombre: "A", direccion: largo(256) },
+    ]) {
+      const res = await post(body);
+      expect(res.status).toBe(400);
+    }
+    expect(mockPool.query).not.toHaveBeenCalled();
+  });
+
+  it("still requires the nombre", async () => {
+    const res = await post({ nombre: "   " });
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toMatch(/nombre del cliente es obligatorio/);
+    expect(mockPool.query).not.toHaveBeenCalled();
   });
 });
 

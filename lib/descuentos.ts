@@ -7,6 +7,8 @@
 //
 // El dinero se maneja en centavos para evitar errores de coma flotante.
 
+import { TIPOS_CLIENTE, esTipoCliente } from "@/lib/tipos-cliente";
+
 export const TIPOS_DESCUENTO = ["PORCENTAJE", "CANTIDAD", "ESCALA"] as const;
 export type TipoDescuento = (typeof TIPOS_DESCUENTO)[number];
 
@@ -168,7 +170,7 @@ export type ErrorAsignacion = string;
 
 /**
  * Valida una asignación: o un cliente (id_cliente > 0) o un tipo de cliente
- * (MINORISTA/MAYORISTA), nunca ambos ni ninguno.
+ * (MINORISTA/MAYORISTA/EMPRESA/GOBIERNO), nunca ambos ni ninguno.
  */
 export function validarAsignacion(idCliente: unknown, tipoCliente: unknown): ErrorAsignacion | null {
   const hayCliente = idCliente != null && String(idCliente).trim() !== "";
@@ -179,8 +181,8 @@ export function validarAsignacion(idCliente: unknown, tipoCliente: unknown): Err
   if (hayCliente && !(Number(idCliente) > 0)) {
     return "El cliente indicado no es válido";
   }
-  if (hayTipo && tipoCliente !== "MINORISTA" && tipoCliente !== "MAYORISTA") {
-    return "El tipo de cliente debe ser MINORISTA o MAYORISTA";
+  if (hayTipo && !esTipoCliente(tipoCliente)) {
+    return `El tipo de cliente debe ser ${TIPOS_CLIENTE.join(" o ")}`;
   }
   return null;
 }

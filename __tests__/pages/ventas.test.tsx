@@ -364,6 +364,55 @@ describe("VentasPage — cliente nuevo", () => {
     expect(screen.queryByPlaceholderText("Nombre del cliente")).not.toBeInTheDocument();
   });
 
+  it("sends NIT, código postal y dirección (y el tipo elegido) al crear el cliente", async () => {
+    setupServerVentas();
+    let body: Record<string, unknown> | null = null;
+    server.use(
+      rest.post("/api/clientes", async (req, res, ctx) => {
+        body = (await req.json()) as Record<string, unknown>;
+        return res(
+          ctx.status(201),
+          ctx.json({
+            cliente: {
+              id_cliente: 10,
+              nombre: "Distribuidora X",
+              correo: "ventas@disolx.com",
+              tipo_cliente: "EMPRESA",
+              telefono: null,
+              limite_deuda: null,
+              nit_cliente: "1234567-8",
+              codigo_postal: "01001",
+              direccion: "6a. avenida 12-34",
+            },
+          })
+        );
+      })
+    );
+    const user = userEvent.setup();
+    render(<VentasPage />);
+    const { nombre, correo } = await abrirFormulario(user);
+
+    await user.type(nombre, "Distribuidora X");
+    await user.type(correo, "ventas@disolx.com");
+    await user.selectOptions(screen.getByDisplayValue("Minorista"), "EMPRESA");
+    await user.type(screen.getByLabelText("NIT del cliente"), "1234567-8");
+    await user.type(screen.getByLabelText("Código postal del cliente"), "01001");
+    await user.type(screen.getByLabelText("Dirección del cliente"), "6a. avenida 12-34");
+    await user.click(screen.getByRole("button", { name: "Crear cliente" }));
+
+    expect(await screen.findByText(/Cliente "Distribuidora X" creado y seleccionado/)).toBeInTheDocument();
+    expect(body).toMatchObject({
+      nombre: "Distribuidora X",
+      correo: "ventas@disolx.com",
+      tipo_cliente: "EMPRESA",
+      nit_cliente: "1234567-8",
+      codigo_postal: "01001",
+      direccion: "6a. avenida 12-34",
+    });
+    // EMPRESA no es MAYORISTA: la venta sigue detectándose como minorista.
+    expect(screen.getByText("Minorista")).toBeInTheDocument();
+  }, 15000);
+
   it("shows the API error (e.g. duplicated correo) and keeps the form open", async () => {
     setupServerVentas();
     server.use(

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { StaffShell } from "@/components/StaffShell";
 import { useStaffSession } from "@/hooks/useStaffSession";
+import { TIPOS_CLIENTE } from "@/lib/tipos-cliente";
 
 type Tramo = {
   id_tramo?: number;
@@ -404,8 +405,11 @@ export default function DescuentosPage() {
                       aria-label="Asignar a tipo de cliente"
                     >
                       <option value="">Asignar a tipo de cliente…</option>
-                      <option value="MINORISTA">MINORISTA</option>
-                      <option value="MAYORISTA">MAYORISTA</option>
+                      {TIPOS_CLIENTE.map((t) => (
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
+                      ))}
                     </select>
                     <select
                       className={inputSm}

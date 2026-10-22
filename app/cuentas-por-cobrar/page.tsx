@@ -5,6 +5,7 @@ import { StaffShell } from "@/components/StaffShell";
 import { useStaffSession } from "@/hooks/useStaffSession";
 import { matchesQuery, paginar, PaginationBar, type PageSize } from "@/lib/ui-table";
 import { reglaDePago, type ReglaPago } from "@/lib/credito";
+import { ETIQUETAS_TIPO_CLIENTE, TIPOS_CLIENTE, etiquetaTipoCliente } from "@/lib/tipos-cliente";
 
 type ProductoDeuda = {
   id_producto: number;
@@ -84,6 +85,9 @@ type Cliente = {
   tipo_cliente: string;
   estado_cliente: boolean;
   limite_deuda: string | null;
+  nit_cliente?: string | null;
+  codigo_postal?: string | null;
+  direccion?: string | null;
 };
 
 type Alerta = {
@@ -108,7 +112,15 @@ const clienteFormVacio = {
   tipo_cliente: "MINORISTA",
   limite_deuda: "",
   deuda_inicial: "",
+  nit_cliente: "",
+  codigo_postal: "",
+  direccion: "",
 };
+
+// Mismos límites que las columnas de la tabla cliente (valida también el API).
+const NIT_MAX = 20;
+const CODIGO_POSTAL_MAX = 10;
+const DIRECCION_MAX = 255;
 
 /**
  * Clases Tailwind reutilizables (DEV-192). Reemplazan a los antiguos helpers
@@ -480,6 +492,18 @@ export default function CuentasPorCobrarPage() {
       setError("El saldo inicial debe ser un número mayor a 0");
       return null;
     }
+    if (formCliente.nit_cliente.trim().length > NIT_MAX) {
+      setError(`El NIT no puede superar los ${NIT_MAX} caracteres`);
+      return null;
+    }
+    if (formCliente.codigo_postal.trim().length > CODIGO_POSTAL_MAX) {
+      setError(`El código postal no puede superar los ${CODIGO_POSTAL_MAX} caracteres`);
+      return null;
+    }
+    if (formCliente.direccion.trim().length > DIRECCION_MAX) {
+      setError(`La dirección no puede superar los ${DIRECCION_MAX} caracteres`);
+      return null;
+    }
 
     setGuardandoCliente(true);
     setError("");
@@ -492,6 +516,9 @@ export default function CuentasPorCobrarPage() {
         correo: formCliente.correo,
         tipo_cliente: formCliente.tipo_cliente,
         limite_deuda: limiteInicial,
+        nit_cliente: formCliente.nit_cliente.trim(),
+        codigo_postal: formCliente.codigo_postal.trim(),
+        direccion: formCliente.direccion.trim(),
       }),
     });
     if (!res.ok) {
@@ -639,7 +666,7 @@ export default function CuentasPorCobrarPage() {
   const clientesFiltradosLimites = useMemo(() => {
     return clientes.filter((c) => {
       if (soloBloqueados && c.estado_cliente) return false;
-      return matchesQuery(qLimites, c.nombre, c.telefono, c.correo);
+      return matchesQuery(qLimites, c.nombre, c.telefono, c.correo, c.nit_cliente, c.direccion, c.codigo_postal);
     });
   }, [clientes, qLimites, soloBloqueados]);
   const clientesPage = useMemo(
@@ -825,10 +852,39 @@ export default function CuentasPorCobrarPage() {
             value={formCliente.tipo_cliente}
             onChange={(e) => setFormCliente({ ...formCliente, tipo_cliente: e.target.value })}
           >
-            <option value="MINORISTA">Minorista</option>
-            <option value="MAYORISTA">Mayorista</option>
+            {TIPOS_CLIENTE.map((t) => (
+              <option key={t} value={t}>
+                {ETIQUETAS_TIPO_CLIENTE[t]}
+              </option>
+            ))}
           </select>
         </div>
+        <div className="flex gap-2 mb-2">
+          <input
+            className={`${cls.input} w-full`}
+            placeholder="NIT (opcional, vacío = CF)"
+            aria-label="NIT del cliente"
+            value={formCliente.nit_cliente}
+            onChange={(e) => setFormCliente({ ...formCliente, nit_cliente: e.target.value })}
+            maxLength={NIT_MAX}
+          />
+          <input
+            className={`${cls.input} w-full`}
+            placeholder="Código postal (opcional)"
+            aria-label="Código postal del cliente"
+            value={formCliente.codigo_postal}
+            onChange={(e) => setFormCliente({ ...formCliente, codigo_postal: e.target.value })}
+            maxLength={CODIGO_POSTAL_MAX}
+          />
+        </div>
+        <input
+          className={`${cls.input} w-full mb-2`}
+          placeholder="Dirección (opcional)"
+          aria-label="Dirección del cliente"
+          value={formCliente.direccion}
+          onChange={(e) => setFormCliente({ ...formCliente, direccion: e.target.value })}
+          maxLength={DIRECCION_MAX}
+        />
         <div className="flex gap-2 mb-2">
           <div className="flex-1">
             <label className="block mb-1 text-[0.8rem]">
@@ -1471,7 +1527,7 @@ export default function CuentasPorCobrarPage() {
               type="search"
               value={qLimites}
               onChange={(e) => setQLimites(e.target.value)}
-              placeholder="Buscar cliente por nombre, teléfono o correo…"
+              placeholder="Buscar cliente por nombre, teléfono, correo o NIT…"
               aria-label="Buscar clientes"
               className={`${cls.input} flex-[1_1_260px] min-w-[220px] w-auto`}
             />
@@ -1490,6 +1546,8 @@ export default function CuentasPorCobrarPage() {
               <thead>
                 <tr className="border-b-2 border-line text-left">
                   <th className={cls.td}>Cliente</th>
+                  <th className={cls.td}>NIT</th>
+                  <th className={cls.td}>Dirección</th>
                   <th className={cls.td}>Estado</th>
                   <th className={cls.td}>Saldo por cobrar</th>
                   <th className={cls.td}>Límite de crédito (Q)</th>
@@ -1503,6 +1561,20 @@ export default function CuentasPorCobrarPage() {
                       {c.nombre}
                       {c.telefono && (
                         <div className="text-ink-muted text-[0.78rem]">{c.telefono}</div>
+                      )}
+                      {c.tipo_cliente && (
+                        <div className="text-ink-muted text-[0.78rem]">
+                          {etiquetaTipoCliente(c.tipo_cliente)}
+                        </div>
+                      )}
+                    </td>
+                    <td className={cls.td}>{c.nit_cliente || "CF"}</td>
+                    <td className={cls.td}>
+                      <div className={c.direccion ? "" : "text-ink-muted"}>
+                        {c.direccion || "—"}
+                      </div>
+                      {c.codigo_postal && (
+                        <div className="text-ink-muted text-[0.78rem]">CP {c.codigo_postal}</div>
                       )}
                     </td>
                     <td className={cls.td}>
@@ -1537,7 +1609,7 @@ export default function CuentasPorCobrarPage() {
                 ))}
                 {clientesPage.slice.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="p-6 text-center text-ink-muted">
+                    <td colSpan={7} className="p-6 text-center text-ink-muted">
                       {qLimites.trim() || soloBloqueados
                         ? "Ningún resultado para esa búsqueda o filtro."
                         : "No hay clientes registrados."}
