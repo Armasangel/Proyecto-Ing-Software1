@@ -25,6 +25,7 @@ type NavItem = {
 /* Mapa de rutas a iconos */
 const NAV: NavItem[] = [
   { href: "/dashboard",        label: "Dashboard",       icon: "dashboard"     },
+  { href: "/crear",            label: "Crear registros", icon: "increase"      },
   { href: "/inventario",       label: "Inventario",      icon: "inventory"     },
   { href: "/ventas",           label: "Ventas",          icon: "shopping-cart" },
   { href: "/facturacion",      label: "Facturación",     icon: "bill"          },
@@ -88,7 +89,7 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
 
   const navVisible = NAV.filter((item) => {
     if (
-      ["/inventario", "/historial-ventas", "/proveedores", "/cuentas-por-cobrar", "/usuarios", "/reportes", "/descuentos"].includes(
+      ["/crear", "/inventario", "/historial-ventas", "/proveedores", "/cuentas-por-cobrar", "/usuarios", "/reportes", "/descuentos"].includes(
         item.href
       )
     ) {

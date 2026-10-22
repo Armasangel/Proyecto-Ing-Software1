@@ -565,6 +565,10 @@ una vista propia tras el login (`lib/roles.ts` → `postLoginPath`):
 - [x] Se aplican por línea al registrar la venta (el servidor recalcula; la UI solo previsualiza)
 - [x] Snapshot por línea en el historial (editar o borrar la regla no altera ventas pasadas)
 
+### Alta de registros
+- [x] Sección única (solo dueño) para crear clientes, productos, presentaciones,
+      categorías, marcas, proveedores, bodegas, usuarios y descuentos
+
 ### Cuentas por cobrar y pedidos
 - [x] Cuentas por cobrar por productos o monto libre, con alertas, límites y bloqueo automático
 - [x] Reglas de pago por condición del cliente, con vista de plan de pagos y seniority de cuotas
@@ -595,6 +599,7 @@ una vista propia tras el login (`lib/roles.ts` → `postLoginPath`):
 │   │   ├── clientes/ bodegas/ categorias/ marcas/ proveedores/ precios/
 │   │   ├── usuarios/ stats/ sesion/ historial-ventas/ health/ logout/
 │   ├── dashboard/            → Panel principal con KPIs
+│   ├── crear/                → Alta centralizada de registros (solo dueño)
 │   ├── inventario/           → Stock, entradas, transferencias, ajustes y bodegas
 │   ├── catalogo/             → Catálogo de productos (solo dueño)
 │   ├── productos/            → Catálogo maestro (precios y estados)
@@ -640,6 +645,7 @@ una vista propia tras el login (`lib/roles.ts` → `postLoginPath`):
 | http://localhost:3001 | Aplicación principal (redirige a /login) |
 | http://localhost:3001/login | Inicio de sesión |
 | http://localhost:3001/dashboard | Dashboard con KPIs |
+| http://localhost:3001/crear | Alta centralizada de registros (solo dueño) |
 | http://localhost:3001/api/health | Verificar conexión a PostgreSQL |
 | http://localhost:5050 | pgAdmin (sólo con `--profile tools`; credenciales en `.env`) |
 
