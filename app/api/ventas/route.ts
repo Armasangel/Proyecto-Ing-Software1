@@ -22,6 +22,11 @@ import {
   elegirMejorDescuento,
   type Descuento,
 } from "@/lib/descuentos";
+import {
+  esTipoDocumento,
+  prefijoTipoDocumento,
+  type TipoDocumento,
+} from "@/lib/tipos-documento";
 
 const log = getLogger("api/ventas");
 
@@ -182,6 +187,7 @@ export async function POST(request: NextRequest) {
     let plazoDias = 0;
     let numeroCuotas = 0;
     let fechaFacturaBody: string | null = null;
+    let tipoDocumento: TipoDocumento = "FACTURA";
     if (esCredito) {
       const c = (credito ?? {}) as Record<string, unknown>;
       const errorCredito = validarCondicionesCredito(c.plazo_dias, c.numero_cuotas);
@@ -195,6 +201,15 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: "La fecha de factura debe tener formato AAAA-MM-DD" }, { status: 400 });
         }
         fechaFacturaBody = c.fecha_factura;
+      }
+      if (c.tipo_documento !== undefined && c.tipo_documento !== null) {
+        if (!esTipoDocumento(c.tipo_documento)) {
+          return NextResponse.json(
+            { error: "tipo_documento debe ser FACTURA o FACTURA_CAMBIARIA" },
+            { status: 400 }
+          );
+        }
+        tipoDocumento = c.tipo_documento;
       }
     }
 
@@ -278,9 +293,10 @@ export async function POST(request: NextRequest) {
         nombre?: string;
         telefono?: string | null;
         nit_cliente?: string | null;
+        direccion?: string | null;
         es_consumidor_final?: boolean;
       }>(
-        `SELECT tipo_cliente, nombre, telefono, nit_cliente, es_consumidor_final
+        `SELECT tipo_cliente, nombre, telefono, nit_cliente, direccion, es_consumidor_final
          FROM cliente WHERE id_cliente = $1 AND estado_cliente = TRUE`, [idCliente]
       );
       if (existeCliente.rowCount === 0) {
@@ -296,6 +312,30 @@ export async function POST(request: NextRequest) {
           { error: "Consumidor Final no puede comprar a crédito; registre la venta como Contado" },
           { status: 400 }
         );
+      }
+
+      const datosCliente = existeCliente.rows[0];
+      const nitCliente = (datosCliente.nit_cliente || "CF").trim() || "CF";
+      const direccionCliente =
+        typeof datosCliente.direccion === "string" ? datosCliente.direccion.trim() : "";
+
+      // La factura cambiaria usa los datos ampliados del cliente: NIT real y
+      // dirección. Se valida acá, antes de tocar stock o crear la venta.
+      if (esCredito && tipoDocumento === "FACTURA_CAMBIARIA") {
+        if (nitCliente.toUpperCase() === "CF") {
+          await client.query("ROLLBACK");
+          return NextResponse.json(
+            { error: "La factura cambiaria requiere que el cliente tenga un NIT registrado" },
+            { status: 400 }
+          );
+        }
+        if (!direccionCliente) {
+          await client.query("ROLLBACK");
+          return NextResponse.json(
+            { error: "La factura cambiaria requiere que el cliente tenga una dirección registrada" },
+            { status: 400 }
+          );
+        }
       }
 
       // Detección automática del tipo de venta: por defecto es el
@@ -516,6 +556,7 @@ export async function POST(request: NextRequest) {
         id_deuda: number;
         id_factura: number;
         numero_factura: string;
+        tipo_documento: TipoDocumento;
         fecha_factura: string;
         fecha_limite_pago: string;
         plazo_dias: number;
@@ -524,14 +565,25 @@ export async function POST(request: NextRequest) {
       } | null = null;
 
       if (esCredito && fechaFactura) {
-        const cli = existeCliente.rows[0];
+        const cli = datosCliente;
 
         // El número de factura lo da la secuencia de Postgres (correlativo, sin repetidos).
         const factura = await client.query(
-          `INSERT INTO factura (id_venta, numero_factura, nombre_cliente, nit_cliente, total_factura)
-           VALUES ($1, 'FACT-' || LPAD(nextval('factura_numero_seq')::text, 6, '0'), $2, $3, $4)
+          `INSERT INTO factura
+             (id_venta, numero_factura, tipo_documento, nombre_cliente, nit_cliente,
+              direccion_cliente, total_factura)
+           VALUES ($1, $2 || '-' || LPAD(nextval('factura_numero_seq')::text, 6, '0'),
+                   $3, $4, $5, $6, $7)
            RETURNING id_factura, numero_factura`,
-          [idVenta, cli.nombre || "Consumidor Final", cli.nit_cliente || "CF", total]
+          [
+            idVenta,
+            prefijoTipoDocumento(tipoDocumento),
+            tipoDocumento,
+            cli.nombre || "Consumidor Final",
+            nitCliente,
+            direccionCliente || null,
+            total,
+          ]
         );
 
         const deuda = await client.query(
@@ -575,6 +627,7 @@ export async function POST(request: NextRequest) {
           id_deuda: idDeuda,
           id_factura: factura.rows[0].id_factura,
           numero_factura: factura.rows[0].numero_factura,
+          tipo_documento: tipoDocumento,
           fecha_factura: fechaFactura,
           fecha_limite_pago: cuotas[cuotas.length - 1].fecha_vencimiento,
           plazo_dias: plazoDias,
@@ -588,8 +641,8 @@ export async function POST(request: NextRequest) {
         {
           id_venta: idVenta, id_cliente: idCliente, tipo_venta: tipoVentaFinal, forzado: forzarTipoVenta, total,
           descuento_total: descuentoTotal,
-          condicion_pago: esCredito ? "CREDITO" : "CONTADO", id_deuda: creditoCreado?.id_deuda,
-          usuario: usuario.id_usuario,
+          condicion_pago: esCredito ? "CREDITO" : "CONTADO", tipo_documento: tipoDocumento,
+          id_deuda: creditoCreado?.id_deuda, usuario: usuario.id_usuario,
         },
         "Venta registrada"
       );

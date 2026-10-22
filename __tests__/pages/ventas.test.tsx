@@ -21,8 +21,8 @@ const mockReplace = jest.fn();
 const mockUsuarioEmpleado = { id_usuario: 2, nombre: "María", correo: "maria@tienda.com", tipo_usuario: "EMPLEADO" };
 
 const clientes = [
-  { id_cliente: 1, nombre: "Carlos Ruiz", correo: "carlos@email.com", tipo_cliente: "MINORISTA", total_ventas: 1 },
-  { id_cliente: 2, nombre: "Distribuidora El Sol", correo: "sol@email.com", tipo_cliente: "MAYORISTA", total_ventas: 3 },
+  { id_cliente: 1, nombre: "Carlos Ruiz", correo: "carlos@email.com", tipo_cliente: "MINORISTA", total_ventas: 1, nit_cliente: "1234567-8", direccion: "Zona 1, Guatemala" },
+  { id_cliente: 2, nombre: "Distribuidora El Sol", correo: "sol@email.com", tipo_cliente: "MAYORISTA", total_ventas: 3, nit_cliente: "8765432-1", direccion: "Zona 4, Guatemala" },
   { id_cliente: 5, nombre: "Consumidor Final", correo: null, tipo_cliente: "MINORISTA", total_ventas: 0, es_consumidor_final: true },
 ];
 
@@ -182,7 +182,7 @@ describe("VentasPage", () => {
     expect(screen.getByText("Carlos Ruiz")).toBeInTheDocument();
     expect(screen.getByText("Distribuidora El Sol")).toBeInTheDocument();
     // El de más ventas (3) aparece marcado.
-    expect(screen.getByText("3 ventas")).toBeInTheDocument();
+    expect(screen.getByText(/3 ventas/)).toBeInTheDocument();
 
     // Al escribir, filtra y deja de mostrar el encabezado de "frecuentes".
     await user.type(buscadorCliente, "sol");
@@ -534,6 +534,39 @@ describe("VentasPage — contado o crédito", () => {
     await user.click(screen.getByRole("button", { name: "Sí, registrar venta" }));
 
     await waitFor(() => expect((body.credito as { fecha_factura: string })?.fecha_factura).toBe(iso));
+  });
+
+  it("envía factura cambiaria cuando se elige ese tipo de documento", async () => {
+    let body: Record<string, unknown> = {};
+    servidorConVenta((b) => (body = b), {
+      id_venta: 10,
+      total: 50,
+      condicion_pago: "CREDITO",
+      credito: {
+        numero_factura: "FCAM-000125",
+        tipo_documento: "FACTURA_CAMBIARIA",
+        fecha_limite_pago: "2026-12-31",
+        alerta: { bloqueado: false },
+      },
+    });
+    const user = userEvent.setup();
+    render(<VentasPage />);
+    await llenarFormulario(user);
+
+    await user.click(screen.getByRole("button", { name: "Crédito" }));
+    expect(screen.getByText(/La factura cambiaria usa el NIT y la dirección/)).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("Tipo de documento"), "FACTURA_CAMBIARIA");
+
+    await user.click(screen.getByRole("button", { name: "Registrar venta" }));
+    expect(screen.getByText(/factura cambiaria del/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Sí, registrar venta" }));
+
+    await waitFor(() =>
+      expect((body.credito as { tipo_documento: string }).tipo_documento).toBe(
+        "FACTURA_CAMBIARIA"
+      )
+    );
+    expect(await screen.findByText(/Factura cambiaria FCAM-000125/)).toBeInTheDocument();
   });
 
   it("blocks registering a credit with more payments than days of plazo", async () => {

@@ -69,10 +69,10 @@ describeIfDb("Crédito en ventas (integración)", () => {
     await pool.query(`INSERT INTO bodega_producto (id_bodega, id_producto, cantidad_disponible, stock_minimo) VALUES ($1,$2,1000,0)`, [idBodega, idProducto]);
     // Límite de crédito Q500: alcanza para una venta de Q120 pero no para varias.
     idCliente = (
-      await pool.query(`INSERT INTO cliente (nombre, correo, limite_deuda, nit_cliente) VALUES ($1,$2,500,'1234567-8') RETURNING id_cliente`, [`Cliente ${sufijo}`, `c-${sufijo}@test.com`])
+      await pool.query(`INSERT INTO cliente (nombre, correo, limite_deuda, nit_cliente, direccion) VALUES ($1,$2,500,'1234567-8','Zona 1, Guatemala') RETURNING id_cliente`, [`Cliente ${sufijo}`, `c-${sufijo}@test.com`])
     ).rows[0].id_cliente;
     idClienteSinLimite = (
-      await pool.query(`INSERT INTO cliente (nombre, correo) VALUES ($1,$2) RETURNING id_cliente`, [`Cliente B ${sufijo}`, `b-${sufijo}@test.com`])
+      await pool.query(`INSERT INTO cliente (nombre, correo, nit_cliente, direccion) VALUES ($1,$2,'1111111-1','Zona 2, Guatemala') RETURNING id_cliente`, [`Cliente B ${sufijo}`, `b-${sufijo}@test.com`])
     ).rows[0].id_cliente;
   });
 
@@ -117,6 +117,7 @@ describeIfDb("Crédito en ventas (integración)", () => {
 
     const factura = (await pool.query(`SELECT * FROM factura WHERE id_venta=$1`, [data.id_venta])).rows[0];
     expect(factura.nit_cliente).toBe("1234567-8");
+    expect(factura.tipo_documento).toBe("FACTURA");
     expect(Number(factura.total_factura)).toBe(120);
 
     const deuda = (await pool.query(`SELECT * FROM deuda WHERE id_venta=$1`, [data.id_venta])).rows[0];
@@ -129,6 +130,26 @@ describeIfDb("Crédito en ventas (integración)", () => {
     expect(Number(productos[0].subtotal)).toBe(120);
 
     expect(await stock()).toBe(stockAntes - 12);
+  });
+
+  it("venta a crédito con factura cambiaria: guarda tipo, NIT y dirección del cliente", async () => {
+    const res = await vender({
+      condicion_pago: "CREDITO",
+      credito: {
+        plazo_dias: 30,
+        numero_cuotas: 1,
+        tipo_documento: "FACTURA_CAMBIARIA",
+      },
+    }, idClienteSinLimite);
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.credito.tipo_documento).toBe("FACTURA_CAMBIARIA");
+    expect(data.credito.numero_factura).toMatch(/^FCAM-\d{6}$/);
+
+    const factura = (await pool.query(`SELECT * FROM factura WHERE id_venta=$1`, [data.id_venta])).rows[0];
+    expect(factura.tipo_documento).toBe("FACTURA_CAMBIARIA");
+    expect(factura.nit_cliente).toBe("1111111-1");
+    expect(factura.direccion_cliente).toBe("Zona 2, Guatemala");
   });
 
   it("los abonos se aplican en orden a las cuotas y al saldar la venta pasa a PAGADO", async () => {

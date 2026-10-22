@@ -439,8 +439,13 @@ CREATE TABLE factura (
     id_factura      SERIAL          PRIMARY KEY,
     id_venta        INT             NOT NULL,
     numero_factura  VARCHAR(50)     NOT NULL,
+    -- migraci�n 13: FACTURA o FACTURA_CAMBIARIA. La cambiaria usa los datos
+    -- ampliados del cliente (NIT y direcci�n).
+    tipo_documento  VARCHAR(20)     NOT NULL DEFAULT 'FACTURA'
+                        CHECK (tipo_documento IN ('FACTURA', 'FACTURA_CAMBIARIA')),
     nombre_cliente  VARCHAR(150),
     nit_cliente     VARCHAR(20)     NOT NULL DEFAULT 'CF',
+    direccion_cliente VARCHAR(255),
     total_factura   NUMERIC(12,2)   NOT NULL,
     CONSTRAINT uq_factura_numero UNIQUE (numero_factura),
     CONSTRAINT uq_factura_venta  UNIQUE (id_venta),

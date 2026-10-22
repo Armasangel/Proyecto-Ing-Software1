@@ -13,6 +13,12 @@ import Link from "next/link";
 import { CUOTAS_MAXIMAS, PLAZO_MAXIMO_DIAS, generarCuotas, sumarDias, validarCondicionesCredito } from "@/lib/credito";
 import { elegirMejorDescuento, type Descuento as ReglaDescuento } from "@/lib/descuentos";
 import { ETIQUETAS_TIPO_CLIENTE, TIPOS_CLIENTE } from "@/lib/tipos-cliente";
+import {
+  ETIQUETAS_TIPO_DOCUMENTO,
+  TIPOS_DOCUMENTO,
+  etiquetaTipoDocumento,
+  type TipoDocumento,
+} from "@/lib/tipos-documento";
 
 type Cliente = {
   id_cliente: number;
@@ -195,7 +201,9 @@ export default function VentasPage() {
   const [fechaFactura, setFechaFactura] = useState("");
   const [plazoDias, setPlazoDias] = useState("30");
   const [numeroCuotas, setNumeroCuotas] = useState("1");
-  const [creditoGenerado, setCreditoGenerado] = useState<{ numero_factura: string; fecha_limite_pago: string; bloqueado: boolean } | null>(null);
+  // La factura cambiaria usa el NIT y la dirección registrados del cliente.
+  const [tipoDocumentoCredito, setTipoDocumentoCredito] = useState<TipoDocumento>("FACTURA");
+  const [creditoGenerado, setCreditoGenerado] = useState<{ numero_factura: string; tipo_documento?: string; fecha_limite_pago: string; bloqueado: boolean } | null>(null);
   const [tipoVenta, setTipoVenta] = useState<string>("MINORISTA");
   // El tipo de venta ya no lo escoge el colaborador a mano: se detecta solo
   // según el tipo_cliente que ya tiene guardado el cliente elegido. Este
@@ -406,8 +414,25 @@ export default function VentasPage() {
   const errorCredito = useMemo(() => {
     if (condicionPago !== "CREDITO") return null;
     if (otraFechaFactura && !fechaFactura) return "Elige la fecha de la factura";
+    if (tipoDocumentoCredito === "FACTURA_CAMBIARIA") {
+      const nit = (clienteSeleccionado?.nit_cliente || "").trim();
+      if (!nit || nit.toUpperCase() === "CF") {
+        return "La factura cambiaria requiere que el cliente tenga un NIT registrado";
+      }
+      if (!(clienteSeleccionado?.direccion || "").trim()) {
+        return "La factura cambiaria requiere que el cliente tenga una dirección registrada";
+      }
+    }
     return validarCondicionesCredito(Number(plazoDias), Number(numeroCuotas));
-  }, [condicionPago, otraFechaFactura, fechaFactura, plazoDias, numeroCuotas]);
+  }, [
+    condicionPago,
+    otraFechaFactura,
+    fechaFactura,
+    tipoDocumentoCredito,
+    clienteSeleccionado,
+    plazoDias,
+    numeroCuotas,
+  ]);
   const planCuotas = useMemo(() => {
     if (condicionPago !== "CREDITO" || errorCredito || totalBorrador <= 0) return [];
     try {
@@ -464,6 +489,7 @@ export default function VentasPage() {
       setFechaFactura("");
       setPlazoDias("30");
       setNumeroCuotas("1");
+      setTipoDocumentoCredito("FACTURA");
     }
     // Detección automática: el tipo de venta pasa a ser el tipo_cliente del
     // cliente elegido, a menos que el colaborador ya esté forzando otro tipo
@@ -609,7 +635,7 @@ export default function VentasPage() {
           id_cliente: Number(idCliente),
           condicion_pago: condicionPago,
           credito: condicionPago === "CREDITO"
-            ? { fecha_factura: fechaFacturaEfectiva, plazo_dias: Number(plazoDias), numero_cuotas: Number(numeroCuotas) }
+            ? { fecha_factura: fechaFacturaEfectiva, plazo_dias: Number(plazoDias), numero_cuotas: Number(numeroCuotas), tipo_documento: tipoDocumentoCredito }
             : undefined,
           tipo_venta: tipoVenta, forzar_tipo_venta: forzarTipoVenta, tipo_entrega: tipoEntrega,
           direccion_entrega: tipoEntrega === "DOMICILIO" ? direccionEntrega.trim() : undefined,
@@ -619,9 +645,10 @@ export default function VentasPage() {
       const data = await res.json();
       if (!res.ok) { setError(data.error || "No se pudo registrar la venta"); return; }
       if (data.credito) {
-        setOkMsg(`Venta #${data.id_venta} a crédito registrada. Total: Q${Number(data.total).toFixed(2)} · Factura ${data.credito.numero_factura}${data.id_orden ? ` · Pedido de entrega #${data.id_orden}` : ""}`);
+        setOkMsg(`Venta #${data.id_venta} a crédito registrada. Total: Q${Number(data.total).toFixed(2)} · ${etiquetaTipoDocumento(data.credito.tipo_documento || "FACTURA")} ${data.credito.numero_factura}${data.id_orden ? ` · Pedido de entrega #${data.id_orden}` : ""}`);
         setCreditoGenerado({
           numero_factura: data.credito.numero_factura,
+          tipo_documento: data.credito.tipo_documento,
           fecha_limite_pago: data.credito.fecha_limite_pago,
           bloqueado: !!data.credito.alerta?.bloqueado,
         });
@@ -631,7 +658,7 @@ export default function VentasPage() {
       }
       setVentaDeshacer({ id: data.id_venta, total: Number(data.total) });
       setSegundosRestantes(VENTANA_DESHACER_SEGUNDOS);
-      setIdCliente(""); setCondicionPago("CONTADO"); setOtraFechaFactura(false); setFechaFactura(""); setPlazoDias("30"); setNumeroCuotas("1"); setTipoVenta("MINORISTA"); setForzarTipoVenta(false); setTipoEntrega("EN_TIENDA");
+      setIdCliente(""); setCondicionPago("CONTADO"); setOtraFechaFactura(false); setFechaFactura(""); setPlazoDias("30"); setNumeroCuotas("1"); setTipoDocumentoCredito("FACTURA"); setTipoVenta("MINORISTA"); setForzarTipoVenta(false); setTipoEntrega("EN_TIENDA");
       setDireccionEntrega(""); setLineas([nuevaLinea()]);
       await cargarVentas();
     } catch { setError("No se pudo conectar con el servidor"); }
@@ -976,6 +1003,27 @@ export default function VentasPage() {
               <div className="flex flex-col gap-3 p-4 border border-market/40 bg-market-50/50 rounded-control">
                 <div className="font-semibold text-[0.9rem] text-market-600">Condiciones del crédito</div>
                 <div className="flex flex-col gap-1.5">
+                  <label className={labelCls}>Tipo de documento</label>
+                  <select
+                    value={tipoDocumentoCredito}
+                    onChange={(e) => {
+                      setTipoDocumentoCredito(e.target.value as TipoDocumento);
+                      setError(null);
+                    }}
+                    className={inputCls}
+                    aria-label="Tipo de documento"
+                  >
+                    {TIPOS_DOCUMENTO.map((t) => (
+                      <option key={t} value={t}>
+                        {ETIQUETAS_TIPO_DOCUMENTO[t]}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="text-[0.78rem] text-ink-muted">
+                    La factura cambiaria usa el NIT y la dirección registrados del cliente.
+                  </span>
+                </div>
+                <div className="flex flex-col gap-1.5">
                   <label className={labelCls}>Fecha de la factura</label>
                   <div className="flex items-center gap-3 flex-wrap">
                     {otraFechaFactura ? (
@@ -1250,7 +1298,7 @@ export default function VentasPage() {
               </p>
               {condicionPago === "CREDITO" ? (
                 <p className="text-ink text-[0.88rem] mb-4 bg-market-50 border border-market/30 rounded-control px-3 py-2">
-                  <strong>A crédito</strong> · factura del {formatoFecha(fechaFacturaEfectiva)} · plazo de {plazoDias} días ·{" "}
+                  <strong>A crédito</strong> · {etiquetaTipoDocumento(tipoDocumentoCredito).toLowerCase()} del {formatoFecha(fechaFacturaEfectiva)} · plazo de {plazoDias} días ·{" "}
                   {Number(numeroCuotas) === 1 ? "pago único" : `${numeroCuotas} pagos`}. Se generará la factura y una cuenta por cobrar.
                 </p>
               ) : (

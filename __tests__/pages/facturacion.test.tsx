@@ -246,6 +246,82 @@ describe("FacturacionPage", () => {
     expect(screen.queryByText("Factura FACT-000001")).not.toBeInTheDocument();
   });
 
+  it("emits a factura cambiaria with the selected document type", async () => {
+    const venta = ventaBase({
+      id_factura: null,
+      numero_factura: null,
+      total_factura: null,
+      tipo_documento: null,
+    });
+    let body: Record<string, unknown> = {};
+    server.use(
+      rest.get("/api/sesion", (_req, res, ctx) => res(ctx.json({ usuario: mockUsuarioEmpleado }))),
+      rest.get("/api/facturacion", (_req, res, ctx) => res(ctx.json({ ventas: [venta] }))),
+      rest.post("/api/facturacion", async (req, res, ctx) => {
+        body = (await req.json()) as Record<string, unknown>;
+        return res(
+          ctx.json({
+            ok: true,
+            tipo_documento: "FACTURA_CAMBIARIA",
+            numero_factura: "FCAM-000001",
+          })
+        );
+      })
+    );
+    const user = userEvent.setup();
+    render(<FacturacionPage />);
+
+    await screen.findByText("Carlos Ruiz");
+    await user.selectOptions(
+      screen.getByLabelText("Tipo de documento de la venta 1"),
+      "FACTURA_CAMBIARIA"
+    );
+    await user.click(screen.getByRole("button", { name: "Emitir" }));
+
+    await waitFor(() =>
+      expect(body).toEqual({ id_venta: 1, tipo_documento: "FACTURA_CAMBIARIA" })
+    );
+    expect(
+      await screen.findByText("Factura cambiaria FCAM-000001 emitida correctamente")
+    ).toBeInTheDocument();
+  });
+
+  it("shows the factura cambiaria title and the client's address in the detail", async () => {
+    setupServerVentas([ventaBase()]);
+    server.use(
+      rest.get("/api/facturacion/1", (_req, res, ctx) =>
+        res(
+          ctx.json({
+            factura: {
+              id_venta: 1,
+              fecha_venta: "2026-07-01T10:00:00.000Z",
+              total: 100,
+              estado_venta: "CONFIRMADO",
+              nombre: "Carlos Ruiz",
+              correo: "carlos@email.com",
+              id_factura: 1,
+              numero_factura: "FCAM-000001",
+              tipo_documento: "FACTURA_CAMBIARIA",
+              nombre_cliente: "Carlos Ruiz",
+              nit_cliente: "1234567-8",
+              direccion_cliente: "Zona 1, Guatemala",
+              total_factura: 100,
+              productos: [],
+            },
+          })
+        )
+      )
+    );
+    const user = userEvent.setup();
+    render(<FacturacionPage />);
+
+    await screen.findByText("Carlos Ruiz");
+    await user.click(screen.getByRole("button", { name: "Ver factura" }));
+
+    expect(await screen.findByText("Factura cambiaria FCAM-000001")).toBeInTheDocument();
+    expect(screen.getByText("Dirección: Zona 1, Guatemala")).toBeInTheDocument();
+  });
+
   it("shows an error message if the invoice detail fails to load", async () => {
     setupServerVentas([ventaBase()]);
     server.use(

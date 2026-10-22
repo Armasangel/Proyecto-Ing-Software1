@@ -260,13 +260,20 @@ psql -U <usuario> -d <basedatos> -f migrations/07_auditoria_credenciales.sql
 psql -U <usuario> -d <basedatos> -f migrations/09_descuentos.sql
 psql -U <usuario> -d <basedatos> -f migrations/11_cliente_datos_extra.sql
 psql -U <usuario> -d <basedatos> -f migrations/12_cliente_codigo.sql
+psql -U <usuario> -d <basedatos> -f migrations/13_factura_cambiaria.sql
 ```
 
 Todas son idempotentes (se pueden correr más de una vez). Las 06/07/09 sólo
 aplican sobre bases ya inicializadas: en bases nuevas el esquema de
 `init/01_schema.sql` ya incluye estos cambios. La 11 (dirección, código postal y
 tipos de cliente EMPRESA/GOBIERNO) y la 12 (código de cliente) hay que correrlas
-también en bases nuevas, porque todavía no forman parte del esquema base.
+también en bases nuevas, porque todavía no forman parte del esquema base. La 13
+(factura cambiaria) ya está incluida en `init/01_schema.sql`.
+
+La 13 agrega `factura.tipo_documento` (FACTURA o FACTURA_CAMBIARIA) y
+`factura.direccion_cliente` (snapshot de la dirección del cliente al emitir).
+La factura cambiaria usa el NIT y la dirección ampliados del cliente y lleva
+el prefijo `FCAM-` en su número correlativo.
 
 La 12 agrega `cliente.codigo_cliente` (código corto y único del cliente, ej.
 `CLI-00001`), la secuencia `cliente_codigo_seq` que genera el correlativo

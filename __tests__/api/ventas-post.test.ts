@@ -124,6 +124,67 @@ describe("POST /api/ventas — detección automática de tipo_venta", () => {
     expect(mockPool.connect).not.toHaveBeenCalled();
   });
 
+  it("rejects an invalid tipo_documento for a credit sale", async () => {
+    const res = await POST(
+      makeReq({
+        condicion_pago: "CREDITO",
+        credito: { plazo_dias: 30, numero_cuotas: 1, tipo_documento: "OTRO" },
+      })
+    );
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toMatch(/tipo_documento/);
+    expect(mockPool.connect).not.toHaveBeenCalled();
+  });
+
+  it("rejects a factura cambiaria when the client has no NIT", async () => {
+    const client = makeClient();
+    client.query
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 }) // BEGIN
+      .mockResolvedValueOnce({
+        rows: [{ tipo_cliente: "MINORISTA", nit_cliente: "CF", direccion: "Zona 1" }],
+        rowCount: 1,
+      }) // SELECT cliente
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 }); // ROLLBACK
+
+    const res = await POST(
+      makeReq({
+        condicion_pago: "CREDITO",
+        credito: { plazo_dias: 30, numero_cuotas: 1, tipo_documento: "FACTURA_CAMBIARIA" },
+      })
+    );
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toMatch(/NIT registrado/);
+    expect(
+      client.query.mock.calls.some((c) => (c[0] as string).includes("INSERT"))
+    ).toBe(false);
+  });
+
+  it("rejects a factura cambiaria when the client has no address", async () => {
+    const client = makeClient();
+    client.query
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 }) // BEGIN
+      .mockResolvedValueOnce({
+        rows: [{ tipo_cliente: "MINORISTA", nit_cliente: "1234567-8", direccion: null }],
+        rowCount: 1,
+      }) // SELECT cliente
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 }); // ROLLBACK
+
+    const res = await POST(
+      makeReq({
+        condicion_pago: "CREDITO",
+        credito: { plazo_dias: 30, numero_cuotas: 1, tipo_documento: "FACTURA_CAMBIARIA" },
+      })
+    );
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toMatch(/dirección registrada/);
+    expect(
+      client.query.mock.calls.some((c) => (c[0] as string).includes("INSERT"))
+    ).toBe(false);
+  });
+
   it("falls back to MINORISTA when the client's stored tipo_cliente is somehow invalid", async () => {
     const client = makeClient();
     encadenarVentaFeliz(client, "ALGO_RARO");
