@@ -3,10 +3,12 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { StaffShell } from "@/components/StaffShell";
 import { ClienteAutocompletar } from "@/components/ClienteAutocompletar";
+import { FormularioCliente } from "@/components/clientes/FormularioCliente";
 import { useStaffSession } from "@/hooks/useStaffSession";
 import { matchesQuery, paginar, PaginationBar, type PageSize } from "@/lib/ui-table";
 import { reglaDePago, type ReglaPago } from "@/lib/credito";
-import { ETIQUETAS_TIPO_CLIENTE, TIPOS_CLIENTE, etiquetaTipoCliente } from "@/lib/tipos-cliente";
+import { etiquetaTipoCliente } from "@/lib/tipos-cliente";
+import type { ClienteCreado } from "@/lib/clientes-form";
 
 type ProductoDeuda = {
   id_producto: number;
@@ -106,25 +108,6 @@ const formVacio = {
   monto: "",
   fecha_limite_pago: "",
 };
-
-const clienteFormVacio = {
-  nombre: "",
-  telefono: "",
-  correo: "",
-  tipo_cliente: "MINORISTA",
-  limite_deuda: "",
-  deuda_inicial: "",
-  nit_cliente: "",
-  codigo_postal: "",
-  direccion: "",
-  codigo_cliente: "",
-};
-
-// Mismos límites que las columnas de la tabla cliente (valida también el API).
-const NIT_MAX = 20;
-const CODIGO_POSTAL_MAX = 10;
-const DIRECCION_MAX = 255;
-const CODIGO_CLIENTE_MAX = 20;
 
 /**
  * Clases Tailwind reutilizables (DEV-192). Reemplazan a los antiguos helpers
@@ -328,8 +311,6 @@ export default function CuentasPorCobrarPage() {
 
   // Creación de cliente nuevo inline (desde el form de deuda o desde la pestaña de límites)
   const [creandoCliente, setCreandoCliente] = useState(false);
-  const [formCliente, setFormCliente] = useState(clienteFormVacio);
-  const [guardandoCliente, setGuardandoCliente] = useState(false);
 
   // Edición de límites (pestaña "Límites de deuda")
   const [limitesEditando, setLimitesEditando] = useState<Record<number, string>>({});
@@ -471,84 +452,23 @@ export default function CuentasPorCobrarPage() {
     setForm((f) => ({ ...f, id_cliente: String(c.id_cliente) }));
   }
 
-  async function crearCliente(): Promise<Cliente | null> {
-    if (!formCliente.nombre.trim()) {
-      setError("El nombre del cliente nuevo es obligatorio");
-      return null;
-    }
-    const limiteInicial =
-      formCliente.limite_deuda === "" ? null : Number(formCliente.limite_deuda);
-    if (limiteInicial !== null && (!Number.isFinite(limiteInicial) || limiteInicial < 0)) {
-      setError("El límite de crédito debe ser un número mayor o igual a 0");
-      return null;
-    }
-    const deudaInicial =
-      formCliente.deuda_inicial === "" ? null : Number(formCliente.deuda_inicial);
-    if (deudaInicial !== null && (!Number.isFinite(deudaInicial) || deudaInicial <= 0)) {
-      setError("El saldo inicial debe ser un número mayor a 0");
-      return null;
-    }
-    if (formCliente.nit_cliente.trim().length > NIT_MAX) {
-      setError(`El NIT no puede superar los ${NIT_MAX} caracteres`);
-      return null;
-    }
-    if (formCliente.codigo_postal.trim().length > CODIGO_POSTAL_MAX) {
-      setError(`El código postal no puede superar los ${CODIGO_POSTAL_MAX} caracteres`);
-      return null;
-    }
-    if (formCliente.direccion.trim().length > DIRECCION_MAX) {
-      setError(`La dirección no puede superar los ${DIRECCION_MAX} caracteres`);
-      return null;
-    }
-    const codigoCliente = formCliente.codigo_cliente.trim().toUpperCase();
-    if (codigoCliente.length > CODIGO_CLIENTE_MAX) {
-      setError(`El código del cliente no puede superar los ${CODIGO_CLIENTE_MAX} caracteres`);
-      return null;
-    }
-    if (codigoCliente && !/^[A-Z0-9][A-Z0-9._-]*$/.test(codigoCliente)) {
-      setError("El código del cliente solo puede tener letras, números, guiones, puntos o guiones bajos");
-      return null;
-    }
-
-    setGuardandoCliente(true);
+  async function registrarClienteCreado(
+    nuevo: ClienteCreado,
+    { deudaInicial }: { deudaInicial: number | null },
+    seleccionar = true
+  ): Promise<void> {
+    const cliente = nuevo as Cliente;
     setError("");
-    const res = await fetch("/api/clientes", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        nombre: formCliente.nombre,
-        telefono: formCliente.telefono,
-        correo: formCliente.correo,
-        tipo_cliente: formCliente.tipo_cliente,
-        limite_deuda: limiteInicial,
-        nit_cliente: formCliente.nit_cliente.trim(),
-        codigo_postal: formCliente.codigo_postal.trim(),
-        direccion: formCliente.direccion.trim(),
-        codigo_cliente: codigoCliente,
-      }),
-    });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      setError(data.error || "No se pudo crear el cliente.");
-      setGuardandoCliente(false);
-      return null;
-    }
-    const data = await res.json();
-    const nuevo: Cliente = data.cliente;
 
-    // Si se indicó una deuda inicial (ej. un cliente que ya venía debiendo),
-    // se registra de una vez como una deuda "de arrastre" sin productos. Como
-    // el cliente ya tiene su límite recién asignado, esto puede bloquearlo de
-    // inmediato si la deuda inicial ya lo supera.
     if (deudaInicial !== null) {
       const resDeuda = await fetch("/api/deudas", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          nombre_deudor: nuevo.nombre,
-          telefono_deudor: nuevo.telefono,
+          nombre_deudor: cliente.nombre,
+          telefono_deudor: cliente.telefono,
           fecha_inicio: new Date().toISOString().slice(0, 10),
-          id_cliente: nuevo.id_cliente,
+          id_cliente: cliente.id_cliente,
           monto_libre: deudaInicial,
         }),
       });
@@ -566,12 +486,10 @@ export default function CuentasPorCobrarPage() {
       }
     }
 
-    setClientes((prev) => [...prev, nuevo].sort((a, b) => a.nombre.localeCompare(b.nombre)));
-    setLimitesEditando((prev) => ({ ...prev, [nuevo.id_cliente]: nuevo.limite_deuda ?? "" }));
+    setClientes((prev) => [...prev, cliente].sort((a, b) => a.nombre.localeCompare(b.nombre)));
+    setLimitesEditando((prev) => ({ ...prev, [cliente.id_cliente]: cliente.limite_deuda ?? "" }));
+    if (seleccionar) setForm((f) => ({ ...f, id_cliente: String(cliente.id_cliente) }));
     setCreandoCliente(false);
-    setFormCliente(clienteFormVacio);
-    setGuardandoCliente(false);
-    return nuevo;
   }
 
   async function guardarLimite(id_cliente: number) {
@@ -828,135 +746,6 @@ export default function CuentasPorCobrarPage() {
   }
 
 
-  function formularioClienteNuevo(onCreado: (nuevo: Cliente) => void) {
-    return (
-      <div className="p-3 border border-dashed border-line rounded-[14px] my-2">
-        <div className="flex gap-2 mb-2">
-          <input
-            className={`${cls.input} w-full`}
-            placeholder="Nombre *"
-            value={formCliente.nombre}
-            onChange={(e) => setFormCliente({ ...formCliente, nombre: e.target.value })}
-          />
-          <input
-            className={`${cls.input} w-full`}
-            placeholder="Teléfono"
-            value={formCliente.telefono}
-            onChange={(e) => setFormCliente({ ...formCliente, telefono: e.target.value })}
-          />
-        </div>
-        <div className="flex gap-2 mb-2">
-          <input
-            className={`${cls.input} w-full`}
-            placeholder="Correo (opcional)"
-            value={formCliente.correo}
-            onChange={(e) => setFormCliente({ ...formCliente, correo: e.target.value })}
-          />
-          <select
-            className={`${cls.input} w-full`}
-            value={formCliente.tipo_cliente}
-            onChange={(e) => setFormCliente({ ...formCliente, tipo_cliente: e.target.value })}
-          >
-            {TIPOS_CLIENTE.map((t) => (
-              <option key={t} value={t}>
-                {ETIQUETAS_TIPO_CLIENTE[t]}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex gap-2 mb-2">
-          <input
-            className={`${cls.input} w-full`}
-            placeholder="NIT (opcional, vacío = CF)"
-            aria-label="NIT del cliente"
-            value={formCliente.nit_cliente}
-            onChange={(e) => setFormCliente({ ...formCliente, nit_cliente: e.target.value })}
-            maxLength={NIT_MAX}
-          />
-          <input
-            className={`${cls.input} w-full`}
-            placeholder="Código postal (opcional)"
-            aria-label="Código postal del cliente"
-            value={formCliente.codigo_postal}
-            onChange={(e) => setFormCliente({ ...formCliente, codigo_postal: e.target.value })}
-            maxLength={CODIGO_POSTAL_MAX}
-          />
-        </div>
-        <input
-          className={`${cls.input} w-full mb-2`}
-          placeholder="Dirección (opcional)"
-          aria-label="Dirección del cliente"
-          value={formCliente.direccion}
-          onChange={(e) => setFormCliente({ ...formCliente, direccion: e.target.value })}
-          maxLength={DIRECCION_MAX}
-        />
-        <input
-          className={`${cls.input} w-full mb-2`}
-          placeholder="Código de cliente (opcional · vacío = se genera solo)"
-          aria-label="Código del cliente"
-          value={formCliente.codigo_cliente}
-          onChange={(e) => setFormCliente({ ...formCliente, codigo_cliente: e.target.value })}
-          maxLength={CODIGO_CLIENTE_MAX}
-        />
-        <div className="flex gap-2 mb-2">
-          <div className="flex-1">
-            <label className="block mb-1 text-[0.8rem]">
-              Límite de crédito (opcional)
-            </label>
-            <input
-              type="number"
-              min={0}
-              step="0.01"
-              className={`${cls.input} w-full`}
-              placeholder="Sin límite"
-              value={formCliente.limite_deuda}
-              onChange={(e) => setFormCliente({ ...formCliente, limite_deuda: e.target.value })}
-            />
-          </div>
-          <div className="flex-1">
-            <label className="block mb-1 text-[0.8rem]">
-              Saldo anterior (opcional)
-            </label>
-            <input
-              type="number"
-              min={0}
-              step="0.01"
-              className={`${cls.input} w-full`}
-              placeholder="Q0.00"
-              value={formCliente.deuda_inicial}
-              onChange={(e) => setFormCliente({ ...formCliente, deuda_inicial: e.target.value })}
-            />
-          </div>
-        </div>
-        <p className="text-[0.75rem] text-ink-muted -mt-1 mb-2">
-          Si ya te debía algo se registra de una vez como saldo por cobrar — y si eso ya supera el
-          límite que le pongas, queda bloqueado desde ya.
-        </p>
-        <div className="flex gap-2">
-          <button
-            onClick={async () => {
-              const nuevo = await crearCliente();
-              if (nuevo) onCreado(nuevo);
-            }}
-            disabled={guardandoCliente}
-            className={`px-[0.8rem] py-[0.3rem] rounded-[14px] bg-success text-white border-none text-[0.85rem] ${guardandoCliente ? "cursor-default" : "cursor-pointer"}`}
-          >
-            {guardandoCliente ? "Creando…" : "Crear cliente"}
-          </button>
-          <button
-            onClick={() => {
-              setCreandoCliente(false);
-              setFormCliente(clienteFormVacio);
-            }}
-            className="px-[0.8rem] py-[0.3rem] rounded-[14px] bg-line border-none cursor-pointer text-[0.85rem]"
-          >
-            Cancelar
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <StaffShell
       usuario={usuario}
@@ -1078,11 +867,15 @@ export default function CuentasPorCobrarPage() {
                   bloquean compras y pedidos.
                 </p>
 
-                {creandoCliente &&
-                  formularioClienteNuevo((nuevo) => {
-                    setForm((f) => ({ ...f, id_cliente: String(nuevo.id_cliente) }));
-                    setCreandoCliente(false);
-                  })}
+                {creandoCliente && (
+                  <FormularioCliente
+                    variant="inline"
+                    incluirSaldoAnterior
+                    className="my-2"
+                    onCancelar={() => setCreandoCliente(false)}
+                    onCreado={registrarClienteCreado}
+                  />
+                )}
 
                 {clienteSeleccionado && (
                   <p className="text-[0.82rem] mt-1">
@@ -1504,7 +1297,12 @@ export default function CuentasPorCobrarPage() {
           )}
           {creandoCliente && (
             <div className="max-w-[560px]">
-              {formularioClienteNuevo(() => setCreandoCliente(false))}
+              <FormularioCliente
+                variant="inline"
+                incluirSaldoAnterior
+                onCancelar={() => setCreandoCliente(false)}
+                onCreado={(nuevo, meta) => registrarClienteCreado(nuevo, meta, false)}
+              />
             </div>
           )}
 

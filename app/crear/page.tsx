@@ -5,7 +5,7 @@ import { useState } from "react";
 import { StaffShell } from "@/components/StaffShell";
 import { Icon, type IconName } from "@/components/Icon";
 import { useDuenoSession } from "@/hooks/useDuenoSession";
-import { FormularioCliente } from "@/components/crear/FormularioCliente";
+import { FormularioCliente } from "@/components/clientes/FormularioCliente";
 import { FormularioProducto } from "@/components/crear/FormularioProducto";
 import { FormularioPresentacion } from "@/components/crear/FormularioPresentacion";
 import { FormularioCatalogoSimple } from "@/components/crear/FormularioCatalogoSimple";

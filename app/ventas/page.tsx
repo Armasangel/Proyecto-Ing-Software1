@@ -9,10 +9,10 @@ import { Icon } from "@/components/Icon";
 import { CantidadInput } from "@/components/CantidadInput";
 import { ProductoAutocompletar } from "@/components/ProductoAutocompletar";
 import { ClienteAutocompletar } from "@/components/ClienteAutocompletar";
+import { FormularioCliente } from "@/components/clientes/FormularioCliente";
 import Link from "next/link";
 import { CUOTAS_MAXIMAS, PLAZO_MAXIMO_DIAS, generarCuotas, sumarDias, validarCondicionesCredito } from "@/lib/credito";
 import { elegirMejorDescuento, type Descuento as ReglaDescuento } from "@/lib/descuentos";
-import { ETIQUETAS_TIPO_CLIENTE, TIPOS_CLIENTE } from "@/lib/tipos-cliente";
 import {
   ETIQUETAS_TIPO_DOCUMENTO,
   TIPOS_DOCUMENTO,
@@ -134,26 +134,6 @@ const inputCls =
   "w-full px-3 py-2.5 rounded-control border border-[var(--border)] bg-cream/60 text-ink text-[0.95rem] outline-none focus:ring-2 focus:ring-market/40 transition-shadow";
 const labelCls = "font-semibold text-[0.88rem] text-ink-muted";
 
-// Formulario de "+ Cliente nuevo" (mismo patrón que en Deudas, pero acá el
-// correo es obligatorio: la venta queda ligada a un cliente localizable).
-const clienteFormVacio = {
-  nombre: "",
-  telefono: "",
-  correo: "",
-  tipo_cliente: "MINORISTA",
-  limite_deuda: "",
-  nit_cliente: "",
-  codigo_postal: "",
-  direccion: "",
-  codigo_cliente: "",
-};
-const CORREO_VALIDO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-// Mismos límites que las columnas de la tabla cliente (valida también el API).
-const NIT_MAX = 20;
-const CODIGO_POSTAL_MAX = 10;
-const DIRECCION_MAX = 255;
-const CODIGO_CLIENTE_MAX = 20;
-
 function nuevaLinea(): LineaVenta {
   return {
     key: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
@@ -190,9 +170,6 @@ export default function VentasPage() {
   const [idCliente, setIdCliente] = useState("");
   // Alta rápida de cliente sin salir de Ventas
   const [creandoCliente, setCreandoCliente] = useState(false);
-  const [formCliente, setFormCliente] = useState(clienteFormVacio);
-  const [guardandoCliente, setGuardandoCliente] = useState(false);
-  const [errorCliente, setErrorCliente] = useState<string | null>(null);
   // Confirmación visible bajo el buscador (okMsg solo se muestra tras una venta).
   const [avisoCliente, setAvisoCliente] = useState<string | null>(null);
   const [condicionPago, setCondicionPago] = useState<CondicionPago>("CONTADO");
@@ -509,98 +486,6 @@ export default function VentasPage() {
     if (c.direccion) setDireccionEntrega(c.direccion);
   }
 
-  async function crearCliente() {
-    const nombre = formCliente.nombre.trim();
-    const correo = formCliente.correo.trim();
-    if (!nombre) {
-      setErrorCliente("El nombre del cliente nuevo es obligatorio");
-      return;
-    }
-    if (!correo) {
-      setErrorCliente("El correo es obligatorio para crear un cliente desde Ventas");
-      return;
-    }
-    if (!CORREO_VALIDO.test(correo)) {
-      setErrorCliente("Escribe un correo válido (ej. nombre@correo.com)");
-      return;
-    }
-    const limite = formCliente.limite_deuda.trim() === "" ? null : Number(formCliente.limite_deuda);
-    if (limite !== null && (!Number.isFinite(limite) || limite < 0)) {
-      setErrorCliente("El límite de crédito debe ser un número mayor o igual a 0");
-      return;
-    }
-    if (formCliente.nit_cliente.trim().length > NIT_MAX) {
-      setErrorCliente(`El NIT no puede superar los ${NIT_MAX} caracteres`);
-      return;
-    }
-    if (formCliente.codigo_postal.trim().length > CODIGO_POSTAL_MAX) {
-      setErrorCliente(`El código postal no puede superar los ${CODIGO_POSTAL_MAX} caracteres`);
-      return;
-    }
-    if (formCliente.direccion.trim().length > DIRECCION_MAX) {
-      setErrorCliente(`La dirección no puede superar los ${DIRECCION_MAX} caracteres`);
-      return;
-    }
-    const codigoCliente = formCliente.codigo_cliente.trim().toUpperCase();
-    if (codigoCliente.length > CODIGO_CLIENTE_MAX) {
-      setErrorCliente(`El código del cliente no puede superar los ${CODIGO_CLIENTE_MAX} caracteres`);
-      return;
-    }
-    if (codigoCliente && !/^[A-Z0-9][A-Z0-9._-]*$/.test(codigoCliente)) {
-      setErrorCliente("El código del cliente solo puede tener letras, números, guiones, puntos o guiones bajos");
-      return;
-    }
-
-    setGuardandoCliente(true);
-    setErrorCliente(null);
-    try {
-      const res = await fetch("/api/clientes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          nombre,
-          correo,
-          telefono: formCliente.telefono.trim(),
-          tipo_cliente: formCliente.tipo_cliente,
-          limite_deuda: limite,
-          nit_cliente: formCliente.nit_cliente.trim(),
-          codigo_postal: formCliente.codigo_postal.trim(),
-          direccion: formCliente.direccion.trim(),
-          codigo_cliente: codigoCliente,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setErrorCliente(data.error || "No se pudo crear el cliente");
-        return;
-      }
-      const nuevo: Cliente = data.cliente;
-      setClientes((prev) => [...prev, nuevo].sort((a, b) => a.nombre.localeCompare(b.nombre)));
-
-      // Se deja seleccionado de una vez. onClienteChange no sirve acá porque
-      // busca en `clientes`, que todavía no incluye al recién creado.
-      setIdCliente(String(nuevo.id_cliente));
-      if (nuevo.direccion) setDireccionEntrega(nuevo.direccion);
-      if (!forzarTipoVenta) {
-        const detectado = nuevo.tipo_cliente === "MAYORISTA" ? "MAYORISTA" : "MINORISTA";
-        setTipoVenta(detectado);
-        aplicarPreciosPorTipo(detectado);
-      }
-      setError(null);
-      setAvisoCliente(
-        `Cliente "${nuevo.nombre}" creado y seleccionado ✓${
-          nuevo.codigo_cliente ? ` · código ${nuevo.codigo_cliente}` : ""
-        }`
-      );
-      setCreandoCliente(false);
-      setFormCliente(clienteFormVacio);
-    } catch {
-      setErrorCliente("Error de conexión al crear el cliente");
-    } finally {
-      setGuardandoCliente(false);
-    }
-  }
-
   function limpiarClienteSeleccionado() {
     setAvisoCliente(null);
     onClienteChange("");
@@ -762,7 +647,6 @@ export default function VentasPage() {
                   type="button"
                   onClick={() => {
                     setCreandoCliente((v) => !v);
-                    setErrorCliente(null);
                     setAvisoCliente(null);
                   }}
                   className="text-[0.84rem] font-semibold text-market-600 hover:underline"
@@ -776,132 +660,31 @@ export default function VentasPage() {
               )}
 
               {creandoCliente && (
-                <div className="flex flex-col gap-2.5 p-3 border border-dashed border-[var(--border)] rounded-control">
-                  <div className="grid gap-2.5" style={{ gridTemplateColumns: "1fr 1fr" }}>
-                    <div className="flex flex-col gap-1.5">
-                      <label className={labelCls}>Nombre *</label>
-                      <input
-                        className={inputCls}
-                        value={formCliente.nombre}
-                        onChange={(e) => setFormCliente((f) => ({ ...f, nombre: e.target.value }))}
-                        placeholder="Nombre del cliente"
-                      />
-                    </div>
-                    <div className="flex flex-col gap-1.5">
-                      <label className={labelCls}>Teléfono</label>
-                      <input
-                        className={inputCls}
-                        value={formCliente.telefono}
-                        onChange={(e) => setFormCliente((f) => ({ ...f, telefono: e.target.value }))}
-                        placeholder="Opcional"
-                      />
-                    </div>
-                    <div className="flex flex-col gap-1.5">
-                      <label className={labelCls}>Correo *</label>
-                      <input
-                        type="email"
-                        className={inputCls}
-                        value={formCliente.correo}
-                        onChange={(e) => setFormCliente((f) => ({ ...f, correo: e.target.value }))}
-                        placeholder="nombre@correo.com"
-                      />
-                    </div>
-                    <div className="flex flex-col gap-1.5">
-                      <label className={labelCls}>Tipo de cliente</label>
-                      <select
-                        className={inputCls}
-                        value={formCliente.tipo_cliente}
-                        onChange={(e) => setFormCliente((f) => ({ ...f, tipo_cliente: e.target.value }))}
-                      >
-                        {TIPOS_CLIENTE.map((t) => (
-                          <option key={t} value={t}>
-                            {ETIQUETAS_TIPO_CLIENTE[t]}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="flex flex-col gap-1.5">
-                      <label className={labelCls}>NIT (opcional)</label>
-                      <input
-                        className={inputCls}
-                        aria-label="NIT del cliente"
-                        value={formCliente.nit_cliente}
-                        onChange={(e) => setFormCliente((f) => ({ ...f, nit_cliente: e.target.value }))}
-                        placeholder="Ej. 1234567-8 · vacío = CF"
-                        maxLength={NIT_MAX}
-                      />
-                    </div>
-                    <div className="flex flex-col gap-1.5">
-                      <label className={labelCls}>Código postal</label>
-                      <input
-                        className={inputCls}
-                        aria-label="Código postal del cliente"
-                        value={formCliente.codigo_postal}
-                        onChange={(e) => setFormCliente((f) => ({ ...f, codigo_postal: e.target.value }))}
-                        placeholder="Ej. 01001"
-                        maxLength={CODIGO_POSTAL_MAX}
-                      />
-                    </div>
-                    <div className="flex flex-col gap-1.5">
-                      <label className={labelCls}>Código de cliente</label>
-                      <input
-                        className={inputCls}
-                        aria-label="Código del cliente"
-                        value={formCliente.codigo_cliente}
-                        onChange={(e) => setFormCliente((f) => ({ ...f, codigo_cliente: e.target.value }))}
-                        placeholder="Vacío = se genera solo"
-                        maxLength={CODIGO_CLIENTE_MAX}
-                      />
-                    </div>
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <label className={labelCls}>Dirección</label>
-                    <input
-                      className={inputCls}
-                      aria-label="Dirección del cliente"
-                      value={formCliente.direccion}
-                      onChange={(e) => setFormCliente((f) => ({ ...f, direccion: e.target.value }))}
-                      placeholder="Calle, zona, municipio (opcional)"
-                      maxLength={DIRECCION_MAX}
-                    />
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <label className={labelCls}>Límite de crédito (opcional)</label>
-                    <input
-                      type="number"
-                      min={0}
-                      step="0.01"
-                      className={inputCls}
-                      value={formCliente.limite_deuda}
-                      onChange={(e) => setFormCliente((f) => ({ ...f, limite_deuda: e.target.value }))}
-                      placeholder="Sin límite"
-                    />
-                  </div>
-                  {errorCliente && (
-                    <div className="text-[0.85rem] text-achiote-600 font-medium">{errorCliente}</div>
-                  )}
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={crearCliente}
-                      disabled={guardandoCliente}
-                      className="bg-market text-white border-none rounded-control px-4 py-2 text-[0.88rem] font-semibold hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {guardandoCliente ? "Creando…" : "Crear cliente"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCreandoCliente(false);
-                        setFormCliente(clienteFormVacio);
-                        setErrorCliente(null);
-                      }}
-                      className="bg-transparent border border-[var(--border)] text-ink-muted rounded-control px-4 py-2 text-[0.88rem] font-semibold"
-                    >
-                      Cancelar
-                    </button>
-                  </div>
-                </div>
+                <FormularioCliente
+                  variant="inline"
+                  correoObligatorio
+                  validarFormatoCorreo
+                  onCancelar={() => setCreandoCliente(false)}
+                  onCreado={(nuevo) => {
+                    setClientes((prev) =>
+                      [...prev, nuevo].sort((a, b) => a.nombre.localeCompare(b.nombre))
+                    );
+                    setIdCliente(String(nuevo.id_cliente));
+                    if (nuevo.direccion) setDireccionEntrega(nuevo.direccion);
+                    if (!forzarTipoVenta) {
+                      const detectado = nuevo.tipo_cliente === "MAYORISTA" ? "MAYORISTA" : "MINORISTA";
+                      setTipoVenta(detectado);
+                      aplicarPreciosPorTipo(detectado);
+                    }
+                    setError(null);
+                    setAvisoCliente(
+                      `Cliente "${nuevo.nombre}" creado y seleccionado ✓${
+                        nuevo.codigo_cliente ? ` · código ${nuevo.codigo_cliente}` : ""
+                      }`
+                    );
+                    setCreandoCliente(false);
+                  }}
+                />
               )}
             </div>
 

@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Campo, Mensaje, enviarJson, inputCls, primaryBtnCls, secondaryBtnCls } from "@/components/crear/ui";
+import { Campo, Mensaje, inputCls, primaryBtnCls, secondaryBtnCls } from "@/components/ui/form";
+import { enviarJson } from "@/lib/http";
 
 type Opcion = { id: number; nombre: string };
 type Proveedor = { id_proveedor: number; nombre_proveedor: string };

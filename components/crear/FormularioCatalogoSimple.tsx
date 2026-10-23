@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Campo, Mensaje, enviarJson, inputCls, primaryBtnCls } from "@/components/crear/ui";
+import { Campo, Mensaje, inputCls, primaryBtnCls } from "@/components/ui/form";
+import { enviarJson } from "@/lib/http";
 
 type TipoCatalogo = "categoria" | "marca";
 
