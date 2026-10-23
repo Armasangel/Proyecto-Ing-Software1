@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { Icon } from "@/components/Icon";
 import { matchesQuery, paginar, PaginationBar, type PageSize } from "@/lib/ui-table";
@@ -70,7 +70,15 @@ const EMPTY_FORM = {
 
 export type CatalogoTab = "productos" | "precios";
 
-export function CatalogoView({ tab }: { tab: CatalogoTab }) {
+type CreacionRapida = {
+  proveedor?: Proveedor;
+  onCreado: (idProducto: number) => void;
+  onCancelar: () => void;
+};
+
+/** El alta rápida usa el mismo formulario y validaciones que el catálogo. */
+export function CatalogoView({ tab, creacionRapida }: { tab: CatalogoTab; creacionRapida?: CreacionRapida }) {
+  const tituloModal = useId();
   const [productos, setProductos] = useState<Producto[]>([]);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [marcas, setMarcas] = useState<Marca[]>([]);
@@ -88,7 +96,7 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
   const [perPage, setPerPage] = useState<PageSize>(10);
 
   // Modal producto
-  const [modalOpen, setModalOpen] = useState(false);
+  const [modalOpen, setModalOpen] = useState(!!creacionRapida);
   const [editando, setEditando] = useState<Producto | null>(null);
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [saving, setSaving] = useState(false);
@@ -98,7 +106,7 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
   const [proveedorQuery, setProveedorQuery] = useState("");
   const [proveedorSugerenciasAbiertas, setProveedorSugerenciasAbiertas] = useState(false);
-  const [proveedoresSeleccionados, setProveedoresSeleccionados] = useState<Proveedor[]>([]);
+  const [proveedoresSeleccionados, setProveedoresSeleccionados] = useState<Proveedor[]>(()=>creacionRapida?.proveedor?[creacionRapida.proveedor]:[]);
   const [creandoProveedor, setCreandoProveedor] = useState(false);
   const [formProveedorNuevo, setFormProveedorNuevo] = useState(PROVEEDOR_VACIO);
   const [guardandoProveedor, setGuardandoProveedor] = useState(false);
@@ -249,7 +257,11 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
     setModalOpen(true);
   };
 
-  const cerrarModal = () => { setModalOpen(false); setEditando(null); resetExtras(); };
+  const cerrarModal = () => {
+    if (saving || guardandoCategoria || guardandoMarca || guardandoProveedor) return;
+    setModalOpen(false); setEditando(null); resetExtras();
+    creacionRapida?.onCancelar();
+  };
 
   const agregarProveedor = (p: Proveedor) => {
     setProveedoresSeleccionados((prev) => [...prev, p]);
@@ -331,12 +343,16 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
   };
 
   const handleGuardar = async () => {
-    if (guardandoCategoria || guardandoMarca) return;
+    if (saving || guardandoCategoria || guardandoMarca || guardandoProveedor) return;
     if (!form.codigo_producto || !form.nombre_producto || !form.unidad_medida || !form.id_categoria || !form.id_marca) {
       setFormError("Completa todos los campos obligatorios (*)");
       return;
     }
     if (presentacionesCargando || presentacionesError) return;
+    if (creacionRapida && !form.estado_producto) {
+      setFormError("El producto debe estar activo para seleccionarlo en la compra.");
+      return;
+    }
     const errorCategorias = validarCategoriasProducto([Number(form.id_categoria), form.id_categoria_2 ? Number(form.id_categoria_2) : null, form.id_categoria_3 ? Number(form.id_categoria_3) : null]);
     if (errorCategorias) { setFormError(errorCategorias); return; }
     const errorPresentaciones = validarPresentaciones(presentacionesForm);
@@ -363,7 +379,13 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
       const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const data = await res.json();
       if (!res.ok) { setFormError(data.error || "Error al guardar"); }
-      else { cerrarModal(); cargarProductos(); showToast(editando ? "Producto actualizado ✓" : "Producto creado ✓", "ok"); }
+      else if (creacionRapida) {
+        setModalOpen(false);
+        creacionRapida.onCreado(Number(data.id_producto));
+      } else {
+        setModalOpen(false); setEditando(null); resetExtras();
+        cargarProductos(); showToast(editando ? "Producto actualizado ✓" : "Producto creado ✓", "ok");
+      }
     } catch { setFormError("No se pudo conectar con el servidor"); }
     finally { setSaving(false); }
   };
@@ -436,6 +458,7 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
 
   return (
     <>
+      {!creacionRapida && <>
       {/* ── Barra de búsqueda + acciones ── */}
       <div style={s.toolbar}>
         <input
@@ -650,6 +673,7 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
         </>
       )}
 
+      </>}
       {/* ── Modal Crear / Editar producto ── */}
       {modalOpen && (
         <div
@@ -669,6 +693,10 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
           onClick={(e) => { if (e.target === e.currentTarget) cerrarModal(); }}
         >
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={tituloModal}
+            onKeyDown={(e)=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();cerrarModal();}}}
             style={{
               ...s.modal,
               backgroundColor: "var(--surface)", // Fondo blanco sólido
@@ -684,12 +712,14 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
             }}
           >
             <div style={{ ...s.modalHeader, padding: "1.25rem 1.5rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <h2 style={{ ...s.modalTitle, margin: 0, color: "var(--text)" }}>
+              <h2 id={tituloModal} style={{ ...s.modalTitle, margin: 0, color: "var(--text)" }}>
                 {editando ? "Editar producto" : "Nuevo producto"}
               </h2>
               <button 
                 type="button" 
                 onClick={cerrarModal} 
+                aria-label="Cerrar producto"
+                disabled={saving || guardandoCategoria || guardandoMarca || guardandoProveedor}
                 style={{ ...s.closeBtn, color: "var(--text)", background: "transparent", border: "none", cursor: "pointer" }}
               >
                 ✕
@@ -699,6 +729,8 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
               <div style={s.fila}>
                 <Field label="Código *" style={{ flex: "0 0 140px" }}>
                   <input 
+                    aria-label="Código del producto"
+                    maxLength={50}
                     style={{ ...s.input, backgroundColor: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)" }} 
                     value={form.codigo_producto} 
                     onChange={(e) => setForm(f => ({ ...f, codigo_producto: e.target.value }))} 
@@ -708,6 +740,8 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
                 </Field>
                 <Field label="Nombre del producto *" style={{ flex: 1 }}>
                   <input 
+                    aria-label="Nombre del producto"
+                    maxLength={200}
                     style={{ ...s.input, backgroundColor: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)" }} 
                     value={form.nombre_producto} 
                     onChange={(e) => setForm(f => ({ ...f, nombre_producto: e.target.value }))} 
@@ -773,6 +807,7 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
               <div style={s.fila}>
                 <Field label="Precio unitario" style={{ flex: 1 }}>
                   <input 
+                    aria-label="Precio unitario"
                     style={{ ...s.input, backgroundColor: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)" }} 
                     type="number" 
                     step="0.01" 
@@ -784,6 +819,7 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
                 </Field>
                 <Field label="Precio mayoreo" style={{ flex: 1 }}>
                   <input 
+                    aria-label="Precio mayoreo"
                     style={{ ...s.input, backgroundColor: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)" }} 
                     type="number" 
                     step="0.01" 
@@ -821,7 +857,7 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
               </div>
               {form.caducidad && (
                 <Field label="Fecha de caducidad" style={{ maxWidth: 220 }}>
-                  <input style={s.input} type="date" value={form.fecha_caducidad} onChange={(e) => setForm(f => ({ ...f, fecha_caducidad: e.target.value }))} />
+                  <input aria-label="Fecha de caducidad del producto" style={s.input} type="date" value={form.fecha_caducidad} onChange={(e) => setForm(f => ({ ...f, fecha_caducidad: e.target.value }))} />
                   <span style={{ fontSize: "0.72rem", color: "var(--muted)" }}>Referencia general del producto (no por lote).</span>
                 </Field>
               )}
@@ -897,11 +933,11 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
                 onChange={setPresentacionesForm}
                 disabled={saving || presentacionesCargando || !!presentacionesError}
               />
-              {formError && <p style={s.formError}>{formError}</p>}
+              {formError && <p role="alert" style={s.formError}>{formError}</p>}
             </div>
             <div style={{ ...s.modalFooter, padding: "1rem 1.5rem", display: "flex", justifyContent: "flex-end", gap: "0.75rem", borderTop: "1px solid var(--border)" }}>
-              <button type="button" onClick={cerrarModal} style={s.btnSecondary} disabled={saving}>Cancelar</button>
-              <button type="button" onClick={handleGuardar} style={s.btnSecondary} disabled={saving || guardandoCategoria || guardandoMarca || presentacionesCargando || !!presentacionesError}>{saving ? "Guardando…" : editando ? "Guardar cambios" : "Crear producto"}</button>
+              <button type="button" onClick={cerrarModal} style={s.btnSecondary} disabled={saving || guardandoCategoria || guardandoMarca || guardandoProveedor}>Cancelar</button>
+              <button type="button" onClick={handleGuardar} style={s.btnSecondary} disabled={saving || guardandoCategoria || guardandoMarca || guardandoProveedor || presentacionesCargando || !!presentacionesError}>{saving ? "Guardando…" : editando ? "Guardar cambios" : "Crear producto"}</button>
             </div>
           </div>
         </div>

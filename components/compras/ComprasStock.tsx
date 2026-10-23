@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { calcularImpuestos, costoUnitarioCompra, compararRecepcion, margen, redondear, type Conteo, type Esperado, type ImpuestoCompra } from "@/lib/compras";
 import { ProductoAutocompletar } from "@/components/ProductoAutocompletar";
 import { CatalogoAutocompletar } from "@/components/inventario-catalogo/CatalogoAutocompletar";
+import { CatalogoView } from "@/components/inventario-catalogo/CatalogoView";
 import s from "./compras.module.css";
 
 type Presentacion = { id_presentacion:number; nombre_presentacion:string; factor_conversion:string };
@@ -48,6 +49,8 @@ export function ComprasStock({onStockChange}:{onStockChange:()=>void}) {
   const [tasas,setTasas] = useState<{nombre:string;porcentaje:string}[]>([]);
   const detalleSeleccionado = useRef<HTMLDivElement>(null);
   const [nuevoProveedor,setNuevoProveedor] = useState(false);
+  const [nuevoProducto,setNuevoProducto] = useState<number|null>(null);
+  const [productoPendiente,setProductoPendiente] = useState<{id:number;linea:number}|null>(null);
   const [prov,setProv] = useState({nombre_proveedor:"",nit_proveedor:"",telefono:"",correo_contacto:""});
   const [seleccion,setSeleccion] = useState<number|null>(null);
   const [resolucion,setResolucion] = useState("");
@@ -59,6 +62,7 @@ export function ComprasStock({onStockChange}:{onStockChange:()=>void}) {
       const r = await fetch("/api/compras",{cache:"no-store"}); const d = await r.json();
       if (!r.ok) throw new Error(d.error || "No se pudieron cargar las compras.");
       setProductos(d.productos); setProveedores(d.proveedores); setCompras(d.compras); setAvisos(d.avisos);
+      setError('');
     } catch(e) { setError((e as Error).message); }
     finally { setCargando(false); }
   },[]);
@@ -68,6 +72,12 @@ export function ComprasStock({onStockChange}:{onStockChange:()=>void}) {
     return () => clearInterval(timer);
   },[cargar,onStockChange]);
   const cambiar = (i:number, datos:Partial<Linea>) => {setLineas(ls=>ls.map((l,j)=>i===j?{...l,...datos}:l));setRevisar(false);};
+  useEffect(()=>{
+    if(!productoPendiente||!productos.some(p=>p.id_producto===productoPendiente.id))return;
+    setLineas(ls=>ls.map((l,i)=>i===productoPendiente.linea?{...l,id_producto:String(productoPendiente.id),id_presentacion:'',actualizar_precio:false,venta_nueva:'',mayoreo_nuevo:''}:l));
+    setProductoPendiente(null);
+    setMensaje('Producto creado y seleccionado en la compra.');
+  },[productoPendiente,productos]);
   const subtotal = redondear(lineas.reduce((n,l)=>n+redondear(Number(l.cantidad)*Number(l.costo)),0));
   const impuestosDetalle = calcularImpuestos(subtotal,Number(cab.descuento),tasas.map(t=>({...t,porcentaje:Number(t.porcentaje)})));
   const impuestos = redondear(impuestosDetalle.reduce((n,t)=>n+t.monto,0));
@@ -80,6 +90,8 @@ export function ComprasStock({onStockChange}:{onStockChange:()=>void}) {
     setTimeout(()=>detalleSeleccionado.current?.scrollIntoView?.({behavior:"smooth",block:"start"}),0);
   };
   const validarSeleccion = () => {
+    if(nuevoProducto!==null) return false;
+    if(productoPendiente) {setError('El producto se creó. Actualiza el catálogo antes de continuar con la compra.');return false;}
     if(!cab.id_proveedor||lineas.some(l=>!l.id_producto)) {setError("Selecciona el proveedor y un producto válido en cada línea.");return false;}
     return true;
   };
@@ -139,15 +151,15 @@ export function ComprasStock({onStockChange}:{onStockChange:()=>void}) {
       {lineas.map((l,i)=>{
         const p=productos.find(p=>p.id_producto===Number(l.id_producto));
         return <fieldset key={i} className={s.panel}><legend>Producto {i+1}</legend><div className={s.grid}>
-          <div className={s.field}><span>Producto *</span><ProductoAutocompletar ariaLabel={`Producto ${i+1}`} className={s.input} productos={productos.filter(p=>String(p.id_producto)===l.id_producto||!lineas.some(x=>Number(x.id_producto)===p.id_producto))} value={l.id_producto} onChange={id=>cambiar(i,{...nuevaLinea(),id_producto:id})}/></div>
+          <div className={s.field}><span>Producto *</span><ProductoAutocompletar ariaLabel={`Producto ${i+1}`} className={s.input} productos={productos.filter(p=>String(p.id_producto)===l.id_producto||!lineas.some(x=>Number(x.id_producto)===p.id_producto))} value={l.id_producto} disabled={ocupado||!!productoPendiente} onChange={id=>cambiar(i,{...nuevaLinea(),id_producto:id})}/><button type="button" className={`${s.button} ${s.primary}`} disabled={ocupado||!!productoPendiente} onClick={()=>{setRevisar(false);setNuevoProducto(i);}}>+ Nuevo producto para la línea {i+1}</button></div>
           <div className={s.field}><span>Presentación</span><CatalogoAutocompletar ariaLabel={`Presentación ${i+1}`} opciones={[{id:0,nombre:p?.unidad_medida||"Unidad base"},...(p?.presentaciones||[]).map(pr=>({id:pr.id_presentacion,nombre:pr.nombre_presentacion}))]} value={l.id_presentacion||"0"} onChange={id=>cambiar(i,{id_presentacion:id==="0"?"":id})}/></div>
           <label className={s.field}>Cantidad comprada *<input required type="number" min=".001" step=".001" value={l.cantidad} onChange={e=>cambiar(i,{cantidad:e.target.value})}/></label>
           <label className={s.field}>Precio de compra por {p?.presentaciones.find(pr=>String(pr.id_presentacion)===l.id_presentacion)?.nombre_presentacion||p?.unidad_medida||"unidad"} (Q) *<input required type="number" min=".01" step=".01" value={l.costo} onChange={e=>cambiar(i,{costo:e.target.value})}/></label>
           <label className={s.field}>Lote<input maxLength={100} value={l.lote} onChange={e=>cambiar(i,{lote:e.target.value})}/></label>
           <label className={s.field}>Fecha de caducidad<input type="date" value={l.fecha_caducidad} onChange={e=>cambiar(i,{fecha_caducidad:e.target.value})}/></label>
-        </div><span>Importe: {dinero(redondear(Number(l.cantidad)*Number(l.costo)))}</span>{lineas.length>1&&<button type="button" className={`${s.button} ${s.danger}`} onClick={()=>{setLineas(ls=>ls.filter((_,j)=>j!==i));setRevisar(false);}}>Quitar producto {i+1}</button>}</fieldset>;
+        </div><span>Importe: {dinero(redondear(Number(l.cantidad)*Number(l.costo)))}</span>{lineas.length>1&&<button type="button" className={`${s.button} ${s.danger}`} disabled={ocupado||!!productoPendiente||nuevoProducto!==null} onClick={()=>{setLineas(ls=>ls.filter((_,j)=>j!==i));setRevisar(false);}}>Quitar producto {i+1}</button>}</fieldset>;
       })}
-      <button type="button" className={`${s.button} ${s.primary}`} onClick={()=>{setLineas([...lineas,nuevaLinea()]);setRevisar(false);}}>Agregar producto</button>
+      <button type="button" className={`${s.button} ${s.primary}`} disabled={ocupado||!!productoPendiente||nuevoProducto!==null} onClick={()=>{setLineas([...lineas,nuevaLinea()]);setRevisar(false);}}>Agregar producto</button>
       <div className={s.grid} style={{marginTop:"1rem"}}>{([['descuento','Descuento global (Q)'],['transporte','Transporte (Q)']] as const).map(([k,label])=><label key={k} className={s.field}>{label}<input required type="number" min="0" step=".01" value={cab[k]} onChange={e=>{setCab({...cab,[k]:e.target.value});setRevisar(false);}}/></label>)}</div>
       <h3>Impuestos porcentuales</h3>
       {tasas.map((t,i)=><div className={s.row} key={i}><label className={s.field}>Nombre del impuesto {i+1}<input required maxLength={80} value={t.nombre} onChange={e=>{setTasas(ts=>ts.map((x,j)=>i===j?{...x,nombre:e.target.value}:x));setRevisar(false);}}/></label><label className={s.field}>Porcentaje del impuesto {i+1}<input required type="number" min="0" max="100" step=".01" value={t.porcentaje} onChange={e=>{setTasas(ts=>ts.map((x,j)=>i===j?{...x,porcentaje:e.target.value}:x));setRevisar(false);}}/></label><span>{dinero(impuestosDetalle[i].monto)}</span><button type="button" className={`${s.button} ${s.danger}`} onClick={()=>{setTasas(ts=>ts.filter((_,j)=>i!==j));setRevisar(false);}}>Quitar impuesto {i+1}</button></div>)}
@@ -155,7 +167,7 @@ export function ComprasStock({onStockChange}:{onStockChange:()=>void}) {
       <p className={s.help}>Cada porcentaje se calcula sobre el subtotal después del descuento, sin incluir transporte ni otros impuestos. Introduce precios de compra sin los impuestos que agregues aquí.</p>
       <label className={s.field}>Observaciones<textarea maxLength={4000} value={cab.notas} onChange={e=>{setCab({...cab,notas:e.target.value});setRevisar(false);}}/></label>
       <p>Subtotal: {dinero(subtotal)} · Impuestos: {dinero(impuestos)} · <strong>Total: {dinero(total)}</strong></p>
-      <button type="submit" className={s.button} disabled={ocupado||total<=0}>Comparar precios</button>
+      <button type="submit" className={s.button} disabled={ocupado||!!productoPendiente||nuevoProducto!==null||total<=0}>Comparar precios</button>
       {revisar&&<div className={s.alert}><h3>¿Cambiar los precios?</h3>
         <p className={s.help}>Comparamos todo por la unidad en que vendes, aunque compres por cajas o quintales. El margen indica qué porcentaje de la venta queda después del costo de compra.</p>
         {lineas.map((l,i)=>{
@@ -217,5 +229,13 @@ export function ComprasStock({onStockChange}:{onStockChange:()=>void}) {
         <label className={s.field}>Fecha<input type="date" required value={pago.fecha} onChange={e=>setPago({...pago,fecha:e.target.value})}/></label><label className={s.field}>Forma de pago<input required maxLength={50} value={pago.forma_pago} onChange={e=>setPago({...pago,forma_pago:e.target.value})}/></label><label className={s.field}>Referencia<input maxLength={120} value={pago.referencia} onChange={e=>setPago({...pago,referencia:e.target.value})}/></label></div><button className={`${s.button} ${s.primary}`} disabled={ocupado}>Guardar pago</button></form>}
       {!!compra.pagos.length&&<details><summary>Historial de pagos</summary>{compra.pagos.map(p=><p key={p.id_pago}>{p.fecha.slice(0,10)} · {dinero(p.monto)} · {p.forma_pago} · {p.referencia}</p>)}</details>}
     </div>}
+    {nuevoProducto!==null&&<CatalogoView tab="productos" creacionRapida={{proveedor,
+      onCancelar:()=>setNuevoProducto(null),
+      onCreado:(id)=>{
+        setProductoPendiente({id,linea:nuevoProducto});setNuevoProducto(null);
+        setMensaje('Producto creado. Cargando sus datos para seleccionarlo en la compra…');
+        void cargar();window.dispatchEvent(new Event('inventario:compra-registrada'));
+      },
+    }}/>}
   </section>;
 }
