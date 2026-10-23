@@ -42,10 +42,15 @@ suite("Compras, recepción ciega y autorización (PostgreSQL)",()=>{
     proveedor=(await pool.query(`INSERT INTO proveedor (nombre_proveedor,nit_proveedor,telefono,correo_contacto) VALUES ($1,$2,'5555','proveedor@test.local') RETURNING id_proveedor`,[prefijo,prefijo])).rows[0].id_proveedor;
     bodega=(await pool.query(`INSERT INTO bodega (nombre_bodega) VALUES ($1) RETURNING id_bodega`,[prefijo])).rows[0].id_bodega;
     otraBodega=(await pool.query(`INSERT INTO bodega (nombre_bodega) VALUES ($1) RETURNING id_bodega`,[`${prefijo}-otra`])).rows[0].id_bodega;
-    for(const tipo of ["DUENO","BODEGUERO","EMPLEADO"]) {
+    // Reutiliza el dueño inicial sin modificarlo ni consumir el segundo cupo,
+    // que la suite de login necesita para comprobar el 2FA de un dueño nuevo.
+    dueno=(await pool.query(`SELECT id_usuario,nombre,correo,tipo_usuario,id_bodega,sesion_version
+      FROM usuario WHERE tipo_usuario='DUENO' AND estado_usuario IS TRUE ORDER BY id_usuario LIMIT 1`)).rows[0] as UsuarioParaFirmar;
+    if(!dueno)throw new Error("Las pruebas requieren el dueño inicial de init/01_schema.sql");
+    for(const tipo of ["BODEGUERO","EMPLEADO"]) {
       const u=(await pool.query(`INSERT INTO usuario (nombre,correo,contrasena_hash,tipo_usuario,id_bodega) VALUES ($1,$2,'test',$3,$4)
         RETURNING id_usuario,nombre,correo,tipo_usuario,id_bodega,sesion_version`,[prefijo,`${prefijo}-${tipo}@test.local`,tipo,tipo==="BODEGUERO"?bodega:null])).rows[0] as UsuarioParaFirmar;
-      usuarios.push(u.id_usuario);if(tipo==="DUENO")dueno=u;else if(tipo==="BODEGUERO")bodeguero=u;else empleado=u;
+      usuarios.push(u.id_usuario);if(tipo==="BODEGUERO")bodeguero=u;else empleado=u;
     }
   });
   afterAll(async()=>{

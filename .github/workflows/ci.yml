@@ -49,7 +49,10 @@ jobs:
         run: npx tsc --noEmit
 
       - name: Crear schema en la base de datos
-        run: psql "$DATABASE_URL" -f ./init/01_schema.sql
+        run: |
+          for script in ./init/*.sql; do
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$script"
+          done
 
       - name: Tests unitarios
         run: npm test -- --ci --coverage=false
