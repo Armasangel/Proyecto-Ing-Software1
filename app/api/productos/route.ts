@@ -21,6 +21,9 @@ export async function GET(req: NextRequest) {
         p.estado_producto,
         p.caducidad,
         p.fecha_caducidad,
+        p.exento_iva,
+        p.id_categoria,
+        p.id_marca,
         c.nombre_categoria,
         m.nombre_marca
       FROM producto p

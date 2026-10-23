@@ -6,7 +6,7 @@ import { StaffShell } from "@/components/StaffShell";
 import { Icon, type IconName } from "@/components/Icon";
 import { useDuenoSession } from "@/hooks/useDuenoSession";
 import { FormularioCliente } from "@/components/clientes/FormularioCliente";
-import { FormularioProducto } from "@/components/crear/FormularioProducto";
+import { FormularioProducto } from "@/components/productos/FormularioProducto";
 import { FormularioPresentacion } from "@/components/crear/FormularioPresentacion";
 import { FormularioCatalogoSimple } from "@/components/crear/FormularioCatalogoSimple";
 import { FormularioProveedor } from "@/components/crear/FormularioProveedor";

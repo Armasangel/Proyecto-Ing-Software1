@@ -33,6 +33,7 @@ const producto = {
   unidad_medida: "libra",
   estado_producto: true,
   caducidad: false,
+  fecha_caducidad: null,
   exento_iva: false,
 };
 
@@ -123,5 +124,71 @@ describe("InventarioPage (Inventario + Catálogo unificados)", () => {
 
     await user.click(screen.getByRole("button", { name: "Kardex" }));
     expect(await screen.findByText("No hay movimientos para estos filtros.")).toBeInTheDocument();
+  });
+
+  it("crea un producto desde el modal del catálogo", async () => {
+    let body: Record<string, unknown> | undefined;
+    server.use(
+      rest.post("/api/productos", async (req, res, ctx) => {
+        body = await req.json();
+        return res(ctx.status(201), ctx.json({ id_producto: 10 }));
+      })
+    );
+    const user = userEvent.setup();
+    render(<InventarioPage />);
+
+    await screen.findAllByText("Bodega Principal");
+    await user.click(screen.getByRole("button", { name: "Productos" }));
+    await user.click(screen.getByRole("button", { name: "+ Nuevo producto" }));
+
+    await user.type(screen.getByLabelText(/^Código/), "CAF-01");
+    await user.type(screen.getByLabelText(/^Nombre/), "Café molido");
+    await user.type(screen.getByLabelText(/^Unidad de medida/), "libra");
+    await user.selectOptions(screen.getByLabelText(/^Categoría/), "1");
+    await user.selectOptions(screen.getByLabelText(/^Marca/), "1");
+    await user.click(screen.getByRole("button", { name: "Crear producto" }));
+
+    expect(await screen.findByText("Producto creado ✓")).toBeInTheDocument();
+    expect(body).toMatchObject({
+      codigo_producto: "CAF-01",
+      nombre_producto: "Café molido",
+      unidad_medida: "libra",
+      id_categoria: 1,
+      id_marca: 1,
+    });
+  });
+
+  it("edita un producto desde el modal con los datos precargados", async () => {
+    let body: Record<string, unknown> | undefined;
+    server.use(
+      rest.put("/api/productos/1", async (req, res, ctx) => {
+        body = await req.json();
+        return res(ctx.json({ id_producto: 1 }));
+      })
+    );
+    const user = userEvent.setup();
+    render(<InventarioPage />);
+
+    await screen.findAllByText("Bodega Principal");
+    await user.click(screen.getByRole("button", { name: "Productos" }));
+    await user.click(screen.getByTitle("Editar"));
+
+    expect(screen.getByLabelText(/^Código/)).toHaveValue("ARR-001");
+    expect(screen.getByLabelText(/^Categoría/)).toHaveValue("1");
+    expect(screen.getByLabelText(/^Marca/)).toHaveValue("1");
+
+    const nombre = screen.getByLabelText(/^Nombre/);
+    await user.clear(nombre);
+    await user.type(nombre, "Arroz 2 libras");
+    await user.click(screen.getByRole("button", { name: "Guardar cambios" }));
+
+    expect(await screen.findByText("Producto actualizado ✓")).toBeInTheDocument();
+    expect(body).toMatchObject({
+      codigo_producto: "ARR-001",
+      nombre_producto: "Arroz 2 libras",
+      id_categoria: 1,
+      id_marca: 1,
+    });
+    expect(body).not.toHaveProperty("presentaciones");
   });
 });

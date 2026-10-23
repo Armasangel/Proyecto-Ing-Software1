@@ -28,6 +28,11 @@ const mockProductos = [
     precio_mayoreo: 22.00,
     unidad_medida: "Litro",
     estado_producto: true,
+    caducidad: false,
+    fecha_caducidad: null,
+    exento_iva: false,
+    id_categoria: 1,
+    id_marca: 1,
     nombre_categoria: "Lácteos",
     nombre_marca: "Marca A",
   },
@@ -66,6 +71,9 @@ describe("GET /api/productos", () => {
     const sql = mockPool.query.mock.calls[0][0] as string;
     expect(sql).toContain("JOIN categoria");
     expect(sql).toContain("JOIN marca");
+    expect(sql).toContain("p.id_categoria");
+    expect(sql).toContain("p.id_marca");
+    expect(sql).toContain("p.exento_iva");
     expect(sql).toContain("ORDER BY p.nombre_producto");
   });
 });
