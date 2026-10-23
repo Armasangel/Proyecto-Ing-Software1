@@ -7,7 +7,7 @@ import { apiError, unauthorizedError } from "@/lib/api-error";
 /**
  * GET /api/bodega/historial
  * Últimos movimientos (entrada/salida) de la bodega asignada al bodeguero
- * autenticado. Deliberadamente acotado (por defecto 4, máximo 10) — el
+ * autenticado. Deliberadamente acotado (por defecto 5, máximo 5) — el
  * historial completo de kardex es exclusivo del dueño.
  */
 export async function GET(req: NextRequest) {
@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
   }
 
   const limiteParam = Number(req.nextUrl.searchParams.get("limite"));
-  const limite = Number.isFinite(limiteParam) && limiteParam > 0 ? Math.min(limiteParam, 10) : 4;
+  const limite = Number.isFinite(limiteParam) && limiteParam > 0 ? Math.min(limiteParam, 5) : 5;
 
   try {
     const result = await pool.query(

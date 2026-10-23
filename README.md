@@ -318,6 +318,72 @@ ejecutan el mismo archivo desde `init/09_presentaciones_por_producto.sql`.
 No se asumen tamaños de cajas para completar productos por conteo; esos
 empaques se seleccionan o crean en el formulario.
 
+### Compras y recepción ciega de inventario
+
+Con el esquema actualizado hasta la 13, aplica:
+
+```bash
+psql -v ON_ERROR_STOP=1 -U <usuario> -d <basedatos> -f migrations/14_compras_recepciones.sql
+psql -v ON_ERROR_STOP=1 -U <usuario> -d <basedatos> -f migrations/15_compras_parciales_impuestos.sql
+```
+
+Las instalaciones nuevas ejecutan sus equivalentes en `init/14_compras_recepciones.sql`
+y `init/15_compras_parciales_impuestos.sql`. La 15 conserva los importes históricos y
+las constancias existentes; permite recibir otros productos de esos tickets.
+La migración agrega tablas; no convierte entradas históricas en facturas de compra.
+
+- **Dueño → Inventario → Compra:** registra proveedor (nombre, NIT, teléfono y correo),
+  factura, fecha, contado/crédito, vencimiento, anticipo, forma y referencia de pago,
+  dirección, notas y productos con presentación, cantidad, costo, lote y caducidad.
+  Descuento, impuestos porcentuales y transporte forman el total y se distribuyen
+  proporcionalmente en el costo final por unidad base. Cada impuesto tiene nombre
+  y tasa, se calcula por separado sobre el subtotal menos descuento y se redondea
+  a centavos; no grava el transporte ni los demás impuestos. No dupliques impuestos
+  ya incluidos en el costo. La comparativa muestra costo nuevo por unidad de venta,
+  precio actual y ganancia esperada (monto y margen). Por producto se decide
+  conservar o actualizar los precios. Los precios elegidos se aplican al confirmar
+  la compra; el stock sigue pendiente de recepción.
+- **Tickets y cuentas por pagar:** el número de factura del proveedor queda
+  registrado junto al ticket `REC-…`. Contado se registra pagado; crédito conserva
+  saldo, vencimiento e historial de abonos. Los pagos no modifican el inventario.
+- **Bodeguero → Entrada / Colaborador → Entrada / Dueño → Inventario → Entrada:** captura productos y cantidades
+  recibidas, con presentaciones. El bodeguero utiliza su bodega asignada; el
+  colaborador selecciona la bodega. La vinculación es automática cuando existe una
+  única compra pendiente compatible. Si hay varias, se solicita el código del
+  ticket al dueño. Un ticket admite varias entradas y bodegas: captura solo lo que
+  llegó. Los productos omitidos quedan pendientes. Si un mismo producto llega en
+  varias partes, marca «Entrega parcial» para acumular sus cantidades; al terminar,
+  registra la última parte sin esa marca. Una constancia de un producto no bloquea
+  las entradas de los otros. El saldo se controla bajo bloqueo transaccional para
+  evitar duplicados y sobrantes fuera del límite. No se distribuye automáticamente
+  una entrada entre distintas facturas.
+- **Control de diferencias:** tolerancia por compra de 0 a 100 %, inicialmente 0.
+  El porcentaje se aplica a lo comprado: 100 botellas con 5 % permite finalizar
+  con 95 a 105, incluso después de varias entradas. Se compara cada producto en
+  unidad base, considerando faltantes y excedentes.
+  Dentro del límite se ingresa la cantidad real y se avisa al dueño. Fuera del
+  límite se exige un segundo conteo. Si persiste, la constancia es obligatoria y
+  no se suma stock hasta que el dueño documente su verificación con el proveedor
+  y autorice la cantidad real. Rechazar conserva la constancia y reabre el ticket.
+  Las cantidades del primer y segundo conteo permanecen guardadas.
+- **Privacidad y avisos:** las APIs de compras, costos, pagos y autorización son
+  exclusivas del dueño. Entrada devuelve solo los conteos propios y su estado;
+  nunca transmite factura, proveedor, cantidad esperada, costos ni tolerancia.
+  Los avisos persisten en Compra y se refrescan cada 15 segundos. No se envían correos.
+  El historial de Entrada y los movimientos de bodega muestran los últimos cinco;
+  los recuentos pendientes permanecen accesibles aparte.
+
+El antiguo `POST /api/inventario/entrada` responde 410 para evitar ingresos que
+omitan el control de recepción. Transferencias, salidas y ajustes del dueño siguen
+disponibles. No se permite cambiar la unidad base de un producto con compras pendientes.
+Los ingresos y pagos usan transacciones y claves de operación para evitar duplicados.
+
+Pruebas del flujo con PostgreSQL local y la migración aplicada:
+
+```bash
+docker compose exec app npm test -- --runInBand __tests__/integration/compras-recepciones.test.ts
+```
+
 ### Líquidos por botella y unidades históricas
 
 Los líquidos se registran con unidad base **botella**. El tamaño pertenece al

@@ -1,23 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
-import { isBodegueroTipo, isDuenoTipo } from "@/lib/roles";
+import { isBodegueroTipo, isDuenoTipo, isStaffTipo } from "@/lib/roles";
 import { apiError, unauthorizedError, validationError } from "@/lib/api-error";
 import { normalizarUnidad, normalizarPresentacion, sugerenciasPresentaciones, validarPresentaciones, type Presentacion } from "@/lib/presentaciones";
 
 /**
  * GET /api/presentaciones?id_producto=123
  * Lista las presentaciones activas de un producto (ej. "Caja de 24").
- * Lectura disponible para dueño y bodeguero (la necesitan al registrar
+ * Lectura por producto disponible para dueño, colaborador y bodeguero (al registrar
  * entradas/salidas); la administración (crear/eliminar) es solo del dueño.
  */
 export async function GET(req: NextRequest) {
   const usuario = getUsuarioFromRequest(req);
-  if (!usuario || !(isDuenoTipo(usuario.tipo_usuario) || isBodegueroTipo(usuario.tipo_usuario))) {
+  if (!usuario || !(isStaffTipo(usuario.tipo_usuario) || isBodegueroTipo(usuario.tipo_usuario))) {
     return unauthorizedError();
   }
 
   const idRaw = req.nextUrl.searchParams.get("id_producto");
+  if (idRaw === null && !isDuenoTipo(usuario.tipo_usuario) && !isBodegueroTipo(usuario.tipo_usuario)) return unauthorizedError();
   const unidad = req.nextUrl.searchParams.get("unidad_medida")?.trim();
   const idProducto = Number(idRaw);
   if (idRaw !== null && (!Number.isSafeInteger(idProducto) || idProducto < 1)) {

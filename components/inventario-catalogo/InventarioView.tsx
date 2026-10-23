@@ -4,6 +4,8 @@ import { Icon } from "@/components/Icon";
 import { CantidadInput } from "@/components/CantidadInput";
 import { matchesQuery, paginar, PaginationBar, PAGE_SIZES_COMPACT, type PageSize } from "@/lib/ui-table";
 import { ProductoAutocompletar } from "@/components/ProductoAutocompletar";
+import { ComprasStock } from "@/components/compras/ComprasStock";
+import { RecepcionEntrada } from "@/components/compras/RecepcionEntrada";
 
 const MIS_ITEMS = [
   {label: "editar", icon: "pencil"},
@@ -63,21 +65,15 @@ type KardexRow = {
   unidad_medida: string;
 };
 
-type StockActualizado = {
-  nombre_producto: string;
-  nombre_bodega: string;
-  cantidad_disponible: number;
-  unidad_medida: string;
-  ultima_actualizacion: string;
-};
-
-export type InventarioTab = "stock" | "operaciones" | "kardex" | "bodegas";
+export type InventarioTab = "stock" | "compra" | "entrada" | "operaciones" | "kardex" | "bodegas";
 
 const EMPTY_BODEGA_FORM = { nombre_bodega: "", ubicacion: "" };
 
 // ─── Componente ───────────────────────────────────────────────────────────────
 
 export function InventarioView({ tab }: { tab: InventarioTab }) {
+  const [visitadas,setVisitadas] = useState(()=>new Set<InventarioTab>([tab]));
+  useEffect(()=>{setVisitadas(v=>v.has(tab)?v:new Set([...v,tab]));},[tab]);
   // Maestros
   const [bodegas, setBodegas] = useState<Bodega[]>([]);
   const [bodegasSimple, setBodegasSimple] = useState<{ id_bodega: number; nombre_bodega: string }[]>([]);
@@ -105,17 +101,6 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
 
   // Kardex
   const [kardex, setKardex] = useState<KardexRow[]>([]);
-
-  // Operaciones: Entrada
-  const [entradaForm, setEntradaForm] = useState({ id_bodega: "", id_producto: "", id_presentacion: "", cantidad: "", tipo_ingreso: "UNIDADES", descripcion: "" });
-  const [entradaLoading, setEntradaLoading] = useState(false);
-  const [entradaResultado, setEntradaResultado] = useState<StockActualizado | null>(null);
-  const [entradaError, setEntradaError] = useState<string | null>(null);
-  // Presentaciones disponibles para el producto elegido en "Entrada de stock"
-  // (ej. "Caja de 24"). Si el usuario elige una, la cantidad que escribe está
-  // en esa presentación y el backend la convierte a unidad base usando el
-  // factor_conversion real — antes esto no pasaba y "Cajas" solo sumaba 1.
-  const [entradaPresentaciones, setEntradaPresentaciones] = useState<{ id_presentacion: number; nombre_presentacion: string; factor_conversion: string }[]>([]);
 
   // Operaciones: Transferencia
   const [xfer, setXfer] = useState({ id_bodega_origen: "", id_bodega_destino: "", id_producto: "", cantidad: "", descripcion: "" });
@@ -211,21 +196,6 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
     setPage(1);
   }, [tab, qStock, qKardex, qBodegas, filtroBodega, filtroProducto, soloBajoMinimo, incluirInactivos, perPage]);
 
-  // Al cambiar el producto de "Entrada de stock", carga sus presentaciones
-  // reales (con factor_conversion) en vez de asumir que "Caja" = 1 unidad.
-  useEffect(() => {
-    setEntradaForm(f => ({ ...f, id_presentacion: "" }));
-    if (!entradaForm.id_producto) {
-      setEntradaPresentaciones([]);
-      return;
-    }
-    fetch(`/api/presentaciones?id_producto=${entradaForm.id_producto}`)
-      .then(r => r.json())
-      .then(d => setEntradaPresentaciones(d.presentaciones || []))
-      .catch(() => setEntradaPresentaciones([]));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entradaForm.id_producto]);
-
   const stockFiltrado = useMemo(
     () =>
       stock.filter((r) =>
@@ -283,40 +253,6 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
       setMinEdits(m => { const next = { ...m }; delete next[key]; return next; });
       await cargarStock();
     } catch (e) { showToast(String(e), "err"); }
-  };
-
-  const registrarEntrada = async () => {
-    setEntradaLoading(true);
-    setEntradaError(null);
-    setEntradaResultado(null);
-    try {
-      const usaPresentacion = !!entradaForm.id_presentacion;
-      const payload: Record<string, unknown> = {
-        id_bodega: Number(entradaForm.id_bodega),
-        id_producto: Number(entradaForm.id_producto),
-        descripcion: entradaForm.descripcion,
-      };
-      if (usaPresentacion) {
-        payload.id_presentacion = Number(entradaForm.id_presentacion);
-        payload.cantidad_presentacion = Number(entradaForm.cantidad);
-      } else {
-        payload.cantidad = Number(entradaForm.cantidad);
-        payload.tipo_ingreso = entradaForm.tipo_ingreso;
-      }
-      const res = await fetch("/api/inventario/entrada", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      if (!res.ok) { setEntradaError(data.error || "Error desconocido"); }
-      else {
-        setEntradaResultado(data.stock);
-        setEntradaForm(f => ({ ...f, id_producto: "", id_presentacion: "", cantidad: "", tipo_ingreso: "UNIDADES", descripcion: "" }));
-        showToast("Entrada registrada ✓", "ok");
-        await cargarStock();
-      }
-    } catch { setEntradaError("No se pudo conectar con el servidor"); }
-    finally { setEntradaLoading(false); }
   };
 
   const registrarTransferencia = async () => {
@@ -381,12 +317,10 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
-  const productoSeleccionado = productos.find(p => p.id_producto === Number(entradaForm.id_producto));
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
       {/* Búsqueda + filtros en fila (stock y kardex) */}
-      <div style={s.card}>
+      <div style={{...s.card,display:tab==='stock'||tab==='kardex'?undefined:'none'}}>
         {(tab === "stock" || tab === "kardex") && (
           <div style={s.filterBlock}>
             <div style={s.toolbar}>
@@ -420,6 +354,7 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
       {/* ══════════════════════════════════════════════════════════════════
           TAB: STOCK
       ══════════════════════════════════════════════════════════════════ */}
+      {(tab==='compra'||visitadas.has('compra'))&&<div style={{display:tab==='compra'?undefined:'none'}}><ComprasStock onStockChange={cargarStock} /></div>}
       {tab === "stock" && (
         <div style={{ ...s.card, padding: 0, overflow: "hidden" }}>
           <div style={{ overflow: "auto" }}>
@@ -482,75 +417,9 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
       {/* ══════════════════════════════════════════════════════════════════
           TAB: OPERACIONES
       ══════════════════════════════════════════════════════════════════ */}
+      {(tab==='entrada'||visitadas.has('entrada'))&&<div style={{display:tab==='entrada'?undefined:'none'}}><RecepcionEntrada onRecibido={cargarStock} /></div>}
       {tab === "operaciones" && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "1rem" }}>
-
-          {/* Entrada de stock */}
-          <div style={s.card}>
-            <h3 style={s.h3}><Icon name ="box" variant="dark" size={24}/> Entrada de stock</h3>
-            <p style={s.help}>Registra el ingreso de mercancía. Queda trazado en kardex.</p>
-            <div style={s.field}>
-              <label style={s.label}>Bodega *</label>
-              <select value={entradaForm.id_bodega} onChange={e => { setEntradaForm(f => ({ ...f, id_bodega: e.target.value })); setEntradaError(null); setEntradaResultado(null); }} style={s.select}>
-                <option value="">— Selecciona —</option>
-                {bodegasSimple.map(b => <option key={b.id_bodega} value={b.id_bodega}>{b.nombre_bodega}</option>)}
-              </select>
-            </div>
-            <div style={s.field}>
-              <label style={s.label}>Producto *</label>
-              <ProductoAutocompletar
-                productos={productos}
-                value={entradaForm.id_producto}
-                onChange={id => { setEntradaForm(f => ({ ...f, id_producto: id })); setEntradaError(null); setEntradaResultado(null); }}
-                style={s.select}
-              />
-              {productoSeleccionado && <span style={{ fontSize: "0.78rem", color: "var(--muted)" }}>Unidad: <strong style={{ color: "var(--text)" }}>{productoSeleccionado.unidad_medida}</strong></span>}
-            </div>
-            <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
-              <div style={{ ...s.field, flex: "1 1 160px" }}>
-                <label style={s.label}>Se ingresa en *</label>
-                <select value={entradaForm.id_presentacion} onChange={e => setEntradaForm(f => ({ ...f, id_presentacion: e.target.value }))} style={s.select}>
-                  <option value="">{productoSeleccionado ? `Unidad base (${productoSeleccionado.unidad_medida})` : "Unidad base"}</option>
-                  {entradaPresentaciones.map(p => (
-                    <option key={p.id_presentacion} value={p.id_presentacion}>
-                      {p.nombre_presentacion} (× {Number(p.factor_conversion)} {productoSeleccionado?.unidad_medida || "unidades"})
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div style={{ ...s.field, flex: "1 1 200px" }}>
-                <label style={s.label}>Cantidad *</label>
-                <CantidadInput
-                  ariaLabel="Cantidad de entrada"
-                  style={s.select}
-                  value={entradaForm.cantidad}
-                  onChange={(cantidad) => setEntradaForm(f => ({ ...f, cantidad }))}
-                />
-                {entradaForm.id_presentacion && entradaForm.cantidad && (
-                  <span style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
-                    = {(Number(entradaForm.cantidad) * Number(entradaPresentaciones.find(p => p.id_presentacion === Number(entradaForm.id_presentacion))?.factor_conversion || 1)).toLocaleString("es-GT")} {productoSeleccionado?.unidad_medida || "unidades"} en total
-                  </span>
-                )}
-              </div>
-            </div>
-            <div style={s.field}>
-              <label style={s.label}>Descripción (opcional)</label>
-              <textarea value={entradaForm.descripcion} onChange={e => setEntradaForm(f => ({ ...f, descripcion: e.target.value }))} rows={2} placeholder="Ej: Compra a proveedor XYZ…" style={{ ...s.select, resize: "vertical" }} />
-            </div>
-            <button type="button" onClick={registrarEntrada} disabled={entradaLoading || !entradaForm.id_bodega || !entradaForm.id_producto || !entradaForm.cantidad} style={{ ...s.btnPrimary, opacity: (!entradaForm.id_bodega || !entradaForm.id_producto || !entradaForm.cantidad) ? 0.5 : 1 }}>
-              {entradaLoading ? "Registrando…" : "Registrar entrada"}
-            </button>
-            {entradaError && <div style={s.alertErr}>{entradaError}</div>}
-            {entradaResultado && (
-              <div style={s.alertOk}>
-                <strong style={{ color: "var(--text)" }}>Entrada registrada</strong>
-                <div style={{ fontSize: "0.82rem", marginTop: "0.35rem", color: "var(--muted)" }}>
-                  {entradaResultado.nombre_producto} · {entradaResultado.nombre_bodega}<br />
-                  Stock actual: <strong style={{ color: "var(--text)" }}>{Number(entradaResultado.cantidad_disponible).toFixed(2)} {entradaResultado.unidad_medida}</strong>
-                </div>
-              </div>
-            )}
-          </div>
 
           {/* Transferencia */}
           <div style={s.card}>

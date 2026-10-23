@@ -139,6 +139,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
       client.release();
     }
   } catch (error: any) {
+    if (error.code === "23514") return validationError("El producto tiene compras pendientes de recepción. Conserva su unidad base hasta recibirlas.");
     if (error.code === "23503") return validationError("La categoría o marca seleccionada no existe");
     if (error instanceof PresentacionError) return validationError(error.message);
     if (error.code === "23505") {
@@ -187,6 +188,8 @@ export async function DELETE(req: NextRequest, { params }: Params) {
          SELECT 1 FROM presentacion_producto WHERE id_producto = $1
          UNION ALL
          SELECT 1 FROM bodega_producto     WHERE id_producto = $1
+         UNION ALL
+         SELECT 1 FROM compra_detalle      WHERE id_producto = $1
        ) AS existe`,
       [idProducto]
     );

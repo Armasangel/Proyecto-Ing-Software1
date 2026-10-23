@@ -18,6 +18,7 @@ const lineas = [
 ];
 
 const server = setupServer(
+  rest.get("/api/recepciones", (_req, res, ctx) => res(ctx.json({ recepciones: [] }))),
   rest.get("/api/productos", (_req, res, ctx) => res(ctx.json({ productos: [] }))),
   rest.get("/api/productos/frecuentes", (_req, res, ctx) => res(ctx.json({ productos: [] }))),
   rest.get("/api/bodegas/simple", (_req, res, ctx) => res(ctx.json({ bodegas: [] }))),

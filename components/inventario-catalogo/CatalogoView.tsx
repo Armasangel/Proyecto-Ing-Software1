@@ -180,6 +180,15 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
       .catch(() => setProveedores([]));
   }, [cargarProductos]);
 
+  useEffect(() => {
+    const actualizar = () => {
+      cargarProductos();
+      fetch("/api/proveedores").then(r=>r.json()).then(d=>setProveedores(d.proveedores||[])).catch(()=>{});
+    };
+    window.addEventListener("inventario:compra-registrada", actualizar);
+    return () => window.removeEventListener("inventario:compra-registrada", actualizar);
+  }, [cargarProductos]);
+
   // Al cambiar búsqueda o filtros, se vuelve a la primera página.
   useEffect(() => {
     setPage(1);

@@ -1,7 +1,7 @@
 "use client";
 
 /* Página unificada de Inventario y Catálogo.
-   La barra de tabs vive aquí (6 secciones) y cada vista se mantiene montada,
+   La barra de tabs vive aquí y cada vista se mantiene montada,
    alternada con display:none, para no perder búsquedas, filtros ni páginas
    al cambiar de pestaña. */
 
@@ -16,6 +16,8 @@ const TABS: ReadonlyArray<readonly [InventarioCatalogoTab, string]> = [
   ["productos", "Productos"],
   ["precios", "Precios"],
   ["stock", "Stock"],
+  ["compra", "Compra"],
+  ["entrada", "Entrada"],
   ["operaciones", "Operaciones"],
   ["kardex", "Kardex"],
   ["bodegas", "Bodegas"],

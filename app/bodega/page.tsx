@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useBodegueroSession } from "@/hooks/useBodegueroSession";
 import { Icon } from "@/components/Icon";
 import { ProductoAutocompletar } from "@/components/ProductoAutocompletar";
+import { RecepcionEntrada } from "@/components/compras/RecepcionEntrada";
 
 type Producto = {
   id_producto: number;
@@ -237,11 +238,7 @@ export default function BodegaPage() {
         body.cantidad = Number(cantidad);
       }
 
-      if (tab === "entrada") {
-        url = "/api/inventario/entrada";
-        body.tipo_ingreso = "UNIDADES";
-        body.descripcion = descripcion || undefined;
-      } else if (tab === "salida") {
+      if (tab === "salida") {
         url = "/api/inventario/salida";
         // Única salida manual posible. Para pasar producto a la tienda se usa Traslado.
         body.motivo = "MERMA";
@@ -396,7 +393,8 @@ export default function BodegaPage() {
           </div>
         )}
 
-        {tab !== "pedidos" && <div style={s.card}>
+        {tab === "entrada" && <RecepcionEntrada idBodega={usuario.id_bodega} onRecibido={cargarHistorial} />}
+        {tab !== "pedidos" && tab !== "entrada" && <div style={s.card}>
           <div style={s.field}>
             <label style={s.label}>Producto</label>
             <ProductoAutocompletar
@@ -405,9 +403,7 @@ export default function BodegaPage() {
               value={idProducto}
               onChange={setIdProducto}
               style={s.input}
-              mensajeVacio={
-                tab === "entrada" ? "Escribe para buscar un producto" : "No hay productos con existencias en tu bodega"
-              }
+              mensajeVacio="No hay productos con existencias en tu bodega"
             />
           </div>
 

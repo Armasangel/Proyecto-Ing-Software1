@@ -23,6 +23,7 @@ const log = getLogger("middleware");
 const PROTECTED_PREFIXES = [
   "/dashboard",
   "/inventario",
+  "/entrada",
   "/gestion-inventario",
   "/bodegas",
   "/bodega",
@@ -158,6 +159,7 @@ export const config = {
   matcher: [
     "/dashboard/:path*",
     "/inventario/:path*",
+    "/entrada/:path*",
     "/gestion-inventario/:path*",
     "/bodegas/:path*",
     "/bodega",

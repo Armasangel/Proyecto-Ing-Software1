@@ -49,4 +49,9 @@ describe("GET /api/presentaciones", () => {
     expect((await GET(createMockRequest("/api/presentaciones?unidad_medida=libra", { user }))).status).toBe(403);
     expect(query).not.toHaveBeenCalled();
   });
+  it("allows collaborators to read product presentations for blind reception", async () => {
+    const res = await GET(createMockRequest("/api/presentaciones?id_producto=1", { user:testUserEmpleado }));
+    expect(res.status).toBe(200);
+    expect(query.mock.calls[0][1]).toEqual([1]);
+  });
 });
