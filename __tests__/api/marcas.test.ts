@@ -36,4 +36,18 @@ describe("GET /api/marcas", () => {
     const res = await GET(req);
     expect(res.status).toBe(200);
   });
+
+  it("includes brands without products and ranks usage by the number of assigned products", async () => {
+    mockPool.query.mockResolvedValue({ rows: [
+      { id_marca: 2, nombre_marca: "Marca B", usos: 10 },
+      { id_marca: 1, nombre_marca: "Marca A", usos: 0 },
+    ] });
+    const res = await GET(createMockRequest("/api/marcas", { user: testUserDueno }));
+    const data = await res.json();
+    expect(data.marcas.map((m: { usos: number }) => m.usos)).toEqual([10, 0]);
+    const sql = mockPool.query.mock.calls[0][0];
+    expect(sql).toContain("LEFT JOIN producto p ON p.id_marca = m.id_marca");
+    expect(sql).toContain("COUNT(p.id_producto)::int AS usos");
+    expect(sql).toContain("ORDER BY usos DESC, m.nombre_marca");
+  });
 });

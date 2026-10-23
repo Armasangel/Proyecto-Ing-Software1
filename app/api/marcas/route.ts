@@ -11,7 +11,11 @@ export async function GET(req: NextRequest) {
   }
   try {
     const result = await pool.query(
-      `SELECT id_marca, nombre_marca FROM marca ORDER BY nombre_marca`
+      `SELECT m.id_marca, m.nombre_marca, COUNT(p.id_producto)::int AS usos
+       FROM marca m
+       LEFT JOIN producto p ON p.id_marca = m.id_marca
+       GROUP BY m.id_marca, m.nombre_marca
+       ORDER BY usos DESC, m.nombre_marca, m.id_marca`
     );
     return NextResponse.json({ marcas: result.rows });
   } catch (error) {
@@ -26,9 +30,10 @@ export async function POST(req: NextRequest) {
   }
   try {
     const { nombre_marca } = await req.json();
-    if (!nombre_marca || !String(nombre_marca).trim()) {
+    if (typeof nombre_marca !== "string" || !nombre_marca.trim()) {
       return NextResponse.json({ error: "El nombre de la marca es obligatorio" }, { status: 400 });
     }
+    if (nombre_marca.trim().length > 100) return NextResponse.json({ error: "El nombre de la marca no puede superar 100 caracteres" }, { status: 400 });
     const result = await pool.query(
       `INSERT INTO marca (nombre_marca) VALUES ($1) RETURNING id_marca, nombre_marca`,
       [String(nombre_marca).trim()]

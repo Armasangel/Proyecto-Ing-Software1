@@ -7,6 +7,8 @@ const createJestConfig = nextJest({
 
 const config: Config = {
   testEnvironment: "jsdom",
+  // Evita saturar CPU, disco y PostgreSQL en equipos con muchos núcleos.
+  maxWorkers: 2,
   setupFilesAfterEnv: ["<rootDir>/__tests__/setup.ts"],
   moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/$1",

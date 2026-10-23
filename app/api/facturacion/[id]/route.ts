@@ -42,6 +42,7 @@ export async function GET(
               'codigo_producto', p.codigo_producto,
               'nombre_producto', p.nombre_producto,
               'cantidad', dv.cantidad,
+              'unidad_medida', dv.unidad_base,
               'precio_unitario', dv.precio_unitario,
               'subtotal', dv.subtotal
             )
