@@ -88,7 +88,7 @@ export async function POST(
     }
 
     const detalleRes = await client.query(
-      `SELECT id_producto, id_bodega, cantidad FROM detalle_venta WHERE id_venta = $1`,
+      `SELECT id_producto, id_bodega, cantidad, unidad_base FROM detalle_venta WHERE id_venta = $1`,
       [id_venta]
     );
     if (detalleRes.rowCount === 0) {
@@ -112,9 +112,9 @@ export async function POST(
         [linea.cantidad, linea.id_bodega, linea.id_producto]
       );
       await client.query(
-        `INSERT INTO kardex (id_bodega, id_producto, tipo_movimiento, cantidad, descripcion)
-         VALUES ($1, $2, 'ENTRADA', $3, $4)`,
-        [linea.id_bodega, linea.id_producto, linea.cantidad, `Venta #${id_venta} deshecha`]
+        `INSERT INTO kardex (id_bodega, id_producto, tipo_movimiento, cantidad, descripcion, unidad_base)
+         VALUES ($1, $2, 'ENTRADA', $3, $4, $5)`,
+        [linea.id_bodega, linea.id_producto, linea.cantidad, `Venta #${id_venta} deshecha`, linea.unidad_base]
       );
     }
 

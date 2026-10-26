@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useBodegueroSession } from "@/hooks/useBodegueroSession";
 import { Icon } from "@/components/Icon";
 import { ProductoAutocompletar } from "@/components/ProductoAutocompletar";
+import { RecepcionEntrada } from "@/components/compras/RecepcionEntrada";
 
 type Producto = {
   id_producto: number;
@@ -55,6 +56,8 @@ type ProductoPedido = {
   nombre_producto: string;
   cantidad: string;
   unidad_medida: string;
+  nombre_presentacion: string | null;
+  cantidad_presentacion: string | null;
   id_bodega: number | null;
   es_mi_bodega: boolean;
 };
@@ -235,11 +238,7 @@ export default function BodegaPage() {
         body.cantidad = Number(cantidad);
       }
 
-      if (tab === "entrada") {
-        url = "/api/inventario/entrada";
-        body.tipo_ingreso = "UNIDADES";
-        body.descripcion = descripcion || undefined;
-      } else if (tab === "salida") {
+      if (tab === "salida") {
         url = "/api/inventario/salida";
         // Única salida manual posible. Para pasar producto a la tienda se usa Traslado.
         body.motivo = "MERMA";
@@ -359,12 +358,15 @@ export default function BodegaPage() {
                           <div style={{ display: "flex", flexDirection: "column", gap: "0.2rem", marginBottom: "0.6rem" }}>
                             {p.productos
                               .filter((pr) => pr.es_mi_bodega)
-                              .map((pr) => (
-                                <div key={pr.id_detalle} style={{ fontSize: "0.85rem" }}>
-                                  <strong>{Number(pr.cantidad).toLocaleString("es-GT")}</strong>{" "}
-                                  {pr.unidad_medida} — {pr.nombre_producto}
-                                </div>
-                              ))}
+                              .map((pr) => {
+                                const usaPresentacion = !!pr.nombre_presentacion && pr.cantidad_presentacion != null;
+                                return (
+                                  <div key={pr.id_detalle} style={{ fontSize: "0.85rem" }}>
+                                    <strong>{Number(usaPresentacion ? pr.cantidad_presentacion : pr.cantidad).toLocaleString("es-GT")}</strong>{" "}
+                                    {usaPresentacion ? pr.nombre_presentacion : pr.unidad_medida} — {pr.nombre_producto}
+                                  </div>
+                                );
+                              })}
                           </div>
                           {p.notas && (
                             <div style={{ fontSize: "0.78rem", color: "var(--muted)", fontStyle: "italic", marginBottom: "0.6rem" }}>
@@ -391,7 +393,8 @@ export default function BodegaPage() {
           </div>
         )}
 
-        {tab !== "pedidos" && <div style={s.card}>
+        {tab === "entrada" && <RecepcionEntrada idBodega={usuario.id_bodega} onRecibido={cargarHistorial} />}
+        {tab !== "pedidos" && tab !== "entrada" && <div style={s.card}>
           <div style={s.field}>
             <label style={s.label}>Producto</label>
             <ProductoAutocompletar
@@ -400,9 +403,7 @@ export default function BodegaPage() {
               value={idProducto}
               onChange={setIdProducto}
               style={s.input}
-              mensajeVacio={
-                tab === "entrada" ? "Escribe para buscar un producto" : "No hay productos con existencias en tu bodega"
-              }
+              mensajeVacio="No hay productos con existencias en tu bodega"
             />
           </div>
 
@@ -496,7 +497,9 @@ export default function BodegaPage() {
             {historial.length === 0 && (
               <div style={{ color: "var(--muted)", fontSize: "0.85rem" }}>Sin movimientos recientes</div>
             )}
-            {historial.map((m) => (
+            {historial.map((m) => {
+              const usaPresentacion = !!m.nombre_presentacion && m.cantidad_presentacion != null;
+              return (
               <div key={m.id_kardex} style={s.historialRow}>
                 <div>
                   <span
@@ -506,15 +509,10 @@ export default function BodegaPage() {
                     }}
                   >
                     {m.tipo_movimiento === "SALIDA" ? "− " : "+ "}
-                    {Number(m.cantidad).toLocaleString("es-GT")} {m.unidad_medida}
+                    {Number(usaPresentacion ? m.cantidad_presentacion : m.cantidad).toLocaleString("es-GT")}{" "}
+                    {usaPresentacion ? m.nombre_presentacion : m.unidad_medida}
                   </span>{" "}
                   {m.nombre_producto}
-                  {m.nombre_presentacion && (
-                    <span style={{ color: "var(--muted)" }}>
-                      {" "}
-                      ({m.cantidad_presentacion} × {m.nombre_presentacion})
-                    </span>
-                  )}
                 </div>
                 <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
                   {m.motivo ? MOTIVO_LABEL[m.motivo] + " — " : ""}
@@ -523,7 +521,8 @@ export default function BodegaPage() {
                   {new Date(m.fecha_movimiento).toLocaleString("es-GT", { dateStyle: "short", timeStyle: "short" })}
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </main>

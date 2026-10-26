@@ -61,6 +61,7 @@ describe("StaffShell", () => {
     expect(screen.getAllByText("Dashboard").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("Facturación")).toBeInTheDocument();
     expect(screen.getByText("Reportes")).toBeInTheDocument();
+    expect(screen.queryByRole('link',{name:'Entrada'})).not.toBeInTheDocument();
   });
 
   it("shows Ventas (unified with the old Órdenes) for the DUENO too", () => {
@@ -97,6 +98,7 @@ describe("StaffShell", () => {
     // Reportes es exclusivo del dueño: el colaborador lo pisaba y terminaba
     // devuelto a /ventas por useDuenoSession.
     expect(screen.queryByText("Reportes")).not.toBeInTheDocument();
+    expect(screen.getByRole('link',{name:'Entrada'})).toBeInTheDocument();
   });
 
   it("shows the role badge for dueno", () => {

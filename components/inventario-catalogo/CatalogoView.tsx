@@ -1,7 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { Icon } from "@/components/Icon";
 import { matchesQuery, paginar, PaginationBar, type PageSize } from "@/lib/ui-table";
+import { PresentacionesProducto } from "@/components/inventario-catalogo/PresentacionesProducto";
+import { normalizarUnidad, presentacionesIniciales, validarPresentaciones, type Presentacion } from "@/lib/presentaciones";
+import { validarCategoriasProducto } from "@/lib/producto-categorias";
+import { CategoriaAutocompletar } from "@/components/inventario-catalogo/CategoriaAutocompletar";
+import { MarcaAutocompletar } from "@/components/inventario-catalogo/MarcaAutocompletar";
 
 const MIS_ITEMS = [
   {label: "editar", icon: "pencil"},
@@ -14,6 +19,10 @@ interface Producto {
   nombre_producto: string;
   nombre_categoria: string;
   id_categoria: number;
+  id_categoria_2?: number | null;
+  id_categoria_3?: number | null;
+  nombre_categoria_2?: string | null;
+  nombre_categoria_3?: string | null;
   nombre_marca: string;
   id_marca: number;
   precio_unitario: string | null;
@@ -21,6 +30,7 @@ interface Producto {
   unidad_medida: string;
   estado_producto: boolean;
   caducidad: boolean;
+  fecha_caducidad?: string | null;
   exento_iva: boolean;
 }
 
@@ -31,6 +41,7 @@ interface Categoria {
 interface Marca {
   id_marca: number;
   nombre_marca: string;
+  usos?: number;
 }
 interface Proveedor {
   id_proveedor: number;
@@ -39,19 +50,6 @@ interface Proveedor {
   correo_contacto: string | null;
   telefono: string | null;
 }
-type PresentacionForm = { nombre_presentacion: string; factor_conversion: string };
-
-// Mismo heurístico que valida /api/productos en el servidor: por el nombre
-// de la unidad de medida detectamos si es un líquido embotellado (requiere
-// caja obligatoria) o si se mide en libras (puede ofrecerse como "saco").
-const UNIDADES_LIQUIDAS = ["botella", "litro", "lt", "ml", "galon", "galón"];
-function esUnidadLiquida(unidad: string): boolean {
-  return UNIDADES_LIQUIDAS.some((k) => unidad.trim().toLowerCase().includes(k));
-}
-function esUnidadLibra(unidad: string): boolean {
-  return unidad.trim().toLowerCase().includes("libra");
-}
-
 const PROVEEDOR_VACIO = { nombre_proveedor: "", nit_proveedor: "", correo_contacto: "", telefono: "" };
 
 const EMPTY_FORM = {
@@ -61,6 +59,8 @@ const EMPTY_FORM = {
   precio_mayoreo: "",
   unidad_medida: "",
   id_categoria: "",
+  id_categoria_2: "",
+  id_categoria_3: "",
   id_marca: "",
   caducidad: false,
   fecha_caducidad: "",
@@ -70,7 +70,15 @@ const EMPTY_FORM = {
 
 export type CatalogoTab = "productos" | "precios";
 
-export function CatalogoView({ tab }: { tab: CatalogoTab }) {
+type CreacionRapida = {
+  proveedor?: Proveedor;
+  onCreado: (idProducto: number) => void;
+  onCancelar: () => void;
+};
+
+/** El alta rápida usa el mismo formulario y validaciones que el catálogo. */
+export function CatalogoView({ tab, creacionRapida }: { tab: CatalogoTab; creacionRapida?: CreacionRapida }) {
+  const tituloModal = useId();
   const [productos, setProductos] = useState<Producto[]>([]);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [marcas, setMarcas] = useState<Marca[]>([]);
@@ -88,7 +96,7 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
   const [perPage, setPerPage] = useState<PageSize>(10);
 
   // Modal producto
-  const [modalOpen, setModalOpen] = useState(false);
+  const [modalOpen, setModalOpen] = useState(!!creacionRapida);
   const [editando, setEditando] = useState<Producto | null>(null);
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [saving, setSaving] = useState(false);
@@ -98,7 +106,7 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
   const [proveedorQuery, setProveedorQuery] = useState("");
   const [proveedorSugerenciasAbiertas, setProveedorSugerenciasAbiertas] = useState(false);
-  const [proveedoresSeleccionados, setProveedoresSeleccionados] = useState<Proveedor[]>([]);
+  const [proveedoresSeleccionados, setProveedoresSeleccionados] = useState<Proveedor[]>(()=>creacionRapida?.proveedor?[creacionRapida.proveedor]:[]);
   const [creandoProveedor, setCreandoProveedor] = useState(false);
   const [formProveedorNuevo, setFormProveedorNuevo] = useState(PROVEEDOR_VACIO);
   const [guardandoProveedor, setGuardandoProveedor] = useState(false);
@@ -106,6 +114,7 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
 
   // Categoría / marca: alta rápida sin salir del modal
   const [creandoCategoria, setCreandoCategoria] = useState(false);
+  const [categoriaDestino, setCategoriaDestino] = useState<"id_categoria" | "id_categoria_2" | "id_categoria_3">("id_categoria");
   const [nuevaCategoriaNombre, setNuevaCategoriaNombre] = useState("");
   const [guardandoCategoria, setGuardandoCategoria] = useState(false);
   const [errorCategoria, setErrorCategoria] = useState("");
@@ -115,7 +124,36 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
   const [errorMarca, setErrorMarca] = useState("");
 
   // Presentaciones por mayor (ej. "Caja de 24", "Saco de 50 libras")
-  const [presentacionesForm, setPresentacionesForm] = useState<PresentacionForm[]>([]);
+  const [presentacionesForm, setPresentacionesForm] = useState<Presentacion[]>([]);
+  const [presentacionesOriginales, setPresentacionesOriginales] = useState<Presentacion[]>([]);
+  const [presentacionesCargando, setPresentacionesCargando] = useState(false);
+  const [presentacionesError, setPresentacionesError] = useState("");
+  const [reintentoPresentaciones, setReintentoPresentaciones] = useState(0);
+  const unidadBase = normalizarUnidad(form.unidad_medida);
+  const cambiaUnidad = !!editando && unidadBase !== normalizarUnidad(editando.unidad_medida);
+
+  useEffect(() => {
+    if (!modalOpen) return;
+    setPresentacionesForm(editando && unidadBase === normalizarUnidad(editando.unidad_medida)
+      ? presentacionesOriginales
+      : presentacionesIniciales(unidadBase));
+  }, [modalOpen, editando, unidadBase, presentacionesOriginales]);
+
+  useEffect(() => {
+    if (!modalOpen || !editando) return;
+    const controller = new AbortController();
+    setPresentacionesCargando(true);
+    setPresentacionesError("");
+    fetch(`/api/presentaciones?id_producto=${editando.id_producto}`, { signal: controller.signal })
+      .then(async (res) => {
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        if (!controller.signal.aborted) setPresentacionesOriginales((data.presentaciones || []).map((p: Presentacion) => ({ ...p, factor_conversion: Number(p.factor_conversion) })));
+      })
+      .catch(() => { if (!controller.signal.aborted) setPresentacionesError("No se pudieron cargar las presentaciones del producto."); })
+      .finally(() => { if (!controller.signal.aborted) setPresentacionesCargando(false); });
+    return () => controller.abort();
+  }, [modalOpen, editando, reintentoPresentaciones]);
 
   // Confirm delete
   const [confirmId, setConfirmId] = useState<number | null>(null);
@@ -138,16 +176,25 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
     fetch("/api/productos")
       .then((r) => r.json())
       .then((d) => setProductos(d.productos || []));
+    fetch("/api/marcas").then((r) => r.json()).then((d) => setMarcas(d.marcas || []));
   }, []);
 
   useEffect(() => {
     cargarProductos();
     fetch("/api/categorias").then((r) => r.json()).then((d) => setCategorias(d.categorias || []));
-    fetch("/api/marcas").then((r) => r.json()).then((d) => setMarcas(d.marcas || []));
     fetch("/api/proveedores")
       .then((r) => (r.ok ? r.json() : { proveedores: [] }))
       .then((d) => setProveedores(d.proveedores || []))
       .catch(() => setProveedores([]));
+  }, [cargarProductos]);
+
+  useEffect(() => {
+    const actualizar = () => {
+      cargarProductos();
+      fetch("/api/proveedores").then(r=>r.json()).then(d=>setProveedores(d.proveedores||[])).catch(()=>{});
+    };
+    window.addEventListener("inventario:compra-registrada", actualizar);
+    return () => window.removeEventListener("inventario:compra-registrada", actualizar);
   }, [cargarProductos]);
 
   // Al cambiar búsqueda o filtros, se vuelve a la primera página.
@@ -161,13 +208,6 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
       matchesQuery(proveedorQuery, p.nombre_proveedor, p.nit_proveedor)
   );
 
-  const liquidoRequiereCaja = esUnidadLiquida(form.unidad_medida);
-  const esLibra = esUnidadLibra(form.unidad_medida);
-  const presentacionesValidas = presentacionesForm.filter(
-    (p) => p.nombre_presentacion.trim() && Number(p.factor_conversion) > 0
-  );
-  const faltaCajaObligatoria = !editando && liquidoRequiereCaja && presentacionesValidas.length === 0;
-
   // ── Modal helpers ──────────────────────────────────────────────────────────
   const resetExtras = () => {
     setProveedoresSeleccionados([]);
@@ -176,6 +216,9 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
     setFormProveedorNuevo(PROVEEDOR_VACIO);
     setErrorProveedor("");
     setPresentacionesForm([]);
+    setPresentacionesOriginales([]);
+    setPresentacionesCargando(false);
+    setPresentacionesError("");
     setCreandoCategoria(false);
     setNuevaCategoriaNombre("");
     setErrorCategoria("");
@@ -201,9 +244,11 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
       precio_mayoreo: p.precio_mayoreo ?? "",
       unidad_medida: p.unidad_medida,
       id_categoria: String(p.id_categoria),
+      id_categoria_2: p.id_categoria_2 == null ? "" : String(p.id_categoria_2),
+      id_categoria_3: p.id_categoria_3 == null ? "" : String(p.id_categoria_3),
       id_marca: String(p.id_marca),
       caducidad: p.caducidad,
-      fecha_caducidad: "",
+      fecha_caducidad: p.fecha_caducidad?.slice(0, 10) ?? "",
       exento_iva: p.exento_iva,
       estado_producto: p.estado_producto,
     });
@@ -212,7 +257,11 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
     setModalOpen(true);
   };
 
-  const cerrarModal = () => { setModalOpen(false); setEditando(null); resetExtras(); };
+  const cerrarModal = () => {
+    if (saving || guardandoCategoria || guardandoMarca || guardandoProveedor) return;
+    setModalOpen(false); setEditando(null); resetExtras();
+    creacionRapida?.onCancelar();
+  };
 
   const agregarProveedor = (p: Proveedor) => {
     setProveedoresSeleccionados((prev) => [...prev, p]);
@@ -263,7 +312,7 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
       if (!res.ok) setErrorCategoria(data.error || "Error al crear la categoría");
       else {
         setCategorias((prev) => [...prev, data.categoria].sort((a, b) => a.nombre_categoria.localeCompare(b.nombre_categoria)));
-        setForm((f) => ({ ...f, id_categoria: String(data.categoria.id_categoria) }));
+        setForm((f) => ({ ...f, [categoriaDestino]: String(data.categoria.id_categoria) }));
         setNuevaCategoriaNombre("");
         setCreandoCategoria(false);
       }
@@ -293,25 +342,21 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
     finally { setGuardandoMarca(false); }
   };
 
-  const agregarFilaPresentacion = (nombrePreset = "") => {
-    setPresentacionesForm((prev) => [...prev, { nombre_presentacion: nombrePreset, factor_conversion: "" }]);
-  };
-  const actualizarPresentacion = (idx: number, campo: keyof PresentacionForm, valor: string) => {
-    setPresentacionesForm((prev) => prev.map((p, i) => (i === idx ? { ...p, [campo]: valor } : p)));
-  };
-  const quitarPresentacionFila = (idx: number) => {
-    setPresentacionesForm((prev) => prev.filter((_, i) => i !== idx));
-  };
-
   const handleGuardar = async () => {
+    if (saving || guardandoCategoria || guardandoMarca || guardandoProveedor) return;
     if (!form.codigo_producto || !form.nombre_producto || !form.unidad_medida || !form.id_categoria || !form.id_marca) {
       setFormError("Completa todos los campos obligatorios (*)");
       return;
     }
-    if (faltaCajaObligatoria) {
-      setFormError("Los productos con unidad líquida (botella, litro, ml, galón) necesitan al menos una presentación tipo caja. Agrégala abajo en \"Presentaciones por mayor\".");
+    if (presentacionesCargando || presentacionesError) return;
+    if (creacionRapida && !form.estado_producto) {
+      setFormError("El producto debe estar activo para seleccionarlo en la compra.");
       return;
     }
+    const errorCategorias = validarCategoriasProducto([Number(form.id_categoria), form.id_categoria_2 ? Number(form.id_categoria_2) : null, form.id_categoria_3 ? Number(form.id_categoria_3) : null]);
+    if (errorCategorias) { setFormError(errorCategorias); return; }
+    const errorPresentaciones = validarPresentaciones(presentacionesForm);
+    if (errorPresentaciones) { setFormError(errorPresentaciones); return; }
     setSaving(true);
     setFormError("");
     const url = editando ? `/api/productos/${editando.id_producto}` : "/api/productos";
@@ -322,20 +367,25 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
       precio_mayoreo: form.precio_mayoreo ? Number(form.precio_mayoreo) : null,
       fecha_caducidad: form.caducidad && form.fecha_caducidad ? form.fecha_caducidad : null,
       id_categoria: Number(form.id_categoria),
+      id_categoria_2: form.id_categoria_2 ? Number(form.id_categoria_2) : null,
+      id_categoria_3: form.id_categoria_3 ? Number(form.id_categoria_3) : null,
       id_marca: Number(form.id_marca),
     };
     if (!editando) {
       payload.id_proveedores = proveedoresSeleccionados.map((p) => p.id_proveedor);
-      payload.presentaciones = presentacionesValidas.map((p) => ({
-        nombre_presentacion: p.nombre_presentacion.trim(),
-        factor_conversion: Number(p.factor_conversion),
-      }));
     }
+    payload.presentaciones = presentacionesForm;
     try {
       const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const data = await res.json();
       if (!res.ok) { setFormError(data.error || "Error al guardar"); }
-      else { cerrarModal(); cargarProductos(); showToast(editando ? "Producto actualizado ✓" : "Producto creado ✓", "ok"); }
+      else if (creacionRapida) {
+        setModalOpen(false);
+        creacionRapida.onCreado(Number(data.id_producto));
+      } else {
+        setModalOpen(false); setEditando(null); resetExtras();
+        cargarProductos(); showToast(editando ? "Producto actualizado ✓" : "Producto creado ✓", "ok");
+      }
     } catch { setFormError("No se pudo conectar con el servidor"); }
     finally { setSaving(false); }
   };
@@ -392,11 +442,11 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
     () =>
       productos.filter((p) => {
         if (soloActivos && !p.estado_producto) return false;
-        if (filtroCategoria && String(p.id_categoria) !== filtroCategoria) return false;
+        if (filtroCategoria && ![p.id_categoria, p.id_categoria_2, p.id_categoria_3].some((id) => String(id) === filtroCategoria)) return false;
         if (filtroMarca && String(p.id_marca) !== filtroMarca) return false;
         if (filtroExentoIva && !p.exento_iva) return false;
         if (filtroCaducidad && !p.caducidad) return false;
-        return matchesQuery(busqueda, p.nombre_producto, p.codigo_producto, p.nombre_categoria, p.nombre_marca);
+        return matchesQuery(busqueda, p.nombre_producto, p.codigo_producto, p.nombre_categoria, p.nombre_categoria_2, p.nombre_categoria_3, p.nombre_marca);
       }),
     [productos, busqueda, soloActivos, filtroCategoria, filtroMarca, filtroExentoIva, filtroCaducidad]
   );
@@ -408,6 +458,7 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
 
   return (
     <>
+      {!creacionRapida && <>
       {/* ── Barra de búsqueda + acciones ── */}
       <div style={s.toolbar}>
         <input
@@ -471,7 +522,7 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
                         {p.exento_iva && <span style={{ ...s.badge, background: "rgba(88,166,255,.15)", color: "var(--blue)", borderColor: "rgba(88,166,255,.3)" }}>Exento IVA</span>}
                       </div>
                     </td>
-                    <td style={s.td}>{p.nombre_categoria}</td>
+                    <td style={s.td}>{[p.nombre_categoria, p.nombre_categoria_2, p.nombre_categoria_3].filter(Boolean).join(" · ")}</td>
                     <td style={s.td}>{p.nombre_marca}</td>
                     <td style={s.td}>{p.unidad_medida}</td>
                     <td style={{ ...s.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{p.precio_unitario ? `Q${Number(p.precio_unitario).toFixed(2)}` : "—"}</td>
@@ -595,10 +646,8 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
               </select>
 
               <label style={s.drawerLabel}>Marca</label>
-              <select value={filtroMarca} onChange={(e) => setFiltroMarca(e.target.value)} style={s.input} aria-label="Filtrar por marca">
-                <option value="">Todas las marcas</option>
-                {marcas.map((m) => <option key={m.id_marca} value={m.id_marca}>{m.nombre_marca}</option>)}
-              </select>
+              <MarcaAutocompletar marcas={marcas} value={filtroMarca} onChange={setFiltroMarca} style={s.input}
+                ariaLabel="Filtrar por marca" opcional textoSinSeleccion="Todas las marcas" />
 
               <label style={s.drawerLabel}>Estado</label>
               <label style={s.checkLabel}>
@@ -624,6 +673,7 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
         </>
       )}
 
+      </>}
       {/* ── Modal Crear / Editar producto ── */}
       {modalOpen && (
         <div
@@ -643,6 +693,10 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
           onClick={(e) => { if (e.target === e.currentTarget) cerrarModal(); }}
         >
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={tituloModal}
+            onKeyDown={(e)=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();cerrarModal();}}}
             style={{
               ...s.modal,
               backgroundColor: "var(--surface)", // Fondo blanco sólido
@@ -658,12 +712,14 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
             }}
           >
             <div style={{ ...s.modalHeader, padding: "1.25rem 1.5rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <h2 style={{ ...s.modalTitle, margin: 0, color: "var(--text)" }}>
+              <h2 id={tituloModal} style={{ ...s.modalTitle, margin: 0, color: "var(--text)" }}>
                 {editando ? "Editar producto" : "Nuevo producto"}
               </h2>
               <button 
                 type="button" 
                 onClick={cerrarModal} 
+                aria-label="Cerrar producto"
+                disabled={saving || guardandoCategoria || guardandoMarca || guardandoProveedor}
                 style={{ ...s.closeBtn, color: "var(--text)", background: "transparent", border: "none", cursor: "pointer" }}
               >
                 ✕
@@ -673,6 +729,8 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
               <div style={s.fila}>
                 <Field label="Código *" style={{ flex: "0 0 140px" }}>
                   <input 
+                    aria-label="Código del producto"
+                    maxLength={50}
                     style={{ ...s.input, backgroundColor: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)" }} 
                     value={form.codigo_producto} 
                     onChange={(e) => setForm(f => ({ ...f, codigo_producto: e.target.value }))} 
@@ -682,6 +740,8 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
                 </Field>
                 <Field label="Nombre del producto *" style={{ flex: 1 }}>
                   <input 
+                    aria-label="Nombre del producto"
+                    maxLength={200}
                     style={{ ...s.input, backgroundColor: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)" }} 
                     value={form.nombre_producto} 
                     onChange={(e) => setForm(f => ({ ...f, nombre_producto: e.target.value }))} 
@@ -690,30 +750,64 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
                 </Field>
               </div>
               <div style={s.fila}>
-                <Field label="Categoría *" style={{ flex: 1 }}>
-                  <select 
-                    style={{ ...s.input, backgroundColor: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)" }} 
-                    value={form.id_categoria} 
-                    onChange={(e) => setForm(f => ({ ...f, id_categoria: e.target.value }))}
-                  >
-                    <option value="">— Selecciona —</option>
-                    {categorias.map((c) => <option key={c.id_categoria} value={c.id_categoria}>{c.nombre_categoria}</option>)}
-                  </select>
-                </Field>
+                {([
+                  { key: "id_categoria", label: "Categoría principal *", numero: 1 },
+                  { key: "id_categoria_2", label: "Categoría 2 (opcional)", numero: 2 },
+                  { key: "id_categoria_3", label: "Categoría 3 (opcional)", numero: 3 },
+                ] as const).map(({ key, label, numero }) => (
+                  <Field key={key} label={label} style={{ flex: "1 1 170px" }}>
+                    <CategoriaAutocompletar
+                      ariaLabel={label} style={s.input} value={form[key]} disabled={saving || guardandoCategoria}
+                      opcional={numero !== 1}
+                      categorias={categorias.filter((c) => !["id_categoria", "id_categoria_2", "id_categoria_3"].some((otra) => otra !== key && form[otra as typeof key] === String(c.id_categoria)))}
+                      onChange={(id) => setForm((f) => ({ ...f, [key]: id }))}
+                    />
+                    <button type="button" style={s.btnSecondary} disabled={saving || guardandoCategoria}
+                      onClick={() => { setCategoriaDestino(key); setCreandoCategoria(true); setNuevaCategoriaNombre(""); setErrorCategoria(""); }}>
+                      + Crear categoría {numero}
+                    </button>
+                  </Field>
+                ))}
+              </div>
+              {creandoCategoria && (
+                <div style={{ padding: "0.75rem", border: "1px solid var(--border)", borderRadius: 8 }}>
+                  <Field label={"Nueva categoría para " + (categoriaDestino === "id_categoria" ? "categoría principal" : categoriaDestino === "id_categoria_2" ? "categoría 2" : "categoría 3")}>
+                    <input aria-label="Nombre de nueva categoría" style={s.input} maxLength={100} value={nuevaCategoriaNombre}
+                      onChange={(e) => setNuevaCategoriaNombre(e.target.value)} disabled={guardandoCategoria}
+                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); if (!guardandoCategoria) guardarCategoriaNueva(); } }} />
+                  </Field>
+                  {errorCategoria && <p role="alert" style={s.formError}>{errorCategoria}</p>}
+                  <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem" }}>
+                    <button type="button" onClick={guardarCategoriaNueva} disabled={guardandoCategoria} style={s.btnSave}>{guardandoCategoria ? "Creando…" : "Crear categoría"}</button>
+                    <button type="button" onClick={() => setCreandoCategoria(false)} disabled={guardandoCategoria} style={s.btnSecondary}>Cancelar categoría</button>
+                  </div>
+                </div>
+              )}
+              <div style={s.fila}>
                 <Field label="Marca *" style={{ flex: 1 }}>
-                  <select 
-                    style={{ ...s.input, backgroundColor: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)" }} 
-                    value={form.id_marca} 
-                    onChange={(e) => setForm(f => ({ ...f, id_marca: e.target.value }))}
-                  >
-                    <option value="">— Selecciona —</option>
-                    {marcas.map((m) => <option key={m.id_marca} value={m.id_marca}>{m.nombre_marca}</option>)}
-                  </select>
+                  <MarcaAutocompletar marcas={marcas} style={s.input} value={form.id_marca} disabled={saving || guardandoMarca}
+                    onChange={(id) => setForm((f) => ({ ...f, id_marca: id }))} />
+                  <button type="button" onClick={() => { setCreandoMarca(true); setNuevaMarcaNombre(""); setErrorMarca(""); }} disabled={saving || guardandoMarca} style={s.btnSecondary}>+ Crear marca</button>
                 </Field>
               </div>
+              {creandoMarca && (
+                <div style={{ padding: "0.75rem", border: "1px solid var(--border)", borderRadius: 8 }}>
+                  <Field label="Nueva marca">
+                    <input aria-label="Nombre de nueva marca" style={s.input} maxLength={100} value={nuevaMarcaNombre}
+                      onChange={(e) => setNuevaMarcaNombre(e.target.value)} disabled={guardandoMarca}
+                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); if (!guardandoMarca) guardarMarcaNueva(); } }} />
+                  </Field>
+                  {errorMarca && <p role="alert" style={s.formError}>{errorMarca}</p>}
+                  <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem" }}>
+                    <button type="button" onClick={guardarMarcaNueva} disabled={guardandoMarca} style={s.btnSave}>{guardandoMarca ? "Creando…" : "Crear marca"}</button>
+                    <button type="button" onClick={() => setCreandoMarca(false)} disabled={guardandoMarca} style={s.btnSecondary}>Cancelar marca</button>
+                  </div>
+                </div>
+              )}
               <div style={s.fila}>
                 <Field label="Precio unitario" style={{ flex: 1 }}>
                   <input 
+                    aria-label="Precio unitario"
                     style={{ ...s.input, backgroundColor: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)" }} 
                     type="number" 
                     step="0.01" 
@@ -725,6 +819,7 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
                 </Field>
                 <Field label="Precio mayoreo" style={{ flex: 1 }}>
                   <input 
+                    aria-label="Precio mayoreo"
                     style={{ ...s.input, backgroundColor: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)" }} 
                     type="number" 
                     step="0.01" 
@@ -736,13 +831,25 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
                 </Field>
                 <Field label="Unidad de medida *" style={{ flex: 1 }}>
                   <input 
+                    aria-label="Unidad de medida"
+                    disabled={saving || presentacionesCargando || !!presentacionesError}
                     style={{ ...s.input, backgroundColor: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)" }} 
                     value={form.unidad_medida} 
                     onChange={(e) => setForm(f => ({ ...f, unidad_medida: e.target.value }))} 
-                    placeholder="libra, litro, unidad…" 
+                    placeholder="libra, botella, unidad…"
                   />
                 </Field>
               </div>
+              <p style={{ fontSize: "0.78rem", color: "var(--muted)", margin: 0 }}>
+                Los líquidos se venden por botella. Registra cada tamaño (800 ml, 1 L, etc.) como un producto distinto; las cajas agrupan botellas del mismo producto.
+              </p>
+              {cambiaUnidad && (
+                <p role="status" style={{ fontSize: "0.82rem", color: "var(--muted)", margin: 0 }}>
+                  Al guardar se corregirá la unidad de {editando.unidad_medida} a {form.unidad_medida || "la nueva unidad"}.
+                  Las cantidades y los precios actuales se conservan: por ejemplo, 10 {editando.unidad_medida} pasarán a ser 10 {form.unidad_medida || "unidades"}.
+                  Selecciona las presentaciones de la nueva unidad. Las anteriores quedarán inactivas y conservarán sus referencias históricas.
+                </p>
+              )}
               <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap", marginTop: "0.25rem", color: "var(--text)" }}>
                 <CheckField label="Producto con fecha de caducidad" checked={form.caducidad} onChange={(v) => setForm(f => ({ ...f, caducidad: v }))} />
                 <CheckField label="Exento de IVA" checked={form.exento_iva} onChange={(v) => setForm(f => ({ ...f, exento_iva: v }))} />
@@ -750,7 +857,7 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
               </div>
               {form.caducidad && (
                 <Field label="Fecha de caducidad" style={{ maxWidth: 220 }}>
-                  <input style={s.input} type="date" value={form.fecha_caducidad} onChange={(e) => setForm(f => ({ ...f, fecha_caducidad: e.target.value }))} />
+                  <input aria-label="Fecha de caducidad del producto" style={s.input} type="date" value={form.fecha_caducidad} onChange={(e) => setForm(f => ({ ...f, fecha_caducidad: e.target.value }))} />
                   <span style={{ fontSize: "0.72rem", color: "var(--muted)" }}>Referencia general del producto (no por lote).</span>
                 </Field>
               )}
@@ -810,32 +917,27 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
                     )}
                   </div>
 
-                  {/* ── Presentaciones por mayor ── */}
-                  <div style={{ borderTop: "1px solid var(--border)", paddingTop: "1rem" }}>
-                    <label style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)", letterSpacing: "0.04em", textTransform: "uppercase" }}>
-                      Presentaciones por mayor {liquidoRequiereCaja ? "(obligatoria para líquidos)" : "(opcional)"}
-                    </label>
-                    <p style={{ fontSize: "0.78rem", color: "var(--muted)", margin: "0.3rem 0 0.6rem" }}>Ej. &quot;Caja de 24&quot; = 24 unidades base, &quot;Saco de 50&quot; = 50 libras base.</p>
-                    {presentacionesForm.map((p, idx) => (
-                      <div key={idx} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem", alignItems: "center" }}>
-                        <input style={{ ...s.input, flex: "1 1 200px" }} value={p.nombre_presentacion} onChange={(e) => actualizarPresentacion(idx, "nombre_presentacion", e.target.value)} placeholder="Ej: Caja de 24" />
-                        <input style={{ ...s.input, width: 170 }} type="number" min="0" step="1" value={p.factor_conversion} onChange={(e) => actualizarPresentacion(idx, "factor_conversion", e.target.value)} placeholder="Cantidad de unidades base" />
-                        <button type="button" onClick={() => quitarPresentacionFila(idx)} style={s.btnDel} title="Quitar"><Icon name="trash" size={14} /></button>
-                      </div>
-                    ))}
-                    <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-                      <button type="button" onClick={() => agregarFilaPresentacion()} style={s.btnSecondary}>+ Agregar presentación</button>
-                      {liquidoRequiereCaja && <button type="button" onClick={() => agregarFilaPresentacion("Caja")} style={s.btnSecondary}>+ Agregar caja</button>}
-                      {esLibra && <button type="button" onClick={() => agregarFilaPresentacion("Saco")} style={s.btnSecondary}>+ Agregar saco</button>}
-                    </div>
-                  </div>
                 </>
               )}
-              {formError && <p style={s.formError}>{formError}</p>}
+              {presentacionesCargando && <p role="status">Cargando presentaciones…</p>}
+              {presentacionesError && (
+                <div role="alert" style={s.formError}>
+                  {presentacionesError}
+                  <button type="button" onClick={() => setReintentoPresentaciones((v) => v + 1)} style={s.btnSecondary}>Reintentar carga</button>
+                </div>
+              )}
+              <PresentacionesProducto
+                key={editando?.id_producto ?? "nuevo"}
+                unidad={form.unidad_medida}
+                value={presentacionesForm}
+                onChange={setPresentacionesForm}
+                disabled={saving || presentacionesCargando || !!presentacionesError}
+              />
+              {formError && <p role="alert" style={s.formError}>{formError}</p>}
             </div>
             <div style={{ ...s.modalFooter, padding: "1rem 1.5rem", display: "flex", justifyContent: "flex-end", gap: "0.75rem", borderTop: "1px solid var(--border)" }}>
-              <button type="button" onClick={cerrarModal} style={s.btnSecondary} disabled={saving}>Cancelar</button>
-              <button type="button" onClick={handleGuardar} style={s.btnSecondary} disabled={saving}>{saving ? "Guardando…" : editando ? "Guardar cambios" : "Crear producto"}</button>
+              <button type="button" onClick={cerrarModal} style={s.btnSecondary} disabled={saving || guardandoCategoria || guardandoMarca || guardandoProveedor}>Cancelar</button>
+              <button type="button" onClick={handleGuardar} style={s.btnSecondary} disabled={saving || guardandoCategoria || guardandoMarca || guardandoProveedor || presentacionesCargando || !!presentacionesError}>{saving ? "Guardando…" : editando ? "Guardar cambios" : "Crear producto"}</button>
             </div>
           </div>
         </div>

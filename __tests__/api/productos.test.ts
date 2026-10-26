@@ -98,6 +98,41 @@ describe("POST /api/productos", () => {
     expect(data.error).toBe("Faltan campos obligatorios");
   });
 
+  it.each(["litro", "ml", "GALÓN"])("requires bottles instead of volume unit %s", async (unidad_medida) => {
+    const res = await POST(createMockRequest("/api/productos", {
+      method: "POST", user: testUserDueno,
+      body: { codigo_producto: "ACE-800", nombre_producto: "Aceite 800 ml", unidad_medida, id_categoria: 1, id_marca: 1 },
+    }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toContain("botella");
+    expect(mockPool.connect).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { id_categoria_2: null, id_categoria_3: null },
+    { id_categoria_2: 2, id_categoria_3: 3 },
+    { id_categoria_2: null, id_categoria_3: 3 },
+  ])("creates a product with optional categories", async (extras) => {
+    mockPool.connect.mockResolvedValue(mockClient);
+    mockClient.query.mockResolvedValue({ rows: [{ id_producto: 99 }] });
+    const res = await POST(createMockRequest("/api/productos", {
+      method: "POST", user: testUserDueno,
+      body: { codigo_producto: "NEW", nombre_producto: "Test", unidad_medida: "unidad", id_categoria: 1, id_marca: 1, ...extras },
+    }));
+    expect(res.status).toBe(201);
+    const insert = mockClient.query.mock.calls.find(([sql]) => sql.includes("INSERT INTO producto ("));
+    expect(insert[1].slice(11)).toEqual([extras.id_categoria_2, extras.id_categoria_3]);
+  });
+
+  it("rejects repeating the primary category in an optional slot", async () => {
+    const res = await POST(createMockRequest("/api/productos", {
+      method: "POST", user: testUserDueno,
+      body: { codigo_producto: "NEW", nombre_producto: "Test", unidad_medida: "unidad", id_categoria: 1, id_marca: 1, id_categoria_2: 1 },
+    }));
+    expect(res.status).toBe(400);
+    expect(mockPool.connect).not.toHaveBeenCalled();
+  });
+
 it("returns 201 on success", async () => {
   mockPool.connect.mockResolvedValue(mockClient);
 
