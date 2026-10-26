@@ -43,8 +43,8 @@ export default function LoginPage() {
         setError(data.error || "Error al iniciar sesión");
         return;
       }
-      // Solo los colaboradores pasan por el código de 2FA. El dueño
-      // entra directo con el AUTH_COOKIE que ya viene en la respuesta.
+      // Solo los colaboradores pasan por el código de 2FA. El dueño y el
+      // bodeguero entran directo con el AUTH_COOKIE que ya viene en la respuesta.
       if (data.requiere_verificacion) {
         setPreToken(data.pre_token);
         setCorreoEnmascarado(data.correo_enmascarado || "");

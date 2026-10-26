@@ -109,11 +109,18 @@ describeIfDb("Crédito en ventas (integración)", () => {
       { numero: 2, fecha_vencimiento: sumarDias(fechaFactura, 30), monto: 60 },
     ]);
 
-    const venta = (await pool.query(`SELECT * FROM venta WHERE id_venta=$1`, [data.id_venta])).rows[0];
+    const venta = (
+      await pool.query(
+        `SELECT *, TO_CHAR(fecha_venta, 'YYYY-MM-DD') AS fecha_venta_dia FROM venta WHERE id_venta=$1`,
+        [data.id_venta]
+      )
+    ).rows[0];
     expect(venta.condicion_pago).toBe("CREDITO");
     expect(venta.estado_venta).toBe("CONFIRMADO");
     expect(Number(venta.total)).toBe(120);
-    expect(venta.fecha_venta.toISOString().slice(0, 10)).toBe(fechaFactura);
+    // Comparar el día tal como quedó en la base: fecha_venta es TIMESTAMP sin
+    // zona horaria y toISOString() puede correrlo un día según la zona de Node.
+    expect(venta.fecha_venta_dia).toBe(fechaFactura);
 
     const factura = (await pool.query(`SELECT * FROM factura WHERE id_venta=$1`, [data.id_venta])).rows[0];
     expect(factura.nit_cliente).toBe("1234567-8");

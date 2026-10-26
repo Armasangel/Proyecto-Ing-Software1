@@ -55,20 +55,12 @@ describe("LoginPage", () => {
     });
   });
 
-  it("redirects to dashboard after successful login and code verification", async () => {
+  it("el dueño entra directo al dashboard, sin pedir código", async () => {
     server.use(
       rest.post("/api/login", (_req, res, ctx) =>
         res(ctx.json({
           ok: true,
-          requiere_verificacion: true,
-          pre_token: "pre-token-abc",
-          correo_enmascarado: "du***@tienda.com",
-        }))
-      ),
-      rest.post("/api/login/verificar-codigo", (_req, res, ctx) =>
-        res(ctx.json({
-          ok: true,
-          token: "abc",
+          requiere_verificacion: false,
           usuario: { id_usuario: 1, nombre: "Juan", correo: "dueno@tienda.com", tipo_usuario: "DUENO" },
         }))
       )
@@ -79,16 +71,10 @@ describe("LoginPage", () => {
     await user.type(screen.getByPlaceholderText("••••••••"), "password123");
     await user.click(screen.getByRole("button", { name: /ingresar al sistema/i }));
 
-    // Paso 2: ahora debe pedir el código de verificación.
-    await waitFor(() => {
-      expect(screen.getByPlaceholderText("000000")).toBeInTheDocument();
-    });
-    await user.type(screen.getByPlaceholderText("000000"), "123456");
-    await user.click(screen.getByRole("button", { name: /verificar y entrar/i }));
-
     await waitFor(() => {
       expect(mockPush).toHaveBeenCalledWith("/dashboard");
     });
+    expect(screen.queryByPlaceholderText("000000")).not.toBeInTheDocument();
   });
 
   it("redirects to /ventas after successful login and code verification for empleado", async () => {
@@ -133,7 +119,7 @@ describe("LoginPage", () => {
           ok: true,
           requiere_verificacion: true,
           pre_token: "pre-token-abc",
-          correo_enmascarado: "du***@tienda.com",
+          correo_enmascarado: "em***@tienda.com",
         }))
       ),
       rest.post("/api/login/verificar-codigo", (_req, res, ctx) =>
@@ -142,7 +128,7 @@ describe("LoginPage", () => {
     );
     const user = userEvent.setup();
     render(<LoginPage />);
-    await user.type(screen.getByPlaceholderText("usuario@tienda.com"), "dueno@tienda.com");
+    await user.type(screen.getByPlaceholderText("usuario@tienda.com"), "empleado@tienda.com");
     await user.type(screen.getByPlaceholderText("••••••••"), "password123");
     await user.click(screen.getByRole("button", { name: /ingresar al sistema/i }));
 

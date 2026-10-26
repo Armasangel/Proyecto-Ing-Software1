@@ -44,6 +44,7 @@ describeIfDb("Descuentos en ventas (integración)", () => {
         body: {
           id_cliente: cliente,
           tipo_entrega: "EN_TIENDA",
+          condicion_pago: "CONTADO",
           lineas: [{ id_producto: idProducto, id_bodega: idBodega, cantidad: 10, precio_unitario_venta: 10 }],
           ...body,
         },

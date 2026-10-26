@@ -95,13 +95,22 @@ CREATE TABLE cliente (
     correo          VARCHAR(200),
     telefono        VARCHAR(20),
     tipo_cliente    VARCHAR(20)     NOT NULL DEFAULT 'MINORISTA'
-                        CHECK (tipo_cliente IN ('MINORISTA', 'MAYORISTA')),
+                        CHECK (tipo_cliente IN ('MINORISTA', 'MAYORISTA', 'EMPRESA', 'GOBIERNO')),
     estado_cliente  BOOLEAN         NOT NULL DEFAULT TRUE,
     nit_cliente     VARCHAR(20)     NOT NULL DEFAULT 'CF',
     limite_deuda    NUMERIC(12,2),
     es_consumidor_final BOOLEAN      NOT NULL DEFAULT FALSE,
-    CONSTRAINT uq_cliente_correo UNIQUE (correo)
+    direccion       VARCHAR(255),
+    codigo_postal   VARCHAR(10),
+    codigo_cliente  VARCHAR(20),
+    CONSTRAINT uq_cliente_correo UNIQUE (correo),
+    CONSTRAINT uq_cliente_codigo UNIQUE (codigo_cliente)
 );
+
+-- Secuencia para los codigos autogenerados CLI-00001, CLI-00002, ...
+CREATE SEQUENCE cliente_codigo_seq
+    START WITH 1
+    INCREMENT BY 1;
 
 -- DESCUENTO (migración 09): regla configurable por el dueño con uno o más
 -- tramos por cantidad de unidades. El tipo es solo una etiqueta de UI; el
@@ -134,7 +143,7 @@ CREATE TABLE descuento_asignacion (
     id_asignacion       SERIAL          PRIMARY KEY,
     id_descuento        INT             NOT NULL REFERENCES descuento(id_descuento) ON DELETE CASCADE,
     id_cliente          INT             REFERENCES cliente(id_cliente) ON DELETE CASCADE,
-    tipo_cliente        VARCHAR(20)     CHECK (tipo_cliente IN ('MINORISTA', 'MAYORISTA')),
+    tipo_cliente        VARCHAR(20)     CHECK (tipo_cliente IN ('MINORISTA', 'MAYORISTA', 'EMPRESA', 'GOBIERNO')),
     CONSTRAINT chk_asignacion_uno CHECK (
         (id_cliente IS NOT NULL AND tipo_cliente IS NULL) OR
         (id_cliente IS NULL AND tipo_cliente IS NOT NULL)
@@ -762,6 +771,33 @@ INSERT INTO cliente (nombre, correo, telefono, tipo_cliente) VALUES
   ('Distribuidora Sol','ventas@disol.com',          '50205556666', 'MAYORISTA'),
   ('Ana Morales',      'ana.morales@gmail.com',     '50207778888', 'MINORISTA')
 ON CONFLICT (correo) DO NOTHING;
+
+-- Backfill de codigos para los clientes sembrados (mismo criterio que
+-- migrations/12_cliente_codigo.sql) y ajuste de la secuencia para que los
+-- proximos codigos autogenerados no repitan ninguno.
+UPDATE cliente c
+SET codigo_cliente = 'CLI-' || LPAD(rn::text, 5, '0')
+FROM (
+    SELECT id_cliente, ROW_NUMBER() OVER (ORDER BY id_cliente) AS rn
+    FROM cliente
+) t
+WHERE c.id_cliente = t.id_cliente
+  AND c.codigo_cliente IS NULL;
+
+SELECT setval(
+    'cliente_codigo_seq',
+    GREATEST(
+        COALESCE(
+            (
+                SELECT MAX(substring(codigo_cliente from '[0-9]+$')::bigint)
+                FROM cliente
+                WHERE codigo_cliente ~ '[0-9]+$'
+            ),
+            0
+        ),
+        1
+    )
+);
 
 -- ── Generación de ventas de prueba (últimos 365 días) ───────────────────
 -- Solo corre si todavía no hay ventas, para poder re-ejecutar el archivo
