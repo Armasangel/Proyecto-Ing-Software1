@@ -4,6 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import { StaffShell } from "@/components/StaffShell";
 import { useStaffSession } from "@/hooks/useStaffSession";
 import { matchesQuery, paginar, PaginationBar, type PageSize } from "@/lib/ui-table";
+import {
+  ETIQUETAS_TIPO_DOCUMENTO,
+  TIPOS_DOCUMENTO,
+  etiquetaTipoDocumento,
+  type TipoDocumento,
+} from "@/lib/tipos-documento";
 
 type Venta = {
   id_venta: number;
@@ -12,8 +18,11 @@ type Venta = {
   estado_venta: string;
   nombre: string;
   correo: string;
+  codigo_cliente?: string | null;
+  nit_cliente?: string | null;
   id_factura: number | null;
   numero_factura: string | null;
+  tipo_documento?: string | null;
   total_factura: number | null;
 };
 
@@ -34,10 +43,13 @@ type FacturaDetalle = {
   estado_venta: string;
   nombre: string;
   correo: string;
+  codigo_cliente?: string | null;
   id_factura: number;
   numero_factura: string;
+  tipo_documento?: string | null;
   nombre_cliente: string;
   nit_cliente: string;
+  direccion_cliente?: string | null;
   total_factura: number;
   productos: ProductoFactura[];
 };
@@ -55,6 +67,12 @@ export default function FacturacionPage() {
   const [facturaDetalle, setFacturaDetalle] = useState<FacturaDetalle | null>(null);
   const [cargandoDetalle, setCargandoDetalle] = useState(false);
   const [errorDetalle, setErrorDetalle] = useState("");
+
+  // Tipo de documento elegido para emitir cada venta (Factura / Factura
+  // cambiaria). Sin elección explícita, se emite una Factura normal.
+  const [tipoDocumentoEmitir, setTipoDocumentoEmitir] = useState<
+    Record<number, TipoDocumento>
+  >({});
 
   // Búsqueda, filtros y paginación de la tabla
   const [q, setQ] = useState("");
@@ -85,7 +103,7 @@ export default function FacturacionPage() {
       if (filtroEstado && v.estado_venta !== filtroEstado) return false;
       if (filtroFactura === "facturadas" && !v.numero_factura) return false;
       if (filtroFactura === "sin_facturar" && v.numero_factura) return false;
-      return matchesQuery(q, v.nombre, v.correo, v.numero_factura, v.id_venta);
+      return matchesQuery(q, v.nombre, v.codigo_cliente, v.correo, v.numero_factura, v.id_venta);
     });
   }, [ventas, q, filtroEstado, filtroFactura]);
 
@@ -98,17 +116,19 @@ export default function FacturacionPage() {
     return <p className="p-8 text-ink-muted">Cargando…</p>;
   }
 
-  async function emitirFactura(id_venta: number, nombre: string) {
+  async function emitirFactura(id_venta: number, tipo_documento: TipoDocumento) {
     setCargando(true);
     setMensaje("");
     const res = await fetch("/api/facturacion", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id_venta, nombre_cliente: nombre }),
+      body: JSON.stringify({ id_venta, tipo_documento }),
     });
     const data = await res.json();
     if (res.ok) {
-      setMensaje(`Factura ${data.numero_factura} emitida correctamente`);
+      setMensaje(
+        `${etiquetaTipoDocumento(data.tipo_documento)} ${data.numero_factura} emitida correctamente`
+      );
       const updated = await fetch("/api/facturacion").then((r) => r.json());
       setVentas(updated.ventas || []);
     } else {
@@ -161,7 +181,7 @@ export default function FacturacionPage() {
               type="search"
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Buscar por cliente, correo o factura…"
+              placeholder="Buscar por cliente, código, correo o factura…"
               aria-label="Buscar en facturación"
               className={`${inputClsTabla} flex-1 min-w-[220px]`}
             />
@@ -198,6 +218,7 @@ export default function FacturacionPage() {
                   <th className="px-3.5 py-2.5 text-left text-[0.82rem] font-semibold text-white">Fecha</th>
                   <th className="px-3.5 py-2.5 text-left text-[0.82rem] font-semibold text-white">Total</th>
                   <th className="px-3.5 py-2.5 text-left text-[0.82rem] font-semibold text-white">Estado</th>
+                  <th className="px-3.5 py-2.5 text-left text-[0.82rem] font-semibold text-white">Documento</th>
                   <th className="px-3.5 py-2.5 text-left text-[0.82rem] font-semibold text-white"># Factura</th>
                   <th className="px-3.5 py-2.5 text-left text-[0.82rem] font-semibold text-white">Acción</th>
                 </tr>
@@ -205,17 +226,25 @@ export default function FacturacionPage() {
               <tbody>
                 {ventasPage.slice.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-3.5 py-8 text-center text-ink-muted">
+                    <td colSpan={8} className="px-3.5 py-8 text-center text-ink-muted">
                       {q.trim() || filtroEstado || filtroFactura !== "todas"
                         ? "Ningún resultado para esa búsqueda o filtro."
                         : "No hay ventas registradas."}
                     </td>
                   </tr>
                 ) : (
-                  ventasPage.slice.map((v, i) => (
+                  ventasPage.slice.map((v, i) => {
+                    const tipoElegido =
+                      tipoDocumentoEmitir[v.id_venta] ?? "FACTURA";
+                    return (
                     <tr key={v.id_venta} className={i % 2 === 0 ? "bg-cream/40" : "bg-white"}>
                       <td className="px-3.5 py-2.5 border-b border-[var(--border)] text-ink-muted">{v.id_venta}</td>
-                      <td className="px-3.5 py-2.5 border-b border-[var(--border)] text-ink">{v.nombre}</td>
+                      <td className="px-3.5 py-2.5 border-b border-[var(--border)] text-ink">
+                        {v.codigo_cliente ? (
+                          <span className="text-ink-muted mr-1.5">{v.codigo_cliente}</span>
+                        ) : null}
+                        {v.nombre}
+                      </td>
                       <td className="px-3.5 py-2.5 border-b border-[var(--border)] text-ink-muted">
                         {new Date(v.fecha_venta).toLocaleDateString("es-GT")}
                       </td>
@@ -229,16 +258,40 @@ export default function FacturacionPage() {
                           {v.estado_venta}
                         </span>
                       </td>
+                      <td className="px-3.5 py-2.5 border-b border-[var(--border)] text-ink-muted">
+                        {v.tipo_documento
+                          ? etiquetaTipoDocumento(v.tipo_documento)
+                          : "—"}
+                      </td>
                       <td className="px-3.5 py-2.5 border-b border-[var(--border)] text-ink-muted">{v.numero_factura || "—"}</td>
                       <td className="px-3.5 py-2.5 border-b border-[var(--border)]">
                         {!v.id_factura ? (
-                          <button
-                            onClick={() => emitirFactura(v.id_venta, v.nombre)}
-                            disabled={cargando}
-                            className="px-3 py-1.5 rounded-control bg-market text-white border-none text-[0.85rem] font-medium transition-transform active:scale-[0.97] hover:brightness-110 disabled:opacity-60"
-                          >
-                            Emitir
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <select
+                              value={tipoElegido}
+                              onChange={(e) =>
+                                setTipoDocumentoEmitir((prev) => ({
+                                  ...prev,
+                                  [v.id_venta]: e.target.value as TipoDocumento,
+                                }))
+                              }
+                              aria-label={`Tipo de documento de la venta ${v.id_venta}`}
+                              className={`${inputClsTabla} py-1.5 text-[0.85rem]`}
+                            >
+                              {TIPOS_DOCUMENTO.map((t) => (
+                                <option key={t} value={t}>
+                                  {ETIQUETAS_TIPO_DOCUMENTO[t]}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              onClick={() => emitirFactura(v.id_venta, tipoElegido)}
+                              disabled={cargando}
+                              className="px-3 py-1.5 rounded-control bg-market text-white border-none text-[0.85rem] font-medium transition-transform active:scale-[0.97] hover:brightness-110 disabled:opacity-60"
+                            >
+                              Emitir
+                            </button>
+                          </div>
                         ) : (
                           <button
                             onClick={() => verFactura(v.id_venta)}
@@ -250,7 +303,8 @@ export default function FacturacionPage() {
                         )}
                       </td>
                     </tr>
-                  ))
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -271,7 +325,9 @@ export default function FacturacionPage() {
             <div id="factura-print-area">
               <div className="flex items-start justify-between mb-5">
                 <div>
-                  <h2 className="text-lg font-bold text-ink">Factura {facturaDetalle.numero_factura}</h2>
+                  <h2 className="text-lg font-bold text-ink">
+                    {etiquetaTipoDocumento(facturaDetalle.tipo_documento || "FACTURA")} {facturaDetalle.numero_factura}
+                  </h2>
                   <p className="text-ink-muted text-sm">
                     {new Date(facturaDetalle.fecha_venta).toLocaleDateString("es-GT")}
                   </p>
@@ -285,7 +341,13 @@ export default function FacturacionPage() {
                 <p className="text-ink">
                   <span className="font-semibold">Cliente:</span> {facturaDetalle.nombre_cliente}
                 </p>
+                {facturaDetalle.codigo_cliente && (
+                  <p className="text-ink-muted">Código: {facturaDetalle.codigo_cliente}</p>
+                )}
                 <p className="text-ink-muted">NIT: {facturaDetalle.nit_cliente}</p>
+                {facturaDetalle.direccion_cliente && (
+                  <p className="text-ink-muted">Dirección: {facturaDetalle.direccion_cliente}</p>
+                )}
                 <p className="text-ink-muted">{facturaDetalle.correo}</p>
               </div>
 

@@ -37,7 +37,10 @@ export function ClientesDeudasTab({ data }: { data: EstadisticasData }) {
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontWeight: 500, fontSize: "0.85rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.nombre}</div>
-                    <div style={{ fontSize: "0.72rem", color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.correo}</div>
+                    <div style={{ fontSize: "0.72rem", color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {c.codigo_cliente ? `${c.codigo_cliente} · ` : ""}
+                      {c.correo}
+                    </div>
                   </div>
                   <div style={{ textAlign: "right", flexShrink: 0 }}>
                     <div style={{ fontSize: "0.88rem", fontWeight: 700, color: "var(--text)", fontVariantNumeric: "tabular-nums" }}>{q(c.total_compras)}</div>
@@ -69,6 +72,7 @@ export function ClientesDeudasTab({ data }: { data: EstadisticasData }) {
                       </td>
                       <td style={s.td}>
                         <div style={{ fontWeight: 500, fontSize: "0.85rem" }}>{d.nombre}</div>
+                        {d.codigo_cliente && <div style={{ fontSize: "0.72rem", color: "var(--muted)" }}>{d.codigo_cliente}</div>}
                         {d.telefono && <div style={{ fontSize: "0.72rem", color: "var(--muted)" }}>{d.telefono}</div>}
                       </td>
                       <td style={s.td}>

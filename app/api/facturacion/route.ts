@@ -5,6 +5,7 @@ import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { isStaffTipo } from "@/lib/roles";
 import { apiError, unauthorizedError, validationError, tooManyRequestsError } from "@/lib/api-error";
 import { rateLimit, getClientKey } from "@/lib/rateLimit";
+import { esTipoDocumento, prefijoTipoDocumento, type TipoDocumento } from "@/lib/tipos-documento";
 
 export async function GET(req: NextRequest) {
   const usuario = getUsuarioFromRequest(req);
@@ -21,8 +22,12 @@ export async function GET(req: NextRequest) {
         v.estado_venta,
         c.nombre,
         c.correo,
+        c.codigo_cliente,
+        c.nit_cliente,
         f.id_factura,
         f.numero_factura,
+        f.tipo_documento,
+        f.direccion_cliente,
         f.total_factura
       FROM venta v
       JOIN cliente c ON c.id_cliente = v.id_cliente
@@ -52,14 +57,27 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { id_venta, nombre_cliente, nit_cliente } = await req.json();
+    const { id_venta, tipo_documento } = await req.json();
 
     if (!id_venta) {
       return validationError("id_venta es requerido");
     }
 
+    const tipoDocumento: TipoDocumento =
+      tipo_documento === undefined || tipo_documento === null
+        ? "FACTURA"
+        : tipo_documento;
+    if (!esTipoDocumento(tipoDocumento)) {
+      return validationError("tipo_documento debe ser FACTURA o FACTURA_CAMBIARIA");
+    }
+
+    // Los datos del documento salen del cliente guardado, no del body: así la
+    // factura cambiaria siempre usa el NIT y la dirección ampliados reales.
     const venta = await pool.query(
-      `SELECT total FROM venta WHERE id_venta = $1`,
+      `SELECT v.total, c.nombre, c.nit_cliente, c.direccion
+       FROM venta v
+       JOIN cliente c ON c.id_cliente = v.id_cliente
+       WHERE v.id_venta = $1`,
       [id_venta]
     );
 
@@ -67,13 +85,41 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Venta no encontrada" }, { status: 404 });
     }
 
-    const total = venta.rows[0].total;
+    const cliente = venta.rows[0];
+    const nombreCliente = cliente.nombre || "Consumidor Final";
+    const nitCliente = (cliente.nit_cliente || "CF").trim() || "CF";
+    const direccionCliente =
+      typeof cliente.direccion === "string" ? cliente.direccion.trim() : "";
+
+    if (tipoDocumento === "FACTURA_CAMBIARIA") {
+      if (nitCliente.toUpperCase() === "CF") {
+        return validationError(
+          "La factura cambiaria requiere que el cliente tenga un NIT registrado"
+        );
+      }
+      if (!direccionCliente) {
+        return validationError(
+          "La factura cambiaria requiere que el cliente tenga una dirección registrada"
+        );
+      }
+    }
 
     const facturaResult = await pool.query(
-      `INSERT INTO factura (id_venta, numero_factura, nombre_cliente, nit_cliente, total_factura)
-       VALUES ($1, 'FACT-' || LPAD(nextval('factura_numero_seq')::text, 6, '0'), $2, $3, $4)
+      `INSERT INTO factura
+         (id_venta, numero_factura, tipo_documento, nombre_cliente, nit_cliente,
+          direccion_cliente, total_factura)
+       VALUES ($1, $2 || '-' || LPAD(nextval('factura_numero_seq')::text, 6, '0'),
+               $3, $4, $5, $6, $7)
        RETURNING id_factura, numero_factura`,
-      [id_venta, nombre_cliente || "Consumidor Final", nit_cliente || "CF", total]
+      [
+        id_venta,
+        prefijoTipoDocumento(tipoDocumento),
+        tipoDocumento,
+        nombreCliente,
+        nitCliente,
+        direccionCliente || null,
+        venta.rows[0].total,
+      ]
     );
 
     await pool.query(
@@ -85,6 +131,10 @@ export async function POST(req: NextRequest) {
       ok: true,
       id_factura: facturaResult.rows[0].id_factura,
       numero_factura: facturaResult.rows[0].numero_factura,
+      tipo_documento: tipoDocumento,
+      nombre_cliente: nombreCliente,
+      nit_cliente: nitCliente,
+      direccion_cliente: direccionCliente || null,
     });
   } catch (error) {
     return apiError("FACTURACION POST", error);

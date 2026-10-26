@@ -10,11 +10,37 @@ export const mockCliente = {
   nombre: "Carlos Ruiz",
   correo: "carlos@email.com",
   tipo_cliente: "MINORISTA",
+  codigo_cliente: "CLI-00001",
+  nit_cliente: "1234567-8",
+  telefono: "55551234",
+  direccion: "1a. calle 10-20, zona 1",
 };
 
 export const mockClientes = [
   mockCliente,
-  { id_cliente: 2, nombre: "Ana García", correo: "ana@email.com", tipo_cliente: "MAYORISTA" },
+  {
+    id_cliente: 2,
+    nombre: "Ana García",
+    correo: "ana@email.com",
+    tipo_cliente: "MAYORISTA",
+    codigo_cliente: "CLI-00002",
+    nit_cliente: "CF",
+    telefono: "55559999",
+    direccion: "5a. avenida 3-45, zona 10",
+  },
+  // Registro genérico "Consumidor Final": sin correo y marcado con la bandera
+  // que usa la UI para fijarlo en el dropdown y bloquearle el crédito.
+  {
+    id_cliente: 3,
+    nombre: "Consumidor Final",
+    correo: null,
+    tipo_cliente: "MINORISTA",
+    es_consumidor_final: true,
+    codigo_cliente: "CLI-00003",
+    nit_cliente: "CF",
+    telefono: null,
+    direccion: null,
+  },
 ];
 
 export const mockCategorias = [

@@ -100,8 +100,8 @@ export default function EstadisticasPage() {
       exportData.top_productos.forEach((p) => rows.push([p.nombre_producto, p.codigo_producto, p.nombre_categoria, p.nombre_marca, p.total_unidades, p.total_ingresos, p.veces_vendido]));
 
       addSection("Top clientes");
-      rows.push(["Nombre", "Correo", "Total compras", "Cantidad pedidos"]);
-      exportData.top_clientes.forEach((c) => rows.push([c.nombre, c.correo, c.total_compras, c.cantidad_pedidos]));
+      rows.push(["Nombre", "Código", "Correo", "Total compras", "Cantidad pedidos"]);
+      exportData.top_clientes.forEach((c) => rows.push([c.nombre, c.codigo_cliente ?? "", c.correo, c.total_compras, c.cantidad_pedidos]));
 
       addSection("Ingresos por categoría");
       rows.push(["Categoría", "Ingresos", "Unidades"]);

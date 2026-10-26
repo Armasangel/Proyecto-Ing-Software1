@@ -99,8 +99,50 @@ CREATE TABLE cliente (
     estado_cliente  BOOLEAN         NOT NULL DEFAULT TRUE,
     nit_cliente     VARCHAR(20)     NOT NULL DEFAULT 'CF',
     limite_deuda    NUMERIC(12,2),
+    es_consumidor_final BOOLEAN      NOT NULL DEFAULT FALSE,
     CONSTRAINT uq_cliente_correo UNIQUE (correo)
 );
+
+-- DESCUENTO (migración 09): regla configurable por el dueño con uno o más
+-- tramos por cantidad de unidades. El tipo es solo una etiqueta de UI; el
+-- cálculo SIEMPRE usa los tramos (ver lib/descuentos.ts).
+CREATE TABLE descuento (
+    id_descuento        SERIAL          PRIMARY KEY,
+    nombre              VARCHAR(150)    NOT NULL,
+    tipo                VARCHAR(20)     NOT NULL DEFAULT 'PORCENTAJE'
+                            CHECK (tipo IN ('PORCENTAJE', 'CANTIDAD', 'ESCALA')),
+    activo              BOOLEAN         NOT NULL DEFAULT TRUE,
+    creado_en           TIMESTAMP       NOT NULL DEFAULT NOW(),
+    actualizado_en      TIMESTAMP       NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_descuento_nombre UNIQUE (nombre)
+);
+
+-- DESCUENTO_TRAMO: desde `cantidad_desde` unidades (inclusive) aplica
+-- `porcentaje`. Gana el tramo de mayor cantidad_desde que no supere la cantidad.
+CREATE TABLE descuento_tramo (
+    id_tramo            SERIAL          PRIMARY KEY,
+    id_descuento        INT             NOT NULL REFERENCES descuento(id_descuento) ON DELETE CASCADE,
+    cantidad_desde      NUMERIC(12,3)   NOT NULL CHECK (cantidad_desde >= 0),
+    porcentaje          NUMERIC(5,2)    NOT NULL CHECK (porcentaje >= 0 AND porcentaje <= 100),
+    CONSTRAINT uq_descuento_tramo_desde UNIQUE (id_descuento, cantidad_desde)
+);
+
+CREATE INDEX idx_descuento_tramo_regla ON descuento_tramo (id_descuento, cantidad_desde);
+
+-- DESCUENTO_ASIGNACION: un cliente puntual O un tipo de cliente, nunca ambos.
+CREATE TABLE descuento_asignacion (
+    id_asignacion       SERIAL          PRIMARY KEY,
+    id_descuento        INT             NOT NULL REFERENCES descuento(id_descuento) ON DELETE CASCADE,
+    id_cliente          INT             REFERENCES cliente(id_cliente) ON DELETE CASCADE,
+    tipo_cliente        VARCHAR(20)     CHECK (tipo_cliente IN ('MINORISTA', 'MAYORISTA')),
+    CONSTRAINT chk_asignacion_uno CHECK (
+        (id_cliente IS NOT NULL AND tipo_cliente IS NULL) OR
+        (id_cliente IS NULL AND tipo_cliente IS NOT NULL)
+    )
+);
+
+CREATE INDEX idx_descuento_asignacion_regla   ON descuento_asignacion (id_descuento);
+CREATE INDEX idx_descuento_asignacion_cliente ON descuento_asignacion (id_cliente);
 
 -- USUARIO
 CREATE TABLE usuario (
@@ -342,6 +384,9 @@ CREATE TABLE venta (
     -- factura + cuenta por cobrar (tabla deuda) con plan de cuotas.
     condicion_pago      VARCHAR(10)     NOT NULL DEFAULT 'CONTADO'
                             CHECK (condicion_pago IN ('CONTADO', 'CREDITO')),
+    -- migración 09: total de descuento otorgado (suma de las líneas). `total`
+    -- ya viene NETO (con el descuento restado).
+    descuento_total     NUMERIC(12,2)   NOT NULL DEFAULT 0,
     CONSTRAINT fk_venta_cliente   FOREIGN KEY (id_cliente)  REFERENCES cliente(id_cliente),
     CONSTRAINT fk_venta_empleado  FOREIGN KEY (id_empleado) REFERENCES usuario(id_usuario),
     CONSTRAINT chk_direccion      CHECK (tipo_entrega = 'EN_TIENDA' OR direccion_entrega IS NOT NULL)
@@ -359,9 +404,17 @@ CREATE TABLE detalle_venta (
     cantidad            NUMERIC(12,3)   NOT NULL,
     precio_unitario     NUMERIC(10,2)   NOT NULL,
     subtotal            NUMERIC(12,2)   NOT NULL,
+    -- migración 09: snapshot del descuento aplicado a la línea. subtotal queda
+    -- NETO. id_descuento es solo referencia; el nombre se copia para que editar
+    -- o borrar la regla no altere el historial.
+    descuento_porcentaje NUMERIC(5,2)   NOT NULL DEFAULT 0,
+    descuento_monto      NUMERIC(12,2)  NOT NULL DEFAULT 0,
+    id_descuento         INT,
+    descuento_nombre     VARCHAR(150),
     CONSTRAINT fk_dv_venta    FOREIGN KEY (id_venta)    REFERENCES venta(id_venta) ON DELETE CASCADE,
     CONSTRAINT fk_dv_producto FOREIGN KEY (id_producto) REFERENCES producto(id_producto),
-    CONSTRAINT fk_dv_bodega   FOREIGN KEY (id_bodega)   REFERENCES bodega(id_bodega)
+    CONSTRAINT fk_dv_bodega   FOREIGN KEY (id_bodega)   REFERENCES bodega(id_bodega),
+    CONSTRAINT fk_dv_descuento FOREIGN KEY (id_descuento) REFERENCES descuento(id_descuento) ON DELETE SET NULL
 );
 
 -- PAGO
@@ -386,8 +439,13 @@ CREATE TABLE factura (
     id_factura      SERIAL          PRIMARY KEY,
     id_venta        INT             NOT NULL,
     numero_factura  VARCHAR(50)     NOT NULL,
+    -- migraci�n 13: FACTURA o FACTURA_CAMBIARIA. La cambiaria usa los datos
+    -- ampliados del cliente (NIT y direcci�n).
+    tipo_documento  VARCHAR(20)     NOT NULL DEFAULT 'FACTURA'
+                        CHECK (tipo_documento IN ('FACTURA', 'FACTURA_CAMBIARIA')),
     nombre_cliente  VARCHAR(150),
     nit_cliente     VARCHAR(20)     NOT NULL DEFAULT 'CF',
+    direccion_cliente VARCHAR(255),
     total_factura   NUMERIC(12,2)   NOT NULL,
     CONSTRAINT uq_factura_numero UNIQUE (numero_factura),
     CONSTRAINT uq_factura_venta  UNIQUE (id_venta),

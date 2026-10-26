@@ -98,7 +98,7 @@ describe("StaffShell", () => {
     // Reportes es exclusivo del dueño: el colaborador lo pisaba y terminaba
     // devuelto a /ventas por useDuenoSession.
     expect(screen.queryByText("Reportes")).not.toBeInTheDocument();
-    expect(screen.getByRole('link',{name:'Entrada'})).toBeInTheDocument();
+    expect(screen.queryByText("Crear registros")).not.toBeInTheDocument();
   });
 
   it("shows the role badge for dueno", () => {

@@ -47,6 +47,7 @@ export type EstadisticasData = {
     nombre: string;
     correo: string;
     tipo_usuario: string;
+    codigo_cliente?: string | null;
     total_compras: number;
     cantidad_pedidos: number;
   }[];
@@ -78,6 +79,7 @@ export type EstadisticasData = {
       id_cliente: number | null;
       nombre: string;
       telefono: string | null;
+      codigo_cliente?: string | null;
       limite_deuda: number | null;
       puede_comprar: boolean | null;
       deuda_pendiente: number;

@@ -2,9 +2,11 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { StaffShell } from "@/components/StaffShell";
+import { ClienteAutocompletar } from "@/components/ClienteAutocompletar";
 import { useStaffSession } from "@/hooks/useStaffSession";
 import { matchesQuery, paginar, PaginationBar, type PageSize } from "@/lib/ui-table";
 import { reglaDePago, type ReglaPago } from "@/lib/credito";
+import { ETIQUETAS_TIPO_CLIENTE, TIPOS_CLIENTE, etiquetaTipoCliente } from "@/lib/tipos-cliente";
 
 type ProductoDeuda = {
   unidad_medida?: string;
@@ -85,6 +87,10 @@ type Cliente = {
   tipo_cliente: string;
   estado_cliente: boolean;
   limite_deuda: string | null;
+  nit_cliente?: string | null;
+  codigo_postal?: string | null;
+  direccion?: string | null;
+  codigo_cliente?: string | null;
 };
 
 type Alerta = {
@@ -109,7 +115,17 @@ const clienteFormVacio = {
   tipo_cliente: "MINORISTA",
   limite_deuda: "",
   deuda_inicial: "",
+  nit_cliente: "",
+  codigo_postal: "",
+  direccion: "",
+  codigo_cliente: "",
 };
+
+// Mismos límites que las columnas de la tabla cliente (valida también el API).
+const NIT_MAX = 20;
+const CODIGO_POSTAL_MAX = 10;
+const DIRECCION_MAX = 255;
+const CODIGO_CLIENTE_MAX = 20;
 
 /**
  * Clases Tailwind reutilizables (DEV-192). Reemplazan a los antiguos helpers
@@ -300,9 +316,8 @@ export default function CuentasPorCobrarPage() {
   const [guardandoPago, setGuardandoPago] = useState(false);
   const [errorPago, setErrorPago] = useState("");
 
-  // Búsqueda/autocompletar cliente en "Nueva deuda"
-  const [busquedaCliente, setBusquedaCliente] = useState("");
-  const [sugerenciasAbiertas, setSugerenciasAbiertas] = useState(false);
+  // Búsqueda/autocompletar cliente en "Nueva deuda" — el texto vive dentro
+  // del componente ClienteAutocompletar; acá solo queda el cliente elegido.
 
   // Notificaciones automáticas de deuda (pestaña "Notificaciones")
   const [notifConfig, setNotifConfig] = useState<{ activo: boolean; intervalo_dias: number } | null>(null);
@@ -453,15 +468,8 @@ export default function CuentasPorCobrarPage() {
       .reduce((acc, d) => acc + Number(d.monto_total), 0);
   }
 
-  const clientesFiltrados =
-    busquedaCliente.trim() === ""
-      ? []
-      : clientes.filter((c) => c.nombre.toLowerCase().includes(busquedaCliente.trim().toLowerCase()));
-
   function seleccionarCliente(c: Cliente) {
     setForm((f) => ({ ...f, id_cliente: String(c.id_cliente) }));
-    setBusquedaCliente(c.nombre);
-    setSugerenciasAbiertas(false);
   }
 
   async function crearCliente(): Promise<Cliente | null> {
@@ -481,6 +489,27 @@ export default function CuentasPorCobrarPage() {
       setError("El saldo inicial debe ser un número mayor a 0");
       return null;
     }
+    if (formCliente.nit_cliente.trim().length > NIT_MAX) {
+      setError(`El NIT no puede superar los ${NIT_MAX} caracteres`);
+      return null;
+    }
+    if (formCliente.codigo_postal.trim().length > CODIGO_POSTAL_MAX) {
+      setError(`El código postal no puede superar los ${CODIGO_POSTAL_MAX} caracteres`);
+      return null;
+    }
+    if (formCliente.direccion.trim().length > DIRECCION_MAX) {
+      setError(`La dirección no puede superar los ${DIRECCION_MAX} caracteres`);
+      return null;
+    }
+    const codigoCliente = formCliente.codigo_cliente.trim().toUpperCase();
+    if (codigoCliente.length > CODIGO_CLIENTE_MAX) {
+      setError(`El código del cliente no puede superar los ${CODIGO_CLIENTE_MAX} caracteres`);
+      return null;
+    }
+    if (codigoCliente && !/^[A-Z0-9][A-Z0-9._-]*$/.test(codigoCliente)) {
+      setError("El código del cliente solo puede tener letras, números, guiones, puntos o guiones bajos");
+      return null;
+    }
 
     setGuardandoCliente(true);
     setError("");
@@ -493,6 +522,10 @@ export default function CuentasPorCobrarPage() {
         correo: formCliente.correo,
         tipo_cliente: formCliente.tipo_cliente,
         limite_deuda: limiteInicial,
+        nit_cliente: formCliente.nit_cliente.trim(),
+        codigo_postal: formCliente.codigo_postal.trim(),
+        direccion: formCliente.direccion.trim(),
+        codigo_cliente: codigoCliente,
       }),
     });
     if (!res.ok) {
@@ -640,7 +673,7 @@ export default function CuentasPorCobrarPage() {
   const clientesFiltradosLimites = useMemo(() => {
     return clientes.filter((c) => {
       if (soloBloqueados && c.estado_cliente) return false;
-      return matchesQuery(qLimites, c.nombre, c.telefono, c.correo);
+      return matchesQuery(qLimites, c.nombre, c.codigo_cliente, c.telefono, c.correo, c.nit_cliente, c.direccion, c.codigo_postal);
     });
   }, [clientes, qLimites, soloBloqueados]);
   const clientesPage = useMemo(
@@ -663,7 +696,6 @@ export default function CuentasPorCobrarPage() {
   function cerrarFormularioDeuda() {
     setCreando(false);
     setForm(formVacio);
-    setBusquedaCliente("");
   }
 
   // Saldo anterior: cliente + monto, sin productos. Es lo que el cliente ya
@@ -826,10 +858,47 @@ export default function CuentasPorCobrarPage() {
             value={formCliente.tipo_cliente}
             onChange={(e) => setFormCliente({ ...formCliente, tipo_cliente: e.target.value })}
           >
-            <option value="MINORISTA">Minorista</option>
-            <option value="MAYORISTA">Mayorista</option>
+            {TIPOS_CLIENTE.map((t) => (
+              <option key={t} value={t}>
+                {ETIQUETAS_TIPO_CLIENTE[t]}
+              </option>
+            ))}
           </select>
         </div>
+        <div className="flex gap-2 mb-2">
+          <input
+            className={`${cls.input} w-full`}
+            placeholder="NIT (opcional, vacío = CF)"
+            aria-label="NIT del cliente"
+            value={formCliente.nit_cliente}
+            onChange={(e) => setFormCliente({ ...formCliente, nit_cliente: e.target.value })}
+            maxLength={NIT_MAX}
+          />
+          <input
+            className={`${cls.input} w-full`}
+            placeholder="Código postal (opcional)"
+            aria-label="Código postal del cliente"
+            value={formCliente.codigo_postal}
+            onChange={(e) => setFormCliente({ ...formCliente, codigo_postal: e.target.value })}
+            maxLength={CODIGO_POSTAL_MAX}
+          />
+        </div>
+        <input
+          className={`${cls.input} w-full mb-2`}
+          placeholder="Dirección (opcional)"
+          aria-label="Dirección del cliente"
+          value={formCliente.direccion}
+          onChange={(e) => setFormCliente({ ...formCliente, direccion: e.target.value })}
+          maxLength={DIRECCION_MAX}
+        />
+        <input
+          className={`${cls.input} w-full mb-2`}
+          placeholder="Código de cliente (opcional · vacío = se genera solo)"
+          aria-label="Código del cliente"
+          value={formCliente.codigo_cliente}
+          onChange={(e) => setFormCliente({ ...formCliente, codigo_cliente: e.target.value })}
+          maxLength={CODIGO_CLIENTE_MAX}
+        />
         <div className="flex gap-2 mb-2">
           <div className="flex-1">
             <label className="block mb-1 text-[0.8rem]">
@@ -987,45 +1056,16 @@ export default function CuentasPorCobrarPage() {
                 </label>
                 <div className="flex gap-2">
                   <div className="relative flex-1 isolate">
-                    <input
+                    <ClienteAutocompletar
+                      clientes={clientes}
+                      value={form.id_cliente}
+                      onChange={(id) => setForm((f) => ({ ...f, id_cliente: id }))}
+                      onSelect={seleccionarCliente}
+                      placeholder="Buscar cliente por código, nombre, NIT o teléfono…"
+                      ariaLabel="Buscar cliente"
                       className={`${cls.input} w-full`}
-                      placeholder="Escribe el nombre para buscar…"
-                      value={busquedaCliente}
-                      onChange={(e) => {
-                        setBusquedaCliente(e.target.value);
-                        setForm((f) => ({ ...f, id_cliente: "" }));
-                        setSugerenciasAbiertas(true);
-                      }}
-                      onFocus={() => setSugerenciasAbiertas(true)}
-                      onBlur={() => setTimeout(() => setSugerenciasAbiertas(false), 150)}
+                      mensajeVacio="Escribe el código o el nombre para buscar"
                     />
-                    {sugerenciasAbiertas && busquedaCliente.trim() !== "" && (
-                      <div className="absolute top-[calc(100%+2px)] left-0 right-0 bg-surface border border-line rounded-[14px] z-[100] max-h-[200px] overflow-y-auto shadow-[0_8px_20px_rgba(80,60,20,0.22)]">
-                        {clientesFiltrados.length === 0 && (
-                          <div className="px-[0.7rem] py-2 text-[0.85rem] text-ink-muted bg-surface">
-                            Sin resultados — probá &quot;+ Cliente nuevo&quot;.
-                          </div>
-                        )}
-                        {clientesFiltrados.slice(0, 8).map((c) => (
-                          <div
-                            key={c.id_cliente}
-                            onMouseDown={(e) => {
-                              // Sin esto, el navegador le quita el foco al
-                              // input ANTES de que corra este click
-                              // (mousedown ocurre antes del blur), lo que
-                              // dispara un blur real de más que compite con
-                              // el cierre del dropdown que ya hace
-                              // seleccionarCliente.
-                              e.preventDefault();
-                              seleccionarCliente(c);
-                            }}
-                            className="px-[0.7rem] py-[0.45rem] cursor-pointer text-[0.85rem] border-b border-line bg-surface"
-                          >
-                            {c.nombre} {c.estado_cliente ? "" : "(bloqueado)"}
-                          </div>
-                        ))}
-                      </div>
-                    )}
                   </div>
                   <button
                     onClick={() => setCreandoCliente((v) => !v)}
@@ -1042,14 +1082,16 @@ export default function CuentasPorCobrarPage() {
                 {creandoCliente &&
                   formularioClienteNuevo((nuevo) => {
                     setForm((f) => ({ ...f, id_cliente: String(nuevo.id_cliente) }));
-                    setBusquedaCliente(nuevo.nombre);
                     setCreandoCliente(false);
                   })}
 
                 {clienteSeleccionado && (
                   <p className="text-[0.82rem] mt-1">
-                    {clienteSeleccionado.telefono && <>Tel: {clienteSeleccionado.telefono} · </>}
-                    Saldo por cobrar actual: Q{deudaPendienteDe(clienteSeleccionado.id_cliente).toFixed(2)}
+                    <strong className="font-semibold">{clienteSeleccionado.codigo_cliente || "—"}</strong>
+                    {clienteSeleccionado.nit_cliente && <> · NIT {clienteSeleccionado.nit_cliente}</>}
+                    {clienteSeleccionado.direccion && <> · {clienteSeleccionado.direccion}</>}
+                    {clienteSeleccionado.telefono && <> · Tel: {clienteSeleccionado.telefono}</>}
+                    <> · Saldo por cobrar actual: Q{deudaPendienteDe(clienteSeleccionado.id_cliente).toFixed(2)}</>
                     {clienteSeleccionado.limite_deuda && (
                       <> / límite Q{Number(clienteSeleccionado.limite_deuda).toFixed(2)}</>
                     )}
@@ -1472,7 +1514,7 @@ export default function CuentasPorCobrarPage() {
               type="search"
               value={qLimites}
               onChange={(e) => setQLimites(e.target.value)}
-              placeholder="Buscar cliente por nombre, teléfono o correo…"
+              placeholder="Buscar cliente por nombre, código, teléfono, correo o NIT…"
               aria-label="Buscar clientes"
               className={`${cls.input} flex-[1_1_260px] min-w-[220px] w-auto`}
             />
@@ -1491,6 +1533,8 @@ export default function CuentasPorCobrarPage() {
               <thead>
                 <tr className="border-b-2 border-line text-left">
                   <th className={cls.td}>Cliente</th>
+                  <th className={cls.td}>NIT</th>
+                  <th className={cls.td}>Dirección</th>
                   <th className={cls.td}>Estado</th>
                   <th className={cls.td}>Saldo por cobrar</th>
                   <th className={cls.td}>Límite de crédito (Q)</th>
@@ -1502,8 +1546,25 @@ export default function CuentasPorCobrarPage() {
                   <tr key={c.id_cliente} className="border-b border-line">
                     <td className={cls.td}>
                       {c.nombre}
+                      <div className="text-ink-muted text-[0.78rem]">
+                        {c.codigo_cliente || "—"}
+                      </div>
                       {c.telefono && (
                         <div className="text-ink-muted text-[0.78rem]">{c.telefono}</div>
+                      )}
+                      {c.tipo_cliente && (
+                        <div className="text-ink-muted text-[0.78rem]">
+                          {etiquetaTipoCliente(c.tipo_cliente)}
+                        </div>
+                      )}
+                    </td>
+                    <td className={cls.td}>{c.nit_cliente || "CF"}</td>
+                    <td className={cls.td}>
+                      <div className={c.direccion ? "" : "text-ink-muted"}>
+                        {c.direccion || "—"}
+                      </div>
+                      {c.codigo_postal && (
+                        <div className="text-ink-muted text-[0.78rem]">CP {c.codigo_postal}</div>
                       )}
                     </td>
                     <td className={cls.td}>
@@ -1538,7 +1599,7 @@ export default function CuentasPorCobrarPage() {
                 ))}
                 {clientesPage.slice.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="p-6 text-center text-ink-muted">
+                    <td colSpan={7} className="p-6 text-center text-ink-muted">
                       {qLimites.trim() || soloBloqueados
                         ? "Ningún resultado para esa búsqueda o filtro."
                         : "No hay clientes registrados."}

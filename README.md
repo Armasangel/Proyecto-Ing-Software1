@@ -252,16 +252,33 @@ flujo (que exige confirmar por correo) es lo que levanta la marca.
 
 ### Despliegue: aplicar las migraciones
 
-Sobre una base ya inicializada hay que correr las dos:
+Sobre una base ya inicializada hay que correr (en orden):
 
 ```bash
 psql -U <usuario> -d <basedatos> -f migrations/06_seguridad_credenciales.sql
 psql -U <usuario> -d <basedatos> -f migrations/07_auditoria_credenciales.sql
+psql -U <usuario> -d <basedatos> -f migrations/09_descuentos.sql
+psql -U <usuario> -d <basedatos> -f migrations/11_cliente_datos_extra.sql
+psql -U <usuario> -d <basedatos> -f migrations/12_cliente_codigo.sql
+psql -U <usuario> -d <basedatos> -f migrations/13_factura_cambiaria.sql
 ```
 
-Ambas son idempotentes (se pueden correr más de una vez). Sólo aplican sobre
-bases ya inicializadas: en bases nuevas el esquema de `init/01_schema.sql` ya
-incluye estos cambios.
+Todas son idempotentes (se pueden correr más de una vez). Las 06/07/09 sólo
+aplican sobre bases ya inicializadas: en bases nuevas el esquema de
+`init/01_schema.sql` ya incluye estos cambios. La 11 (dirección, código postal y
+tipos de cliente EMPRESA/GOBIERNO) y la 12 (código de cliente) hay que correrlas
+también en bases nuevas, porque todavía no forman parte del esquema base. La 13
+(factura cambiaria) ya está incluida en `init/01_schema.sql`.
+
+La 13 agrega `factura.tipo_documento` (FACTURA o FACTURA_CAMBIARIA) y
+`factura.direccion_cliente` (snapshot de la dirección del cliente al emitir).
+La factura cambiaria usa el NIT y la dirección ampliados del cliente y lleva
+el prefijo `FCAM-` en su número correlativo.
+
+La 12 agrega `cliente.codigo_cliente` (código corto y único del cliente, ej.
+`CLI-00001`), la secuencia `cliente_codigo_seq` que genera el correlativo
+cuando el cliente se registra sin código, y le asigna un código a los clientes
+que ya existían.
 
 ### Marcas y categorías desde el producto
 
@@ -638,6 +655,7 @@ una vista propia tras el login (`lib/roles.ts` → `postLoginPath`):
 | Historial de ventas | `/historial-ventas` | ✅ | — | — |
 | Cuentas por cobrar (deudas) | `/cuentas-por-cobrar` | ✅ | — | — |
 | Proveedores | `/proveedores` | ✅ | — | — |
+| Descuentos | `/descuentos` | ✅ | — | — |
 | Usuarios | `/usuarios` | ✅ | — | — |
 | Bitácora de acceso | `/usuarios` (panel) | ✅ | — | — |
 | Pedidos asignados | `/bodega` → Pedidos | — | — | ✅ |
@@ -695,7 +713,22 @@ una vista propia tras el login (`lib/roles.ts` → `postLoginPath`):
 - [x] Registro de ventas con descuento transaccional de stock (concurrencia segura)
 - [x] Facturación con número correlativo atómico (secuencia de Postgres)
 - [x] Historial de ventas con filtros y paginación
-- [x] Gestión de clientes (minorista / mayorista) con límite de deuda y bloqueo automático
+- [x] Gestión de clientes (minorista, mayorista, empresa o gobierno) con NIT,
+      dirección y código postal, código único (CLI-00001), límite de deuda y
+      bloqueo automático
+- [x] Código de cliente visible en órdenes, ventas, historial, facturas y
+      reportes, con autocompletado por código, nombre, NIT, teléfono o correo
+      que rellena nombre, NIT y dirección
+
+### Descuentos
+- [x] Descuentos configurables por el dueño: por porcentaje, por cantidad o por escala de tramos
+- [x] Asignables a un cliente puntual o a un tipo de cliente (MINORISTA / MAYORISTA / EMPRESA / GOBIERNO)
+- [x] Se aplican por línea al registrar la venta (el servidor recalcula; la UI solo previsualiza)
+- [x] Snapshot por línea en el historial (editar o borrar la regla no altera ventas pasadas)
+
+### Alta de registros
+- [x] Sección única (solo dueño) para crear clientes, productos, presentaciones,
+      categorías, marcas, proveedores, bodegas, usuarios y descuentos
 
 ### Cuentas por cobrar y pedidos
 - [x] Cuentas por cobrar por productos o monto libre, con alertas, límites y bloqueo automático
@@ -721,11 +754,13 @@ una vista propia tras el login (`lib/roles.ts` → `postLoginPath`):
 │   │   ├── facturacion/      → Facturas
 │   │   ├── deudas/           → Cuentas por cobrar (la API conserva /api/deudas)
 │   │   ├── ordenes/          → Pedidos de entrega
+│   │   ├── descuentos/       → Reglas de descuento y asignaciones (dueño) + aplicables
 │   │   ├── gestion-inventario/ → Kardex, ajustes, transferencias, stock mínimo
 │   │   ├── estadisticas/     → Reportes analíticos
 │   │   ├── clientes/ bodegas/ categorias/ marcas/ proveedores/ precios/
 │   │   ├── usuarios/ stats/ sesion/ historial-ventas/ health/ logout/
 │   ├── dashboard/            → Panel principal con KPIs
+│   ├── crear/                → Alta centralizada de registros (solo dueño)
 │   ├── inventario/           → Stock, entradas, transferencias, ajustes y bodegas
 │   ├── catalogo/             → Catálogo de productos (solo dueño)
 │   ├── productos/            → Catálogo maestro (precios y estados)
@@ -735,6 +770,7 @@ una vista propia tras el login (`lib/roles.ts` → `postLoginPath`):
 │   ├── cuentas-por-cobrar/   → Cuentas por cobrar y deudores (solo dueño)
 │   ├── ordenes/              → Pedidos de entrega (se crean desde Ventas)
 │   ├── proveedores/          → Gestión de proveedores
+│   ├── descuentos/           → Configuración de descuentos (solo dueño)
 │   ├── reportes/             → Estadísticas y reportes del negocio
 │   ├── usuarios/             → Gestión de usuarios y roles
 │   ├── login/                → Página de inicio de sesión
@@ -770,6 +806,7 @@ una vista propia tras el login (`lib/roles.ts` → `postLoginPath`):
 | http://localhost:3001 | Aplicación principal (redirige a /login) |
 | http://localhost:3001/login | Inicio de sesión |
 | http://localhost:3001/dashboard | Dashboard con KPIs |
+| http://localhost:3001/crear | Alta centralizada de registros (solo dueño) |
 | http://localhost:3001/api/health | Verificar conexión a PostgreSQL |
 | http://localhost:5050 | pgAdmin (sólo con `--profile tools`; credenciales en `.env`) |
 

@@ -8,9 +8,17 @@ import { isStaffTipo } from "@/lib/roles";
 import { Icon } from "@/components/Icon";
 import { CantidadInput } from "@/components/CantidadInput";
 import { ProductoAutocompletar } from "@/components/ProductoAutocompletar";
+import { ClienteAutocompletar } from "@/components/ClienteAutocompletar";
 import Link from "next/link";
 import { CUOTAS_MAXIMAS, PLAZO_MAXIMO_DIAS, generarCuotas, sumarDias, validarCondicionesCredito } from "@/lib/credito";
-import { etiquetaCliente, filtrarClientesPorTexto } from "@/lib/clientes-busqueda";
+import { elegirMejorDescuento, type Descuento as ReglaDescuento } from "@/lib/descuentos";
+import { ETIQUETAS_TIPO_CLIENTE, TIPOS_CLIENTE } from "@/lib/tipos-cliente";
+import {
+  ETIQUETAS_TIPO_DOCUMENTO,
+  TIPOS_DOCUMENTO,
+  etiquetaTipoDocumento,
+  type TipoDocumento,
+} from "@/lib/tipos-documento";
 
 type Cliente = {
   id_cliente: number;
@@ -20,6 +28,11 @@ type Cliente = {
   telefono?: string | null;
   limite_deuda?: string | null;
   total_ventas?: number;
+  es_consumidor_final?: boolean;
+  nit_cliente?: string | null;
+  codigo_postal?: string | null;
+  direccion?: string | null;
+  codigo_cliente?: string | null;
 };
 
 type Producto = {
@@ -84,6 +97,7 @@ type VentaListada = {
   estado_pedido?: string | null;
   nombre_cliente: string;
   correo_cliente: string;
+  codigo_cliente?: string | null;
   nombre_colaborador: string | null;
   productos: ProductoVentaRow[];
 };
@@ -128,8 +142,17 @@ const clienteFormVacio = {
   correo: "",
   tipo_cliente: "MINORISTA",
   limite_deuda: "",
+  nit_cliente: "",
+  codigo_postal: "",
+  direccion: "",
+  codigo_cliente: "",
 };
 const CORREO_VALIDO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// Mismos límites que las columnas de la tabla cliente (valida también el API).
+const NIT_MAX = 20;
+const CODIGO_POSTAL_MAX = 10;
+const DIRECCION_MAX = 255;
+const CODIGO_CLIENTE_MAX = 20;
 
 function nuevaLinea(): LineaVenta {
   return {
@@ -165,10 +188,6 @@ export default function VentasPage() {
   const [deshaciendo, setDeshaciendo] = useState(false);
 
   const [idCliente, setIdCliente] = useState("");
-  // Buscador de cliente: en vez de un <select> con todos los clientes, se
-  // sugieren de entrada los más frecuentes y se busca el resto por texto.
-  const [busquedaCliente, setBusquedaCliente] = useState("");
-  const [sugerenciasClienteAbiertas, setSugerenciasClienteAbiertas] = useState(false);
   // Alta rápida de cliente sin salir de Ventas
   const [creandoCliente, setCreandoCliente] = useState(false);
   const [formCliente, setFormCliente] = useState(clienteFormVacio);
@@ -182,7 +201,9 @@ export default function VentasPage() {
   const [fechaFactura, setFechaFactura] = useState("");
   const [plazoDias, setPlazoDias] = useState("30");
   const [numeroCuotas, setNumeroCuotas] = useState("1");
-  const [creditoGenerado, setCreditoGenerado] = useState<{ numero_factura: string; fecha_limite_pago: string; bloqueado: boolean } | null>(null);
+  // La factura cambiaria usa el NIT y la dirección registrados del cliente.
+  const [tipoDocumentoCredito, setTipoDocumentoCredito] = useState<TipoDocumento>("FACTURA");
+  const [creditoGenerado, setCreditoGenerado] = useState<{ numero_factura: string; tipo_documento?: string; fecha_limite_pago: string; bloqueado: boolean } | null>(null);
   const [tipoVenta, setTipoVenta] = useState<string>("MINORISTA");
   // El tipo de venta ya no lo escoge el colaborador a mano: se detecta solo
   // según el tipo_cliente que ya tiene guardado el cliente elegido. Este
@@ -195,6 +216,29 @@ export default function VentasPage() {
   // Presentaciones por producto, cargadas bajo demanda al elegir el producto
   // (undefined = sin cargar, [] = cargadas y sin presentaciones).
   const [presentacionesPorProducto, setPresentacionesPorProducto] = useState<Record<number, Presentacion[]>>({});
+  // Reglas de descuento que aplican al cliente elegido. Es SOLO para la vista
+  // previa; el servidor recalcula y aplica el descuento al registrar la venta.
+  const [descuentosAplicables, setDescuentosAplicables] = useState<ReglaDescuento[]>([]);
+
+  // Al cambiar el cliente se recargan las reglas de descuento que le tocan.
+  useEffect(() => {
+    if (!idCliente) {
+      setDescuentosAplicables([]);
+      return;
+    }
+    let cancelado = false;
+    fetch(`/api/descuentos/aplicables?id_cliente=${idCliente}`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => {
+        if (!cancelado) setDescuentosAplicables(d.descuentos || []);
+      })
+      .catch(() => {
+        if (!cancelado) setDescuentosAplicables([]);
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, [idCliente]);
 
   const cargarVentas = useCallback(async () => {
     setLoadingLista(true);
@@ -283,10 +327,14 @@ export default function VentasPage() {
       .slice(0, 5);
   }, [clientes]);
 
-  const clientesSugeridos = useMemo(() => {
-    if (busquedaCliente.trim() === "") return clientesDestacados;
-    return filtrarClientesPorTexto(clientes, busquedaCliente).slice(0, 8);
-  }, [busquedaCliente, clientes, clientesDestacados]);
+  // Sugerencias por defecto del buscador de cliente: el registro genérico
+  // "Consumidor Final" va siempre arriba (es para las ventas rápidas a personas
+  // que no quieren registrarse) y después los más frecuentes.
+  const sugeridosCliente = useMemo(() => {
+    const consumidorFinal = clientes.filter((c) => c.es_consumidor_final);
+    const resto = clientesDestacados.filter((c) => !c.es_consumidor_final);
+    return [...consumidorFinal, ...resto].slice(0, 6);
+  }, [clientes, clientesDestacados]);
 
   const stockDisponible = useCallback((idProducto: string, idBodega: string): number => {
     const idP = Number(idProducto);
@@ -316,7 +364,33 @@ export default function VentasPage() {
     return pres ? Number(pres.factor_conversion) || 1 : 1;
   }
 
-  const totalBorrador = useMemo(() => {
+  // Descuento de una línea (vista previa). Devuelve el bruto, el monto
+  // descontado, el porcentaje y el neto. El servidor recalcula al registrar.
+  function descuentoDeLinea(ln: LineaVenta): { bruto: number; monto: number; porcentaje: number; neto: number } {
+    const q = Number(ln.cantidad) * factorDeLinea(ln);
+    const pu = Number(ln.precio_unitario_venta);
+    if (!(q > 0) || !(pu >= 0) || Number.isNaN(q) || Number.isNaN(pu)) {
+      return { bruto: 0, monto: 0, porcentaje: 0, neto: 0 };
+    }
+    const bruto = Math.round(q * pu * 100) / 100;
+    const mejor = elegirMejorDescuento(q, bruto, descuentosAplicables);
+    const monto = mejor ? mejor.monto : 0;
+    return {
+      bruto,
+      monto,
+      porcentaje: mejor ? mejor.porcentaje : 0,
+      neto: Math.round((bruto - monto) * 100) / 100,
+    };
+  }
+
+  const descuentoBorrador = useMemo(() => {
+    let d = 0;
+    for (const ln of lineas) d += descuentoDeLinea(ln).monto;
+    return Math.round(d * 100) / 100;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lineas, presentacionesPorProducto, descuentosAplicables]);
+
+  const totalBrutoBorrador = useMemo(() => {
     let t = 0;
     for (const ln of lineas) {
       const q = Number(ln.cantidad) * factorDeLinea(ln);
@@ -329,13 +403,36 @@ export default function VentasPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lineas, presentacionesPorProducto]);
 
+  // Total de la venta NETO (con el descuento ya restado).
+  const totalBorrador = useMemo(
+    () => Math.round((totalBrutoBorrador - descuentoBorrador) * 100) / 100,
+    [totalBrutoBorrador, descuentoBorrador]
+  );
+
   // ── Crédito: fecha efectiva de la factura y vista previa del plan de pagos ──
   const fechaFacturaEfectiva = otraFechaFactura && fechaFactura ? fechaFactura : hoyLocalISO();
   const errorCredito = useMemo(() => {
     if (condicionPago !== "CREDITO") return null;
     if (otraFechaFactura && !fechaFactura) return "Elige la fecha de la factura";
+    if (tipoDocumentoCredito === "FACTURA_CAMBIARIA") {
+      const nit = (clienteSeleccionado?.nit_cliente || "").trim();
+      if (!nit || nit.toUpperCase() === "CF") {
+        return "La factura cambiaria requiere que el cliente tenga un NIT registrado";
+      }
+      if (!(clienteSeleccionado?.direccion || "").trim()) {
+        return "La factura cambiaria requiere que el cliente tenga una dirección registrada";
+      }
+    }
     return validarCondicionesCredito(Number(plazoDias), Number(numeroCuotas));
-  }, [condicionPago, otraFechaFactura, fechaFactura, plazoDias, numeroCuotas]);
+  }, [
+    condicionPago,
+    otraFechaFactura,
+    fechaFactura,
+    tipoDocumentoCredito,
+    clienteSeleccionado,
+    plazoDias,
+    numeroCuotas,
+  ]);
   const planCuotas = useMemo(() => {
     if (condicionPago !== "CREDITO" || errorCredito || totalBorrador <= 0) return [];
     try {
@@ -382,21 +479,34 @@ export default function VentasPage() {
   function onClienteChange(idStr: string) {
     setIdCliente(idStr);
     setError(null); setOkMsg(null);
+    const clienteElegido = clientes.find((c) => String(c.id_cliente) === idStr);
+    // Consumidor Final es un cliente anónimo: no hay a quién cobrarle, así
+    // que la venta queda a Contado (y el servidor además rechaza el crédito
+    // con este cliente). Se limpian también las condiciones de crédito.
+    if (clienteElegido?.es_consumidor_final) {
+      setCondicionPago("CONTADO");
+      setOtraFechaFactura(false);
+      setFechaFactura("");
+      setPlazoDias("30");
+      setNumeroCuotas("1");
+      setTipoDocumentoCredito("FACTURA");
+    }
     // Detección automática: el tipo de venta pasa a ser el tipo_cliente del
     // cliente elegido, a menos que el colaborador ya esté forzando otro tipo
     // a propósito.
     if (!forzarTipoVenta) {
-      const c = clientes.find((c) => String(c.id_cliente) === idStr);
-      const detectado = c?.tipo_cliente === "MAYORISTA" ? "MAYORISTA" : "MINORISTA";
+      const detectado = clienteElegido?.tipo_cliente === "MAYORISTA" ? "MAYORISTA" : "MINORISTA";
       setTipoVenta(detectado);
       aplicarPreciosPorTipo(detectado);
     }
   }
 
+  // Al elegir un cliente se rellenan sus datos: la dirección de la entrega
+  // toma la que tiene registrada (si tiene), y el NIT queda a la vista para
+  // que el collaborator vea con qué se va a facturar.
   function seleccionarCliente(c: Cliente) {
     onClienteChange(String(c.id_cliente));
-    setBusquedaCliente(etiquetaCliente(c));
-    setSugerenciasClienteAbiertas(false);
+    if (c.direccion) setDireccionEntrega(c.direccion);
   }
 
   async function crearCliente() {
@@ -419,6 +529,27 @@ export default function VentasPage() {
       setErrorCliente("El límite de crédito debe ser un número mayor o igual a 0");
       return;
     }
+    if (formCliente.nit_cliente.trim().length > NIT_MAX) {
+      setErrorCliente(`El NIT no puede superar los ${NIT_MAX} caracteres`);
+      return;
+    }
+    if (formCliente.codigo_postal.trim().length > CODIGO_POSTAL_MAX) {
+      setErrorCliente(`El código postal no puede superar los ${CODIGO_POSTAL_MAX} caracteres`);
+      return;
+    }
+    if (formCliente.direccion.trim().length > DIRECCION_MAX) {
+      setErrorCliente(`La dirección no puede superar los ${DIRECCION_MAX} caracteres`);
+      return;
+    }
+    const codigoCliente = formCliente.codigo_cliente.trim().toUpperCase();
+    if (codigoCliente.length > CODIGO_CLIENTE_MAX) {
+      setErrorCliente(`El código del cliente no puede superar los ${CODIGO_CLIENTE_MAX} caracteres`);
+      return;
+    }
+    if (codigoCliente && !/^[A-Z0-9][A-Z0-9._-]*$/.test(codigoCliente)) {
+      setErrorCliente("El código del cliente solo puede tener letras, números, guiones, puntos o guiones bajos");
+      return;
+    }
 
     setGuardandoCliente(true);
     setErrorCliente(null);
@@ -432,6 +563,10 @@ export default function VentasPage() {
           telefono: formCliente.telefono.trim(),
           tipo_cliente: formCliente.tipo_cliente,
           limite_deuda: limite,
+          nit_cliente: formCliente.nit_cliente.trim(),
+          codigo_postal: formCliente.codigo_postal.trim(),
+          direccion: formCliente.direccion.trim(),
+          codigo_cliente: codigoCliente,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -445,15 +580,18 @@ export default function VentasPage() {
       // Se deja seleccionado de una vez. onClienteChange no sirve acá porque
       // busca en `clientes`, que todavía no incluye al recién creado.
       setIdCliente(String(nuevo.id_cliente));
-      setBusquedaCliente(`${nuevo.nombre} (${nuevo.correo})`);
-      setSugerenciasClienteAbiertas(false);
+      if (nuevo.direccion) setDireccionEntrega(nuevo.direccion);
       if (!forzarTipoVenta) {
         const detectado = nuevo.tipo_cliente === "MAYORISTA" ? "MAYORISTA" : "MINORISTA";
         setTipoVenta(detectado);
         aplicarPreciosPorTipo(detectado);
       }
       setError(null);
-      setAvisoCliente(`Cliente "${nuevo.nombre}" creado y seleccionado ✓`);
+      setAvisoCliente(
+        `Cliente "${nuevo.nombre}" creado y seleccionado ✓${
+          nuevo.codigo_cliente ? ` · código ${nuevo.codigo_cliente}` : ""
+        }`
+      );
       setCreandoCliente(false);
       setFormCliente(clienteFormVacio);
     } catch {
@@ -465,8 +603,6 @@ export default function VentasPage() {
 
   function limpiarClienteSeleccionado() {
     setAvisoCliente(null);
-    setBusquedaCliente("");
-    setSugerenciasClienteAbiertas(false);
     onClienteChange("");
   }
 
@@ -499,7 +635,7 @@ export default function VentasPage() {
           id_cliente: Number(idCliente),
           condicion_pago: condicionPago,
           credito: condicionPago === "CREDITO"
-            ? { fecha_factura: fechaFacturaEfectiva, plazo_dias: Number(plazoDias), numero_cuotas: Number(numeroCuotas) }
+            ? { fecha_factura: fechaFacturaEfectiva, plazo_dias: Number(plazoDias), numero_cuotas: Number(numeroCuotas), tipo_documento: tipoDocumentoCredito }
             : undefined,
           tipo_venta: tipoVenta, forzar_tipo_venta: forzarTipoVenta, tipo_entrega: tipoEntrega,
           direccion_entrega: tipoEntrega === "DOMICILIO" ? direccionEntrega.trim() : undefined,
@@ -509,9 +645,10 @@ export default function VentasPage() {
       const data = await res.json();
       if (!res.ok) { setError(data.error || "No se pudo registrar la venta"); return; }
       if (data.credito) {
-        setOkMsg(`Venta #${data.id_venta} a crédito registrada. Total: Q${Number(data.total).toFixed(2)} · Factura ${data.credito.numero_factura}${data.id_orden ? ` · Pedido de entrega #${data.id_orden}` : ""}`);
+        setOkMsg(`Venta #${data.id_venta} a crédito registrada. Total: Q${Number(data.total).toFixed(2)} · ${etiquetaTipoDocumento(data.credito.tipo_documento || "FACTURA")} ${data.credito.numero_factura}${data.id_orden ? ` · Pedido de entrega #${data.id_orden}` : ""}`);
         setCreditoGenerado({
           numero_factura: data.credito.numero_factura,
+          tipo_documento: data.credito.tipo_documento,
           fecha_limite_pago: data.credito.fecha_limite_pago,
           bloqueado: !!data.credito.alerta?.bloqueado,
         });
@@ -521,7 +658,7 @@ export default function VentasPage() {
       }
       setVentaDeshacer({ id: data.id_venta, total: Number(data.total) });
       setSegundosRestantes(VENTANA_DESHACER_SEGUNDOS);
-      setIdCliente(""); setBusquedaCliente(""); setCondicionPago("CONTADO"); setOtraFechaFactura(false); setFechaFactura(""); setPlazoDias("30"); setNumeroCuotas("1"); setTipoVenta("MINORISTA"); setForzarTipoVenta(false); setTipoEntrega("EN_TIENDA");
+      setIdCliente(""); setCondicionPago("CONTADO"); setOtraFechaFactura(false); setFechaFactura(""); setPlazoDias("30"); setNumeroCuotas("1"); setTipoDocumentoCredito("FACTURA"); setTipoVenta("MINORISTA"); setForzarTipoVenta(false); setTipoEntrega("EN_TIENDA");
       setDireccionEntrega(""); setLineas([nuevaLinea()]);
       await cargarVentas();
     } catch { setError("No se pudo conectar con el servidor"); }
@@ -571,17 +708,21 @@ export default function VentasPage() {
             <div className="flex flex-col gap-1.5">
               <label className={labelCls}>Cliente *</label>
               <div className="relative">
-                <input
+                <ClienteAutocompletar
+                  clientes={clientes}
+                  sugeridos={sugeridosCliente}
+                  value={idCliente}
+                  onChange={onClienteChange}
+                  onSelect={seleccionarCliente}
+                  placeholder="Buscar cliente por código, nombre, NIT o teléfono…"
+                  ariaLabel="Buscar cliente"
                   className={inputCls}
-                  placeholder="Buscar cliente por nombre o correo…"
-                  value={busquedaCliente}
-                  onChange={(e) => {
-                    setBusquedaCliente(e.target.value);
-                    setSugerenciasClienteAbiertas(true);
-                    if (idCliente) onClienteChange("");
-                  }}
-                  onFocus={() => setSugerenciasClienteAbiertas(true)}
-                  onBlur={() => setTimeout(() => setSugerenciasClienteAbiertas(false), 150)}
+                  tituloSugeridos="Clientes frecuentes"
+                  detalle={(c) =>
+                    c.total_ventas
+                      ? `${c.total_ventas} ${c.total_ventas === 1 ? "venta" : "ventas"}`
+                      : null
+                  }
                 />
                 {idCliente && (
                   <button
@@ -594,41 +735,28 @@ export default function VentasPage() {
                     ✕
                   </button>
                 )}
-                {sugerenciasClienteAbiertas && (
-                  <div className="absolute z-20 top-[calc(100%+4px)] left-0 right-0 bg-white border border-[var(--border)] rounded-control shadow-warm max-h-56 overflow-y-auto">
-                    {busquedaCliente.trim() === "" && (
-                      <div className="px-3 py-1.5 text-[0.72rem] text-ink-muted uppercase tracking-wide">
-                        Clientes frecuentes
-                      </div>
-                    )}
-                    {clientesSugeridos.length === 0 && (
-                      <div className="px-3 py-2 text-[0.85rem] text-ink-muted">Sin resultados</div>
-                    )}
-                    {clientesSugeridos.map((c) => (
-                      <div
-                        key={c.id_cliente}
-                        onMouseDown={(e) => {
-                          // Sin esto, el navegador le quita el foco al input
-                          // ANTES de que corra este click (mousedown ocurre
-                          // antes del blur), lo que dispara un blur real de
-                          // más que compite con el cierre del dropdown que
-                          // ya hace seleccionarCliente.
-                          e.preventDefault();
-                          seleccionarCliente(c);
-                        }}
-                        className="px-3 py-2 text-[0.88rem] text-ink cursor-pointer hover:bg-cream/60 border-b border-[var(--border)] last:border-b-0 flex justify-between items-center gap-2"
-                      >
-                        <span>{etiquetaCliente(c)}</span>
-                        {!!c.total_ventas && (
-                          <span className="text-[0.72rem] text-ink-muted whitespace-nowrap">
-                            {c.total_ventas} venta{c.total_ventas === 1 ? "" : "s"}
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
+
+              {/* Datos del cliente elegido: el código con el que el negocio lo
+                  reconoce y los datos que se usan en la venta (el NIT va a la
+                  factura y la dirección a la entrega a domicilio). */}
+              {clienteSeleccionado && (
+                <div className="flex flex-wrap gap-x-6 gap-y-1 px-3 py-2 rounded-control bg-cream/40 border border-[var(--border)] text-[0.82rem]">
+                  <span>
+                    <span className="text-ink-muted">Código: </span>
+                    <strong className="font-semibold">{clienteSeleccionado.codigo_cliente || "—"}</strong>
+                  </span>
+                  <span>
+                    <span className="text-ink-muted">NIT: </span>
+                    <strong className="font-semibold">{clienteSeleccionado.nit_cliente || "CF"}</strong>
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="text-ink-muted">Dirección: </span>
+                    <strong className="font-semibold">{clienteSeleccionado.direccion || "—"}</strong>
+                  </span>
+                </div>
+              )}
+
               <div>
                 <button
                   type="button"
@@ -685,10 +813,57 @@ export default function VentasPage() {
                         value={formCliente.tipo_cliente}
                         onChange={(e) => setFormCliente((f) => ({ ...f, tipo_cliente: e.target.value }))}
                       >
-                        <option value="MINORISTA">Minorista</option>
-                        <option value="MAYORISTA">Mayorista</option>
+                        {TIPOS_CLIENTE.map((t) => (
+                          <option key={t} value={t}>
+                            {ETIQUETAS_TIPO_CLIENTE[t]}
+                          </option>
+                        ))}
                       </select>
                     </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className={labelCls}>NIT (opcional)</label>
+                      <input
+                        className={inputCls}
+                        aria-label="NIT del cliente"
+                        value={formCliente.nit_cliente}
+                        onChange={(e) => setFormCliente((f) => ({ ...f, nit_cliente: e.target.value }))}
+                        placeholder="Ej. 1234567-8 · vacío = CF"
+                        maxLength={NIT_MAX}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className={labelCls}>Código postal</label>
+                      <input
+                        className={inputCls}
+                        aria-label="Código postal del cliente"
+                        value={formCliente.codigo_postal}
+                        onChange={(e) => setFormCliente((f) => ({ ...f, codigo_postal: e.target.value }))}
+                        placeholder="Ej. 01001"
+                        maxLength={CODIGO_POSTAL_MAX}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className={labelCls}>Código de cliente</label>
+                      <input
+                        className={inputCls}
+                        aria-label="Código del cliente"
+                        value={formCliente.codigo_cliente}
+                        onChange={(e) => setFormCliente((f) => ({ ...f, codigo_cliente: e.target.value }))}
+                        placeholder="Vacío = se genera solo"
+                        maxLength={CODIGO_CLIENTE_MAX}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label className={labelCls}>Dirección</label>
+                    <input
+                      className={inputCls}
+                      aria-label="Dirección del cliente"
+                      value={formCliente.direccion}
+                      onChange={(e) => setFormCliente((f) => ({ ...f, direccion: e.target.value }))}
+                      placeholder="Calle, zona, municipio (opcional)"
+                      maxLength={DIRECCION_MAX}
+                    />
                   </div>
                   <div className="flex flex-col gap-1.5">
                     <label className={labelCls}>Límite de crédito (opcional)</label>
@@ -737,24 +912,32 @@ export default function VentasPage() {
                   {([
                     { v: "CONTADO", t: "Contado" },
                     { v: "CREDITO", t: "Crédito" },
-                  ] as const).map((o) => (
-                    <button
-                      key={o.v}
-                      type="button"
-                      aria-pressed={condicionPago === o.v}
-                      onClick={() => { setCondicionPago(o.v); setError(null); }}
-                      className={`flex-1 px-3 py-2.5 rounded-control border text-[0.95rem] font-semibold transition-colors ${
-                        condicionPago === o.v
-                          ? "bg-market text-white border-market"
-                          : "bg-transparent text-ink-muted border-[var(--border)] hover:bg-cream"
-                      }`}
-                    >
-                      {o.t}
-                    </button>
-                  ))}
+                  ] as const).map((o) => {
+                    // Consumidor Final no es cobrable: solo se vende a contado.
+                    const creditoBloqueado = o.v === "CREDITO" && !!clienteSeleccionado?.es_consumidor_final;
+                    return (
+                      <button
+                        key={o.v}
+                        type="button"
+                        aria-pressed={condicionPago === o.v}
+                        disabled={creditoBloqueado}
+                        title={creditoBloqueado ? "Consumidor Final solo puede vender a Contado" : undefined}
+                        onClick={() => { setCondicionPago(o.v); setError(null); }}
+                        className={`flex-1 px-3 py-2.5 rounded-control border text-[0.95rem] font-semibold transition-colors ${
+                          condicionPago === o.v
+                            ? "bg-market text-white border-market"
+                            : "bg-transparent text-ink-muted border-[var(--border)] hover:bg-cream"
+                        } ${creditoBloqueado ? "opacity-40 cursor-not-allowed hover:bg-transparent" : ""}`}
+                      >
+                        {o.t}
+                      </button>
+                    );
+                  })}
                 </div>
                 <span className="text-[0.78rem] text-ink-muted">
-                  {condicionPago === "CONTADO"
+                  {clienteSeleccionado?.es_consumidor_final
+                    ? "Consumidor Final solo puede vender a Contado."
+                    : condicionPago === "CONTADO"
                     ? "El cliente paga el total en este momento."
                     : "Se genera la factura y una cuenta por cobrar."}
                 </span>
@@ -788,7 +971,21 @@ export default function VentasPage() {
             <div className="flex gap-4 flex-wrap">
               <div className="flex-1 min-w-[200px] flex flex-col gap-1.5">
                 <label className={labelCls}>Tipo de entrega *</label>
-                <select value={tipoEntrega} onChange={(e) => { setTipoEntrega(e.target.value); setError(null); }} className={inputCls}>
+                <select
+                  value={tipoEntrega}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setTipoEntrega(v);
+                    // Si la entrega es a domicilio y el cliente ya tiene una
+                    // dirección registrada, se propone como dirección de
+                    // entrega (el colaborador puede editarla).
+                    if (v === "DOMICILIO" && !direccionEntrega.trim() && clienteSeleccionado?.direccion) {
+                      setDireccionEntrega(clienteSeleccionado.direccion);
+                    }
+                    setError(null);
+                  }}
+                  className={inputCls}
+                >
                   <option value="EN_TIENDA">En tienda</option>
                   <option value="DOMICILIO">Domicilio</option>
                 </select>
@@ -805,6 +1002,27 @@ export default function VentasPage() {
             {condicionPago === "CREDITO" && (
               <div className="flex flex-col gap-3 p-4 border border-market/40 bg-market-50/50 rounded-control">
                 <div className="font-semibold text-[0.9rem] text-market-600">Condiciones del crédito</div>
+                <div className="flex flex-col gap-1.5">
+                  <label className={labelCls}>Tipo de documento</label>
+                  <select
+                    value={tipoDocumentoCredito}
+                    onChange={(e) => {
+                      setTipoDocumentoCredito(e.target.value as TipoDocumento);
+                      setError(null);
+                    }}
+                    className={inputCls}
+                    aria-label="Tipo de documento"
+                  >
+                    {TIPOS_DOCUMENTO.map((t) => (
+                      <option key={t} value={t}>
+                        {ETIQUETAS_TIPO_DOCUMENTO[t]}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="text-[0.78rem] text-ink-muted">
+                    La factura cambiaria usa el NIT y la dirección registrados del cliente.
+                  </span>
+                </div>
                 <div className="flex flex-col gap-1.5">
                   <label className={labelCls}>Fecha de la factura</label>
                   <div className="flex items-center gap-3 flex-wrap">
@@ -976,17 +1194,27 @@ export default function VentasPage() {
           </div>
 
           {/* Fila 3: info */}
-          {(pSel || (ln.id_presentacion && Number(ln.cantidad) > 0)) && (
-            <span className="col-span-full text-[0.78rem] text-ink-muted">
-              {pSel && <>Unidad: {pSel.unidad_medida}</>}
-              {ln.id_bodega && (
-                <> · Disponible en bodega: <strong className={disponible > 0 ? "text-market-600" : "text-achiote-600"}>{disponible}</strong></>
-              )}
-              {ln.id_presentacion && Number(ln.cantidad) > 0 && (
-                <> · = {(Number(ln.cantidad) * factorDeLinea(ln)).toLocaleString("es-GT")} unidades</>
-              )}
-            </span>
-          )}
+          {(() => {
+            const d = descuentoDeLinea(ln);
+            if (!pSel && !(ln.id_presentacion && Number(ln.cantidad) > 0) && d.monto <= 0) return null;
+            return (
+              <span className="col-span-full text-[0.78rem] text-ink-muted">
+                {pSel && <>Unidad: {pSel.unidad_medida}</>}
+                {ln.id_bodega && (
+                  <> · Disponible en bodega: <strong className={disponible > 0 ? "text-market-600" : "text-achiote-600"}>{disponible}</strong></>
+                )}
+                {ln.id_presentacion && Number(ln.cantidad) > 0 && (
+                  <> · = {(Number(ln.cantidad) * factorDeLinea(ln)).toLocaleString("es-GT")} unidades</>
+                )}
+                {d.monto > 0 && (
+                  <>
+                    {" "}· Descuento {d.porcentaje}%: <strong className="text-market-600">−Q{d.monto.toFixed(2)}</strong>
+                    {" "}· Subtotal: <strong className="text-ink">Q{d.neto.toFixed(2)}</strong>
+                  </>
+                )}
+              </span>
+            );
+          })()}
         </div>
       );
     })}
@@ -1001,7 +1229,14 @@ export default function VentasPage() {
 </div>
 
             <div className="flex justify-between items-center mt-2 pt-4 border-t border-[var(--border)]">
-              <span className="font-bold text-ink">Total: Q{totalBorrador.toFixed(2)}</span>
+              <div className="flex flex-col">
+                <span className="font-bold text-ink">Total: Q{totalBorrador.toFixed(2)}</span>
+                {descuentoBorrador > 0 && (
+                  <span className="text-[0.8rem] text-market-600 font-medium">
+                    Subtotal Q{totalBrutoBorrador.toFixed(2)} · Descuento −Q{descuentoBorrador.toFixed(2)}
+                  </span>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={() => setConfirmando(true)}
@@ -1063,7 +1298,7 @@ export default function VentasPage() {
               </p>
               {condicionPago === "CREDITO" ? (
                 <p className="text-ink text-[0.88rem] mb-4 bg-market-50 border border-market/30 rounded-control px-3 py-2">
-                  <strong>A crédito</strong> · factura del {formatoFecha(fechaFacturaEfectiva)} · plazo de {plazoDias} días ·{" "}
+                  <strong>A crédito</strong> · {etiquetaTipoDocumento(tipoDocumentoCredito).toLowerCase()} del {formatoFecha(fechaFacturaEfectiva)} · plazo de {plazoDias} días ·{" "}
                   {Number(numeroCuotas) === 1 ? "pago único" : `${numeroCuotas} pagos`}. Se generará la factura y una cuenta por cobrar.
                 </p>
               ) : (
@@ -1116,7 +1351,10 @@ export default function VentasPage() {
                       <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">{new Date(v.fecha_venta).toLocaleString("es-GT", { dateStyle: "short", timeStyle: "short" })}</td>
                       <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">
                         <div className="font-medium">{v.nombre_cliente}</div>
-                        <div className="text-[0.78rem] text-ink-muted">{v.correo_cliente}</div>
+                        <div className="text-[0.78rem] text-ink-muted">
+                          {v.codigo_cliente ? `${v.codigo_cliente} · ` : ""}
+                          {v.correo_cliente}
+                        </div>
                       </td>
                       <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">{v.nombre_colaborador ?? "—"}</td>
                       <td className="px-3.5 py-2.5 text-[0.88rem] text-ink border-b border-[var(--border)]">{v.condicion_pago === "CREDITO" ? `Crédito · ${v.estado_venta}` : v.estado_venta}

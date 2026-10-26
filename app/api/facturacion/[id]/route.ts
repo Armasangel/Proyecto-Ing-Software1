@@ -30,10 +30,13 @@ export async function GET(
         v.estado_venta,
         u.nombre,
         u.correo,
+        u.codigo_cliente,
         f.id_factura,
         f.numero_factura,
+        COALESCE(f.tipo_documento, 'FACTURA') AS tipo_documento,
         f.nombre_cliente,
         f.nit_cliente,
+        COALESCE(f.direccion_cliente, u.direccion) AS direccion_cliente,
         f.total_factura,
         COALESCE(
           json_agg(
@@ -58,8 +61,9 @@ export async function GET(
       WHERE v.id_venta = $1
       GROUP BY
         v.id_venta, v.fecha_venta, v.total, v.estado_venta,
-        u.nombre, u.correo,
-        f.id_factura, f.numero_factura, f.nombre_cliente, f.nit_cliente, f.total_factura
+        u.nombre, u.correo, u.codigo_cliente, u.direccion,
+        f.id_factura, f.numero_factura, f.tipo_documento, f.nombre_cliente,
+        f.nit_cliente, f.direccion_cliente, f.total_factura
       `,
       [id_venta]
     );

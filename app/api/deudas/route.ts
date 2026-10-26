@@ -62,6 +62,9 @@ export async function GET(req: NextRequest) {
         fa.numero_factura,
         c.limite_deuda,
         c.estado_cliente AS cliente_puede_comprar,
+        c.codigo_cliente,
+        c.nit_cliente,
+        c.direccion,
         COALESCE(pg.total_pagado, 0) AS total_pagado,
         GREATEST(d.monto_total - COALESCE(pg.total_pagado, 0), 0) AS saldo_pendiente,
         CASE
@@ -114,7 +117,8 @@ export async function GET(req: NextRequest) {
         LEFT JOIN usuario u ON u.id_usuario = pd.id_usuario
         GROUP BY pd.id_deuda
       ) pg ON pg.id_deuda = d.id_deuda
-      GROUP BY d.id_deuda, fa.numero_factura, c.limite_deuda, c.estado_cliente, pg.total_pagado, pg.pagos
+      GROUP BY d.id_deuda, fa.numero_factura, c.limite_deuda, c.estado_cliente,
+        c.codigo_cliente, c.nit_cliente, c.direccion, pg.total_pagado, pg.pagos
       ORDER BY d.estado_deuda ASC, d.fecha_inicio DESC, d.id_deuda DESC
     `);
     // Cada abono se aplica en orden a las cuotas del plan (si la deuda tiene
