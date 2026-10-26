@@ -1,13 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { Icon } from "@/components/Icon";
 import { FormularioProducto } from "@/components/productos/FormularioProducto";
 import { matchesQuery, paginar, PaginationBar, type PageSize } from "@/lib/ui-table";
-import { PresentacionesProducto } from "@/components/inventario-catalogo/PresentacionesProducto";
-import { normalizarUnidad, presentacionesIniciales, validarPresentaciones, type Presentacion } from "@/lib/presentaciones";
-import { validarCategoriasProducto } from "@/lib/producto-categorias";
-import { CategoriaAutocompletar } from "@/components/inventario-catalogo/CategoriaAutocompletar";
 import { MarcaAutocompletar } from "@/components/inventario-catalogo/MarcaAutocompletar";
+import { ProductoRapidoForm, type ProveedorRapido } from "@/components/inventario-catalogo/ProductoRapidoForm";
 
 const MIS_ITEMS = [
   {label: "editar", icon: "pencil"},
@@ -47,7 +44,7 @@ interface Marca {
 export type CatalogoTab = "productos" | "precios";
 
 type CreacionRapida = {
-  proveedor?: Proveedor;
+  proveedor?: ProveedorRapido;
   onCreado: (idProducto: number) => void;
   onCancelar: () => void;
 };
@@ -112,7 +109,6 @@ export function CatalogoView({ tab, creacionRapida }: { tab: CatalogoTab; creaci
   useEffect(() => {
     const actualizar = () => {
       cargarProductos();
-      fetch("/api/proveedores").then(r=>r.json()).then(d=>setProveedores(d.proveedores||[])).catch(()=>{});
     };
     window.addEventListener("inventario:compra-registrada", actualizar);
     return () => window.removeEventListener("inventario:compra-registrada", actualizar);
@@ -135,6 +131,10 @@ export function CatalogoView({ tab, creacionRapida }: { tab: CatalogoTab; creaci
   };
 
   const cerrarModal = () => { setModalOpen(false); setEditando(null); };
+  const cancelarModal = () => {
+    if (creacionRapida) creacionRapida.onCancelar();
+    else cerrarModal();
+  };
 
   const handleEliminar = async (id: number) => {
     setDeleting(true);
@@ -436,13 +436,13 @@ export function CatalogoView({ tab, creacionRapida }: { tab: CatalogoTab; creaci
             justifyContent: "center",
             zIndex: 101,
           }}
-          onClick={(e) => { if (e.target === e.currentTarget) cerrarModal(); }}
+          onClick={(e) => { if (e.target === e.currentTarget) cancelarModal(); }}
         >
           <div
             role="dialog"
             aria-modal="true"
             aria-labelledby={tituloModal}
-            onKeyDown={(e)=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();cerrarModal();}}}
+            onKeyDown={(e)=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();cancelarModal();}}}
             style={{
               ...s.modal,
               backgroundColor: "var(--surface)", // Fondo blanco sólido
@@ -463,26 +463,33 @@ export function CatalogoView({ tab, creacionRapida }: { tab: CatalogoTab; creaci
               </h2>
               <button 
                 type="button" 
-                onClick={cerrarModal} 
+                onClick={cancelarModal}
                 aria-label="Cerrar producto"
-                disabled={saving || guardandoCategoria || guardandoMarca || guardandoProveedor}
                 style={{ ...s.closeBtn, color: "var(--text)", background: "transparent", border: "none", cursor: "pointer" }}
               >
                 ✕
               </button>
             </div>
             <div style={{ ...s.modalBody, padding: "1.25rem 1.5rem", overflowY: "auto" }}>
-              <FormularioProducto
-                producto={editando}
-                variant="modal"
-                onCancelar={cerrarModal}
-                onCatalogosCambiados={cargarCatalogos}
-                onGuardado={({ esEdicion }) => {
-                  cerrarModal();
-                  cargarProductos();
-                  showToast(esEdicion ? "Producto actualizado ✓" : "Producto creado ✓", "ok");
-                }}
-              />
+              {creacionRapida ? (
+                <ProductoRapidoForm
+                  proveedor={creacionRapida.proveedor}
+                  onCreado={creacionRapida.onCreado}
+                  onCancelar={creacionRapida.onCancelar}
+                />
+              ) : (
+                <FormularioProducto
+                  producto={editando}
+                  variant="modal"
+                  onCancelar={cancelarModal}
+                  onCatalogosCambiados={cargarCatalogos}
+                  onGuardado={({ esEdicion }) => {
+                    cerrarModal();
+                    cargarProductos();
+                    showToast(esEdicion ? "Producto actualizado ✓" : "Producto creado ✓", "ok");
+                  }}
+                />
+              )}
             </div>
           </div>
         </div>

@@ -37,12 +37,19 @@ export function BodegaPedidosBoard({ h }: { h: ReturnType<typeof useBodega> }) {
                     <div style={{ display: "flex", flexDirection: "column", gap: "0.2rem", marginBottom: "0.6rem" }}>
                       {p.productos
                         .filter((pr) => pr.es_mi_bodega)
-                        .map((pr) => (
-                          <div key={pr.id_detalle} style={{ fontSize: "0.85rem" }}>
-                            <strong>{Number(pr.cantidad).toLocaleString("es-GT")}</strong> {pr.unidad_medida} —{" "}
-                            {pr.nombre_producto}
-                          </div>
-                        ))}
+                        .map((pr) => {
+                          const usaPresentacion = !!pr.nombre_presentacion && pr.cantidad_presentacion != null;
+                          return (
+                            <div key={pr.id_detalle} style={{ fontSize: "0.85rem" }}>
+                              <strong>
+                                {Number(usaPresentacion ? pr.cantidad_presentacion : pr.cantidad).toLocaleString(
+                                  "es-GT"
+                                )}
+                              </strong>{" "}
+                              {usaPresentacion ? pr.nombre_presentacion : pr.unidad_medida} — {pr.nombre_producto}
+                            </div>
+                          );
+                        })}
                     </div>
                     {p.notas && (
                       <div

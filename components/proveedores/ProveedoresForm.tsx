@@ -43,6 +43,22 @@ export function ProveedoresForm({ h }: { h: ReturnType<typeof useProveedores> })
           />
         </div>
       </div>
+      {h.editando && (
+        <div className="mt-4">
+          <label htmlFor="estado-proveedor" className="block text-sm text-ink-muted mb-1">
+            Estado
+          </label>
+          <select
+            id="estado-proveedor"
+            value={String(h.estadoProveedor)}
+            onChange={(e) => h.setEstadoProveedor(e.target.value === "true")}
+            className={INPUT_CLS_PROVEEDOR}
+          >
+            <option value="true">Activo</option>
+            <option value="false">Inactivo</option>
+          </select>
+        </div>
+      )}
       <div className="mt-5 flex gap-3">
         <button
           onClick={h.guardar}

@@ -34,6 +34,8 @@ export type ProductoPedido = {
   nombre_producto: string;
   cantidad: string;
   unidad_medida: string;
+  nombre_presentacion: string | null;
+  cantidad_presentacion: string | null;
   id_bodega: number | null;
   es_mi_bodega: boolean;
 };

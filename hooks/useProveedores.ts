@@ -12,6 +12,8 @@ export function useProveedores() {
   const [editando, setEditando] = useState<number | null>(null);
   const [creando, setCreando] = useState(false);
   const [form, setForm] = useState<ProveedorForm>(FORM_VACIO_PROVEEDOR);
+  const [estadoProveedor, setEstadoProveedor] = useState(true);
+  const [reactivando, setReactivando] = useState<number | null>(null);
   const [mensaje, setMensaje] = useState("");
 
   const [q, setQ] = useState("");
@@ -51,7 +53,11 @@ export function useProveedores() {
     const res = await fetch("/api/proveedores", {
       method: editando ? "PATCH" : "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...form, id_proveedor: editando }),
+      body: JSON.stringify({
+        ...form,
+        id_proveedor: editando,
+        ...(editando ? { estado_proveedor: estadoProveedor } : {}),
+      }),
     });
     if (res.ok) {
       setMensaje(editando ? "Proveedor actualizado." : "Proveedor creado.");
@@ -77,8 +83,32 @@ export function useProveedores() {
     }
   }
 
+  async function reactivar(p: Proveedor) {
+    setReactivando(p.id_proveedor);
+    setMensaje("");
+    try {
+      const res = await fetch("/api/proveedores", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...p, estado_proveedor: true }),
+      });
+      if (!res.ok) {
+        setMensaje("Error al reactivar el proveedor.");
+        return;
+      }
+      if (editando === p.id_proveedor) setEstadoProveedor(true);
+      await cargar();
+      setMensaje("Proveedor reactivado.");
+    } catch {
+      setMensaje("Error al reactivar el proveedor.");
+    } finally {
+      setReactivando(null);
+    }
+  }
+
   function iniciarEdicion(p: Proveedor) {
     setEditando(p.id_proveedor);
+    setEstadoProveedor(p.estado_proveedor);
     setCreando(false);
     setForm({
       nombre_proveedor: p.nombre_proveedor,
@@ -91,6 +121,7 @@ export function useProveedores() {
   function abrirNuevo() {
     setCreando(true);
     setEditando(null);
+    setEstadoProveedor(true);
     setForm(FORM_VACIO_PROVEEDOR);
     setMensaje("");
   }
@@ -98,6 +129,7 @@ export function useProveedores() {
   function cancelar() {
     setCreando(false);
     setEditando(null);
+    setEstadoProveedor(true);
     setForm(FORM_VACIO_PROVEEDOR);
     setMensaje("");
   }
@@ -111,6 +143,9 @@ export function useProveedores() {
     setCreando,
     form,
     setForm,
+    estadoProveedor,
+    setEstadoProveedor,
+    reactivando,
     mensaje,
     setMensaje,
     q,
@@ -127,6 +162,7 @@ export function useProveedores() {
     cargar,
     guardar,
     desactivar,
+    reactivar,
     iniciarEdicion,
     abrirNuevo,
     cancelar,

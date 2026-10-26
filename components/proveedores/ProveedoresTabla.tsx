@@ -44,12 +44,20 @@ export function ProveedoresTabla({ h }: { h: ReturnType<typeof useProveedores> }
                     >
                       Editar
                     </button>
-                    {p.estado_proveedor && (
+                    {p.estado_proveedor ? (
                       <button
                         onClick={() => h.desactivar(p.id_proveedor)}
                         className="px-3 py-1.5 rounded-control border border-achiote/40 text-[0.85rem] text-achiote hover:bg-achiote/10"
                       >
                         Desactivar
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => h.reactivar(p)}
+                        disabled={h.reactivando !== null}
+                        className="px-3 py-1.5 rounded-control border border-market/40 text-[0.85rem] text-market-600 hover:bg-market/10 disabled:opacity-50"
+                      >
+                        {h.reactivando === p.id_proveedor ? "Reactivando…" : "Reactivar"}
                       </button>
                     )}
                   </div>
