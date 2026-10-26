@@ -27,6 +27,7 @@ const NAV: NavItem[] = [
   { href: "/dashboard",        label: "Dashboard",       icon: "dashboard"     },
   { href: "/crear",            label: "Crear registros", icon: "increase"      },
   { href: "/inventario",       label: "Inventario",      icon: "inventory"     },
+  { href: "/entrada",          label: "Entrada",         icon: "box"           },
   { href: "/ventas",           label: "Ventas",          icon: "shopping-cart" },
   { href: "/facturacion",      label: "Facturación",     icon: "bill"          },
   { href: "/reportes",         label: "Reportes",        icon: "report"        },
@@ -88,6 +89,7 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
   const t = THEMES[variant];
 
   const navVisible = NAV.filter((item) => {
+    if (item.href === "/entrada") return !isDuenoTipo(usuario.tipo_usuario);
     if (
       ["/crear", "/inventario", "/historial-ventas", "/proveedores", "/cuentas-por-cobrar", "/usuarios", "/reportes", "/descuentos"].includes(
         item.href

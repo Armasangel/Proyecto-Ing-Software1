@@ -61,7 +61,7 @@ describe("StaffShell", () => {
     expect(screen.getAllByText("Dashboard").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("Facturación")).toBeInTheDocument();
     expect(screen.getByText("Reportes")).toBeInTheDocument();
-    expect(screen.getByText("Crear registros")).toBeInTheDocument();
+    expect(screen.queryByRole('link',{name:'Entrada'})).not.toBeInTheDocument();
   });
 
   it("shows Ventas (unified with the old Órdenes) for the DUENO too", () => {

@@ -3,6 +3,11 @@ import type { CSSProperties } from "react";
 import { Icon } from "@/components/Icon";
 import { FormularioProducto } from "@/components/productos/FormularioProducto";
 import { matchesQuery, paginar, PaginationBar, type PageSize } from "@/lib/ui-table";
+import { PresentacionesProducto } from "@/components/inventario-catalogo/PresentacionesProducto";
+import { normalizarUnidad, presentacionesIniciales, validarPresentaciones, type Presentacion } from "@/lib/presentaciones";
+import { validarCategoriasProducto } from "@/lib/producto-categorias";
+import { CategoriaAutocompletar } from "@/components/inventario-catalogo/CategoriaAutocompletar";
+import { MarcaAutocompletar } from "@/components/inventario-catalogo/MarcaAutocompletar";
 
 const MIS_ITEMS = [
   {label: "editar", icon: "pencil"},
@@ -15,6 +20,10 @@ interface Producto {
   nombre_producto: string;
   nombre_categoria: string;
   id_categoria: number;
+  id_categoria_2?: number | null;
+  id_categoria_3?: number | null;
+  nombre_categoria_2?: string | null;
+  nombre_categoria_3?: string | null;
   nombre_marca: string;
   id_marca: number;
   precio_unitario: string | null;
@@ -33,10 +42,19 @@ interface Categoria {
 interface Marca {
   id_marca: number;
   nombre_marca: string;
+  usos?: number;
 }
 export type CatalogoTab = "productos" | "precios";
 
-export function CatalogoView({ tab }: { tab: CatalogoTab }) {
+type CreacionRapida = {
+  proveedor?: Proveedor;
+  onCreado: (idProducto: number) => void;
+  onCancelar: () => void;
+};
+
+/** El alta rápida usa el mismo formulario y validaciones que el catálogo. */
+export function CatalogoView({ tab, creacionRapida }: { tab: CatalogoTab; creacionRapida?: CreacionRapida }) {
+  const tituloModal = useId();
   const [productos, setProductos] = useState<Producto[]>([]);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [marcas, setMarcas] = useState<Marca[]>([]);
@@ -54,7 +72,7 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
   const [perPage, setPerPage] = useState<PageSize>(10);
 
   // Modal producto
-  const [modalOpen, setModalOpen] = useState(false);
+  const [modalOpen, setModalOpen] = useState(!!creacionRapida);
   const [editando, setEditando] = useState<Producto | null>(null);
 
   // Confirm delete
@@ -78,6 +96,7 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
     fetch("/api/productos")
       .then((r) => r.json())
       .then((d) => setProductos(d.productos || []));
+    fetch("/api/marcas").then((r) => r.json()).then((d) => setMarcas(d.marcas || []));
   }, []);
 
   const cargarCatalogos = useCallback(() => {
@@ -89,6 +108,15 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
     cargarProductos();
     cargarCatalogos();
   }, [cargarProductos, cargarCatalogos]);
+
+  useEffect(() => {
+    const actualizar = () => {
+      cargarProductos();
+      fetch("/api/proveedores").then(r=>r.json()).then(d=>setProveedores(d.proveedores||[])).catch(()=>{});
+    };
+    window.addEventListener("inventario:compra-registrada", actualizar);
+    return () => window.removeEventListener("inventario:compra-registrada", actualizar);
+  }, [cargarProductos]);
 
   // Al cambiar búsqueda o filtros, se vuelve a la primera página.
   useEffect(() => {
@@ -160,11 +188,11 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
     () =>
       productos.filter((p) => {
         if (soloActivos && !p.estado_producto) return false;
-        if (filtroCategoria && String(p.id_categoria) !== filtroCategoria) return false;
+        if (filtroCategoria && ![p.id_categoria, p.id_categoria_2, p.id_categoria_3].some((id) => String(id) === filtroCategoria)) return false;
         if (filtroMarca && String(p.id_marca) !== filtroMarca) return false;
         if (filtroExentoIva && !p.exento_iva) return false;
         if (filtroCaducidad && !p.caducidad) return false;
-        return matchesQuery(busqueda, p.nombre_producto, p.codigo_producto, p.nombre_categoria, p.nombre_marca);
+        return matchesQuery(busqueda, p.nombre_producto, p.codigo_producto, p.nombre_categoria, p.nombre_categoria_2, p.nombre_categoria_3, p.nombre_marca);
       }),
     [productos, busqueda, soloActivos, filtroCategoria, filtroMarca, filtroExentoIva, filtroCaducidad]
   );
@@ -176,6 +204,7 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
 
   return (
     <>
+      {!creacionRapida && <>
       {/* ── Barra de búsqueda + acciones ── */}
       <div style={s.toolbar}>
         <input
@@ -239,7 +268,7 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
                         {p.exento_iva && <span style={{ ...s.badge, background: "rgba(88,166,255,.15)", color: "var(--blue)", borderColor: "rgba(88,166,255,.3)" }}>Exento IVA</span>}
                       </div>
                     </td>
-                    <td style={s.td}>{p.nombre_categoria}</td>
+                    <td style={s.td}>{[p.nombre_categoria, p.nombre_categoria_2, p.nombre_categoria_3].filter(Boolean).join(" · ")}</td>
                     <td style={s.td}>{p.nombre_marca}</td>
                     <td style={s.td}>{p.unidad_medida}</td>
                     <td style={{ ...s.td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{p.precio_unitario ? `Q${Number(p.precio_unitario).toFixed(2)}` : "—"}</td>
@@ -363,10 +392,8 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
               </select>
 
               <label style={s.drawerLabel}>Marca</label>
-              <select value={filtroMarca} onChange={(e) => setFiltroMarca(e.target.value)} style={s.input} aria-label="Filtrar por marca">
-                <option value="">Todas las marcas</option>
-                {marcas.map((m) => <option key={m.id_marca} value={m.id_marca}>{m.nombre_marca}</option>)}
-              </select>
+              <MarcaAutocompletar marcas={marcas} value={filtroMarca} onChange={setFiltroMarca} style={s.input}
+                ariaLabel="Filtrar por marca" opcional textoSinSeleccion="Todas las marcas" />
 
               <label style={s.drawerLabel}>Estado</label>
               <label style={s.checkLabel}>
@@ -392,6 +419,7 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
         </>
       )}
 
+      </>}
       {/* ── Modal Crear / Editar producto ── */}
       {modalOpen && (
         <div
@@ -411,6 +439,10 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
           onClick={(e) => { if (e.target === e.currentTarget) cerrarModal(); }}
         >
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={tituloModal}
+            onKeyDown={(e)=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();cerrarModal();}}}
             style={{
               ...s.modal,
               backgroundColor: "var(--surface)", // Fondo blanco sólido
@@ -426,12 +458,14 @@ export function CatalogoView({ tab }: { tab: CatalogoTab }) {
             }}
           >
             <div style={{ ...s.modalHeader, padding: "1.25rem 1.5rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <h2 style={{ ...s.modalTitle, margin: 0, color: "var(--text)" }}>
+              <h2 id={tituloModal} style={{ ...s.modalTitle, margin: 0, color: "var(--text)" }}>
                 {editando ? "Editar producto" : "Nuevo producto"}
               </h2>
               <button 
                 type="button" 
                 onClick={cerrarModal} 
+                aria-label="Cerrar producto"
+                disabled={saving || guardandoCategoria || guardandoMarca || guardandoProveedor}
                 style={{ ...s.closeBtn, color: "var(--text)", background: "transparent", border: "none", cursor: "pointer" }}
               >
                 ✕

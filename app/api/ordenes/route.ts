@@ -75,6 +75,7 @@ export async function GET(req: NextRequest) {
               'id_bodega', d.id_bodega,
               'nombre_bodega', b.nombre_bodega,
               'cantidad', d.cantidad,
+              'unidad_medida', d.unidad_base,
               'precio_unitario', d.precio_unitario,
               'subtotal', d.subtotal,
               'id_presentacion', d.id_presentacion,

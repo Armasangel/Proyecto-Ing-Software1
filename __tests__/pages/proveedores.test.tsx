@@ -91,6 +91,64 @@ describe("ProveedoresPage", () => {
     expect(screen.queryByText("Distribuidora La Colonia")).not.toBeInTheDocument();
   });
 
+  it("reactivates an inactive supplier and refreshes its row", async () => {
+    const proveedor = proveedorBase({ estado_proveedor: false });
+    setupServerProveedores([proveedor]);
+    const patch = jest.fn();
+    server.use(rest.patch("/api/proveedores", async (req, res, ctx) => {
+      const body = await req.json();
+      patch(body);
+      Object.assign(proveedor, body);
+      return res(ctx.json({ ok: true }));
+    }));
+    const user = userEvent.setup();
+    render(<ProveedoresPage />);
+
+    await user.click(await screen.findByRole("button", { name: "Reactivar" }));
+
+    expect(await screen.findByText("Proveedor reactivado.")).toBeInTheDocument();
+    expect(patch).toHaveBeenCalledWith(expect.objectContaining({ id_proveedor: 1, estado_proveedor: true }));
+    expect(screen.getByText("Activo")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Reactivar" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Desactivar" })).toBeInTheDocument();
+  });
+
+  it("allows reactivation from the edit form", async () => {
+    const proveedor = proveedorBase({ estado_proveedor: false });
+    setupServerProveedores([proveedor]);
+    const patch = jest.fn();
+    server.use(rest.patch("/api/proveedores", async (req, res, ctx) => {
+      const body = await req.json();
+      patch(body);
+      Object.assign(proveedor, body);
+      return res(ctx.json({ ok: true }));
+    }));
+    const user = userEvent.setup();
+    render(<ProveedoresPage />);
+
+    await user.click(await screen.findByRole("button", { name: "Editar" }));
+    expect(screen.getByLabelText("Estado")).toHaveValue("false");
+    await user.selectOptions(screen.getByLabelText("Estado"), "true");
+    await user.click(screen.getByRole("button", { name: "Guardar" }));
+
+    expect(await screen.findByText("Proveedor actualizado.")).toBeInTheDocument();
+    expect(patch).toHaveBeenCalledWith(expect.objectContaining({ id_proveedor: 1, estado_proveedor: true }));
+    await screen.findByRole("button", { name: "Desactivar" });
+  });
+
+  it("keeps the supplier inactive when reactivation fails", async () => {
+    setupServerProveedores([proveedorBase({ estado_proveedor: false })]);
+    server.use(rest.patch("/api/proveedores", (_req, res, ctx) => res(ctx.status(500))));
+    const user = userEvent.setup();
+    render(<ProveedoresPage />);
+
+    await user.click(await screen.findByRole("button", { name: "Reactivar" }));
+
+    expect(await screen.findByText("Error al reactivar el proveedor.")).toBeInTheDocument();
+    expect(screen.getByText("Inactivo")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reactivar" })).toBeEnabled();
+  });
+
   it("filters rows by estado_proveedor", async () => {
     setupServerProveedores([
       proveedorBase(),

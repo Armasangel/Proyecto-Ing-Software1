@@ -1,27 +1,52 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
-import { isBodegueroTipo, isDuenoTipo } from "@/lib/roles";
+import { isBodegueroTipo, isDuenoTipo, isStaffTipo } from "@/lib/roles";
 import { apiError, unauthorizedError, validationError } from "@/lib/api-error";
+import { normalizarUnidad, normalizarPresentacion, sugerenciasPresentaciones, validarPresentaciones, type Presentacion } from "@/lib/presentaciones";
 
 /**
  * GET /api/presentaciones?id_producto=123
  * Lista las presentaciones activas de un producto (ej. "Caja de 24").
- * Lectura disponible para dueño y bodeguero (la necesitan al registrar
+ * Lectura por producto disponible para dueño, colaborador y bodeguero (al registrar
  * entradas/salidas); la administración (crear/eliminar) es solo del dueño.
  */
 export async function GET(req: NextRequest) {
   const usuario = getUsuarioFromRequest(req);
-  if (!usuario || !(isDuenoTipo(usuario.tipo_usuario) || isBodegueroTipo(usuario.tipo_usuario))) {
+  if (!usuario || !(isStaffTipo(usuario.tipo_usuario) || isBodegueroTipo(usuario.tipo_usuario))) {
     return unauthorizedError();
   }
 
-  const idProducto = Number(req.nextUrl.searchParams.get("id_producto"));
-  if (!idProducto) {
+  const idRaw = req.nextUrl.searchParams.get("id_producto");
+  if (idRaw === null && !isDuenoTipo(usuario.tipo_usuario) && !isBodegueroTipo(usuario.tipo_usuario)) return unauthorizedError();
+  const unidad = req.nextUrl.searchParams.get("unidad_medida")?.trim();
+  const idProducto = Number(idRaw);
+  if (idRaw !== null && (!Number.isSafeInteger(idProducto) || idProducto < 1)) {
+    return validationError("id_producto inválido");
+  }
+  if (idRaw === null && !unidad) {
     return validationError("id_producto es obligatorio");
   }
 
   try {
+    if (idRaw === null && unidad) {
+      const result = await pool.query(
+        `SELECT DISTINCT pp.nombre_presentacion, pp.factor_conversion
+         FROM presentacion_producto pp
+         WHERE pp.unidad_base = $1
+           AND pp.estado_presentacion = TRUE
+         ORDER BY pp.nombre_presentacion, pp.factor_conversion`,
+        [normalizarUnidad(unidad)]
+      );
+      const opciones = new Map<string, Presentacion>();
+      for (const p of [...sugerenciasPresentaciones(unidad), ...result.rows]) {
+        const factor = Number(p.factor_conversion);
+        opciones.set(`${normalizarPresentacion(p.nombre_presentacion)}:${factor}`, {
+          nombre_presentacion: p.nombre_presentacion, factor_conversion: factor,
+        });
+      }
+      return NextResponse.json({ presentaciones: Array.from(opciones.values()) });
+    }
     const result = await pool.query(
       `SELECT id_presentacion, id_producto, nombre_presentacion, factor_conversion
        FROM presentacion_producto
@@ -55,18 +80,18 @@ export async function POST(req: NextRequest) {
     if (!idProducto || !nombre) {
       return validationError("id_producto y nombre_presentacion son obligatorios");
     }
-    if (!(factor > 0)) {
-      return validationError("factor_conversion debe ser un número mayor a 0");
-    }
+    const error = validarPresentaciones([{ nombre_presentacion: nombre, factor_conversion: factor }]);
+    if (error) return validationError(error);
 
-    const producto = await pool.query(`SELECT 1 FROM producto WHERE id_producto = $1`, [idProducto]);
+    const producto = await pool.query(`SELECT unidad_medida FROM producto WHERE id_producto = $1`, [idProducto]);
     if (producto.rowCount === 0) {
       return validationError("Producto no encontrado");
     }
 
+    const unidadBase = normalizarUnidad(producto.rows[0].unidad_medida);
     const existe = await pool.query(
-      `SELECT 1 FROM presentacion_producto WHERE id_producto = $1 AND LOWER(nombre_presentacion) = LOWER($2)`,
-      [idProducto, nombre]
+      `SELECT 1 FROM presentacion_producto WHERE id_producto = $1 AND LOWER(nombre_presentacion) = LOWER($2) AND unidad_base = $3`,
+      [idProducto, nombre, unidadBase]
     );
     if (existe.rowCount && existe.rowCount > 0) {
       return NextResponse.json(
@@ -76,10 +101,10 @@ export async function POST(req: NextRequest) {
     }
 
     const result = await pool.query(
-      `INSERT INTO presentacion_producto (id_producto, nombre_presentacion, factor_conversion)
-       VALUES ($1, $2, $3)
+      `INSERT INTO presentacion_producto (id_producto, nombre_presentacion, factor_conversion, unidad_base)
+       VALUES ($1, $2, $3, $4)
        RETURNING id_presentacion, id_producto, nombre_presentacion, factor_conversion`,
-      [idProducto, nombre, factor]
+      [idProducto, nombre, factor, unidadBase]
     );
 
     return NextResponse.json({ presentacion: result.rows[0] }, { status: 201 });

@@ -57,17 +57,25 @@ export async function PATCH(req: NextRequest) {
   if (!esDueno(usuario)) return unauthorizedError();
 
   try {
-    const { id_proveedor, nombre_proveedor, nit_proveedor, correo_contacto, telefono } =
+    const { id_proveedor, nombre_proveedor, nit_proveedor, correo_contacto, telefono, estado_proveedor } =
       await req.json();
+
+    if (estado_proveedor !== undefined && typeof estado_proveedor !== "boolean") {
+      return NextResponse.json(
+        { error: "El estado del proveedor debe ser un booleano" },
+        { status: 400 }
+      );
+    }
 
     await pool.query(
       `UPDATE proveedor
        SET nombre_proveedor = $1,
            nit_proveedor    = $2,
            correo_contacto  = $3,
-           telefono         = $4
+           telefono         = $4,
+           estado_proveedor = COALESCE($6::boolean, estado_proveedor)
        WHERE id_proveedor = $5`,
-      [nombre_proveedor, nit_proveedor, correo_contacto || null, telefono || null, id_proveedor]
+      [nombre_proveedor, nit_proveedor, correo_contacto || null, telefono || null, id_proveedor, estado_proveedor ?? null]
     );
     return NextResponse.json({ ok: true });
   } catch (error) {

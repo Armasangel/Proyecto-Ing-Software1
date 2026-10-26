@@ -77,6 +77,7 @@ export async function GET(req: NextRequest) {
               'id_producto', p.id_producto,
               'nombre_producto', p.nombre_producto,
               'cantidad', dp.cantidad,
+              'unidad_medida', dp.unidad_base,
               'precio_unitario', dp.precio_unitario,
               'subtotal', dp.subtotal
             ) ORDER BY p.nombre_producto
