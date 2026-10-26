@@ -9,6 +9,7 @@ import { reglaDePago, type ReglaPago } from "@/lib/credito";
 import { ETIQUETAS_TIPO_CLIENTE, TIPOS_CLIENTE, etiquetaTipoCliente } from "@/lib/tipos-cliente";
 
 type ProductoDeuda = {
+  unidad_medida?: string;
   id_producto: number;
   nombre_producto: string;
   cantidad: string;
@@ -1261,7 +1262,7 @@ export default function CuentasPorCobrarPage() {
                                     </td>
                                     <td className={`${cls.tdSm} text-ink-muted`}>
                                       {d.productos.length > 0
-                                        ? d.productos.map((p) => `${p.nombre_producto} x${p.cantidad}`).join(", ")
+                                        ? d.productos.map((p) => `${p.nombre_producto} x${p.cantidad}${p.unidad_medida ? ` ${p.unidad_medida}` : ""}`).join(", ")
                                         : "—"}
                                     </td>
                                     <td className={`${cls.tdSm} font-semibold`}>

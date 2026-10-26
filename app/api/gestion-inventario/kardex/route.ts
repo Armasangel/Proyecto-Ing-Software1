@@ -61,7 +61,7 @@ export async function GET(req: NextRequest) {
         k.id_producto,
         p.codigo_producto,
         p.nombre_producto,
-        p.unidad_medida
+        k.unidad_base AS unidad_medida
       FROM kardex k
       JOIN bodega b ON b.id_bodega = k.id_bodega
       JOIN producto p ON p.id_producto = k.id_producto

@@ -27,6 +27,7 @@ type Venta = {
 };
 
 type ProductoFactura = {
+  unidad_medida?: string;
   id_detalle: number;
   codigo_producto: string;
   nombre_producto: string;
@@ -370,7 +371,7 @@ export default function FacturacionPage() {
                     facturaDetalle.productos.map((p) => (
                       <tr key={p.id_detalle} className="border-b border-[var(--border)]">
                         <td className="py-1.5 text-ink">{p.nombre_producto}</td>
-                        <td className="py-1.5 text-right text-ink-muted">{p.cantidad}</td>
+                        <td className="py-1.5 text-right text-ink-muted">{p.cantidad}{p.unidad_medida ? ` ${p.unidad_medida}` : ""}</td>
                         <td className="py-1.5 text-right text-ink-muted">Q{Number(p.precio_unitario).toFixed(2)}</td>
                         <td className="py-1.5 text-right text-ink">Q{Number(p.subtotal).toFixed(2)}</td>
                       </tr>

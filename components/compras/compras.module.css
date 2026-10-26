@@ -1,0 +1,29 @@
+.panel { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:1.1rem; margin-bottom:1rem; color:var(--text); }
+.panel h2,.panel h3 { margin:0 0 .7rem; }
+.grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:.8rem; margin-bottom:.8rem; }
+.field { display:flex; flex-direction:column; gap:.3rem; font-size:.85rem; }
+.field input,.field select,.field textarea,.input { padding:.6rem; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--text); min-width:0; width:100%; }
+.row { display:flex; gap:.6rem; align-items:center; flex-wrap:wrap; margin:.6rem 0; }
+.button { cursor:pointer; border:1px solid var(--border); border-radius:8px; padding:.6rem .85rem; background:var(--surface2); color:var(--text); }
+.button:disabled { opacity:.5; cursor:default; }
+.primary { background:var(--accent,#2d6a4f); border-color:var(--accent,#2d6a4f); color:#fff; }
+.danger { background:var(--red,#b91c1c); border-color:var(--red,#b91c1c); color:#fff; }
+.selected { background:rgba(45,106,79,.16); border-color:var(--accent,#2d6a4f); color:var(--text); }
+.selectedRow { background:rgba(45,106,79,.12); box-shadow:inset 4px 0 var(--accent,#2d6a4f); }
+.selectedDetail { border:2px solid var(--accent,#2d6a4f); scroll-margin-top:1rem; }
+.selectionLabel { font-weight:700; font-size:.85rem; color:var(--accent,#2d6a4f); margin:.3rem 0; }
+.comparacion { border:1px solid var(--border); border-radius:8px; padding:1rem; margin:.8rem 0; }
+.history { margin-top:1.25rem; }
+.historyTitle { font-size:.85rem; font-weight:700; color:var(--muted); margin-bottom:.6rem; }
+.historyRow { padding:.6rem 0; border-bottom:1px solid var(--border); font-size:.85rem; }
+.historyMeta { color:var(--muted); font-size:.75rem; margin-top:.2rem; }
+.pending { padding:.8rem; margin:.7rem 0; border:1px solid var(--border); border-radius:8px; }
+.help { color:var(--muted); font-size:.85rem; line-height:1.5; }
+.alert { padding:.8rem; border:1px solid var(--border); border-left:4px solid var(--accent2); border-radius:7px; margin:.6rem 0; }
+.error { border-left-color:var(--red,#b91c1c); }
+.scroll { overflow:auto; }
+.table { border-collapse:collapse; width:100%; font-size:.85rem; }
+.table th,.table td { text-align:left; padding:.65rem; border-bottom:1px solid var(--border); vertical-align:top; }
+.table th { background:var(--surface2); }
+.table input { min-width:100px; }
+.badge { font-size:.8rem; border:1px solid var(--border); padding:.2rem .5rem; border-radius:20px; }

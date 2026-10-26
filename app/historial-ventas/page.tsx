@@ -9,6 +9,7 @@ import { TIPOS_USUARIO } from "@/lib/roles";
 import { filtrarClientesPorTexto } from "@/lib/clientes-busqueda";
 
 type LineaHistorial = {
+  unidad_medida?: string;
   codigo_producto: string | null;
   nombre_producto: string | null;
   id_producto: number;
@@ -465,7 +466,12 @@ export default function HistorialVentasPage() {
                       {v.correo_cliente}
                     </div>
                   </td>
-                  <td className={`${cls.td} max-w-[220px]`}>{resumenLineas(v)}</td>
+                  <td className={`${cls.td} max-w-[220px]`}>
+                    {resumenLineas(v)}
+                    {v.productos?.some((p) => p.unidad_medida) && (
+                      <div className="text-xs text-ink-muted">{v.productos.map((p) => `${p.cantidad}${p.unidad_medida ? ` ${p.unidad_medida}` : ""}`).join(" · ")}</div>
+                    )}
+                  </td>
                   <td className={`${cls.td} text-right font-semibold`}>Q{num(v.total).toFixed(2)}</td>
                   <td className={cls.td}>
                     <span className={`${cls.badgeEstado} ${estadoClass(v.estado_venta)}`}>{v.estado_venta}</span>

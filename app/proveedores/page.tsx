@@ -33,6 +33,8 @@ export default function ProveedoresPage() {
   const [editando, setEditando] = useState<number | null>(null);
   const [creando, setCreando] = useState(false);
   const [form, setForm] = useState(formVacio);
+  const [estadoProveedor, setEstadoProveedor] = useState(true);
+  const [reactivando, setReactivando] = useState<number | null>(null);
   const [mensaje, setMensaje] = useState("");
 
   // Búsqueda, filtros y paginación de la tabla
@@ -90,7 +92,11 @@ export default function ProveedoresPage() {
     const res = await fetch("/api/proveedores", {
       method: editando ? "PATCH" : "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...form, id_proveedor: editando }),
+      body: JSON.stringify({
+        ...form,
+        id_proveedor: editando,
+        ...(editando ? { estado_proveedor: estadoProveedor } : {}),
+      }),
     });
     if (res.ok) {
       setMensaje(editando ? "Proveedor actualizado." : "Proveedor creado.");
@@ -116,8 +122,32 @@ export default function ProveedoresPage() {
     }
   }
 
+  async function reactivar(p: Proveedor) {
+    setReactivando(p.id_proveedor);
+    setMensaje("");
+    try {
+      const res = await fetch("/api/proveedores", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...p, estado_proveedor: true }),
+      });
+      if (!res.ok) {
+        setMensaje("Error al reactivar el proveedor.");
+        return;
+      }
+      if (editando === p.id_proveedor) setEstadoProveedor(true);
+      await cargar();
+      setMensaje("Proveedor reactivado.");
+    } catch {
+      setMensaje("Error al reactivar el proveedor.");
+    } finally {
+      setReactivando(null);
+    }
+  }
+
   function iniciarEdicion(p: Proveedor) {
     setEditando(p.id_proveedor);
+    setEstadoProveedor(p.estado_proveedor);
     setCreando(false);
     setForm({
       nombre_proveedor: p.nombre_proveedor,
@@ -174,6 +204,22 @@ export default function ProveedoresPage() {
               />
             </div>
           ))}
+          {editando && (
+            <div className="mb-3">
+              <label htmlFor="estado-proveedor" className="block mb-1 text-[0.85rem] text-ink-muted">
+                Estado
+              </label>
+              <select
+                id="estado-proveedor"
+                className={inputCls}
+                value={String(estadoProveedor)}
+                onChange={(e) => setEstadoProveedor(e.target.value === "true")}
+              >
+                <option value="true">Activo</option>
+                <option value="false">Inactivo</option>
+              </select>
+            </div>
+          )}
           <div className="flex gap-2 mt-4">
             <button
               onClick={guardar}
@@ -258,12 +304,20 @@ export default function ProveedoresPage() {
                     >
                       Editar
                     </button>
-                    {p.estado_proveedor && (
+                    {p.estado_proveedor ? (
                       <button
                         onClick={() => desactivar(p.id_proveedor)}
                         className="px-3 py-1.5 rounded-control bg-achiote text-white border-none text-[0.82rem] font-medium transition-transform active:scale-[0.97] hover:brightness-110"
                       >
                         Desactivar
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => reactivar(p)}
+                        disabled={reactivando !== null}
+                        className="px-3 py-1.5 rounded-control bg-market text-white border-none text-[0.82rem] font-medium transition-transform active:scale-[0.97] hover:brightness-110 disabled:opacity-50"
+                      >
+                        {reactivando === p.id_proveedor ? "Reactivando…" : "Reactivar"}
                       </button>
                     )}
                   </td>

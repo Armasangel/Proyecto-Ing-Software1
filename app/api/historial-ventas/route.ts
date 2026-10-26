@@ -63,6 +63,7 @@ export async function GET(req: NextRequest) {
               'nombre_producto', p.nombre_producto,
               'id_producto', dv.id_producto,
               'cantidad', dv.cantidad,
+              'unidad_medida', dv.unidad_base,
               'precio_unitario_venta', dv.precio_unitario,
               'subtotal', dv.subtotal
             )

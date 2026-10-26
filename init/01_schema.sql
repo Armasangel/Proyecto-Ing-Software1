@@ -693,11 +693,11 @@ CREATE INDEX IF NOT EXISTS idx_deuda_fecha_limite ON deuda(fecha_limite_pago);
 INSERT INTO categoria (nombre_categoria) VALUES ('Abarrotes'), ('Lácteos'), ('Bebidas');
 INSERT INTO marca (nombre_marca) VALUES ('Genérico'), ('La Mariposa'), ('Dos Pinos');
 INSERT INTO bodega (nombre_bodega, ubicacion) VALUES ('Bodega Principal', 'Zona 1, Guatemala');
-
+-- Temporalmente quité la necesidad del 2FA para hacer las pruebas. Luego se volverá a agregar. 
 -- Contraseña de prueba (los usuarios): password123
-INSERT INTO usuario (nombre, correo, telefono, contrasena_hash, tipo_usuario) VALUES
-  ('Admin Dueño',    'cumatzemilio6@gmail.com',        '50201234567', '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm', 'DUENO'),
-  ('Carlos Empleado','armasangel193@gmail.com', '50207654321', '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm', 'EMPLEADO');
+INSERT INTO usuario (nombre, correo, telefono, contrasena_hash, tipo_usuario, requiere_2fa ) VALUES
+  ('Admin Dueño',    'cumatzemilio6@gmail.com',        '50201234567', '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm', 'DUENO', FALSE),
+  ('Carlos Empleado','armasangel193@gmail.com', '50207654321', '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm', 'EMPLEADO', FALSE);
 
 INSERT INTO usuario (nombre, correo, telefono, contrasena_hash, tipo_usuario, id_bodega) VALUES
   ('Luis Bodeguero', 'bodega@tienda.com', '50208889999', '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm', 'BODEGUERO', 1);
@@ -717,8 +717,8 @@ VALUES (
 INSERT INTO producto (codigo_producto, nombre_producto, precio_unitario, precio_mayoreo, unidad_medida, id_categoria, id_marca)
 VALUES
   ('ARR-001', 'Arroz 1 libra',    4.50,  3.75, 'libra',  1, 1),
-  ('ACE-001', 'Aceite 1 litro',  18.00, 15.00, 'litro',  1, 2),
-  ('LEC-001', 'Leche entera 1L', 12.50, 10.00, 'litro',  2, 3);
+  ('ACE-001', 'Aceite 1 litro',  18.00, 15.00, 'botella',  1, 2),
+  ('LEC-001', 'Leche entera 1L', 12.50, 10.00, 'botella',  2, 3);
 
 INSERT INTO bodega_producto (id_bodega, id_producto, cantidad_disponible, stock_minimo)
 VALUES (1, 1, 150, 20), (1, 2, 80, 10), (1, 3, 45, 15);
@@ -732,9 +732,9 @@ INSERT INTO cliente (nombre, correo, telefono, tipo_cliente) VALUES
 INSERT INTO producto (codigo_producto, nombre_producto, precio_unitario, precio_mayoreo, unidad_medida, id_categoria, id_marca)
 VALUES
   ('FRI-001', 'Frijol 1 libra',        6.00,  5.00, 'libra',   1, 1),
-  ('BEB-001', 'Coca-Cola 1.5L',       12.00, 10.00, 'unidad',  3, 1),
-  ('BEB-002', 'Agua pura 600ml',       4.00,  3.25, 'unidad',  3, 1),
-  ('LEC-002', 'Yogurt Dos Pinos 1L',   8.50,  7.00, 'unidad',  2, 3)
+  ('BEB-001', 'Coca-Cola 1.5L',       12.00, 10.00, 'botella',  3, 1),
+  ('BEB-002', 'Agua pura 600ml',       4.00,  3.25, 'botella',  3, 1),
+  ('LEC-002', 'Yogurt Dos Pinos 1L',   8.50,  7.00, 'botella',  2, 3)
 ON CONFLICT (codigo_producto) DO NOTHING;
 
 INSERT INTO bodega_producto (id_bodega, id_producto, cantidad_disponible, stock_minimo)
