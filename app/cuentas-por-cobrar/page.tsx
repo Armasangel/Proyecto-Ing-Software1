@@ -4,51 +4,47 @@ import { StaffShell } from "@/components/StaffShell";
 import { useCuentasPorCobrar } from "@/hooks/useCuentasPorCobrar";
 import { TabsCuentas } from "@/components/cuentas-por-cobrar/TabsCuentas";
 import { DeudasTab } from "@/components/cuentas-por-cobrar/DeudasTab";
+import { LimitesTab } from "@/components/cuentas-por-cobrar/LimitesTab";
+import { NotificacionesTab } from "@/components/cuentas-por-cobrar/NotificacionesTab";
 
 export default function CuentasPorCobrarPage() {
   const h = useCuentasPorCobrar();
 
   if (!h.usuario) {
-    return <p className="p-8 text-ink-muted font-body">Cargando…</p>;
+    return <p className="p-8 text-ink-muted">Cargando…</p>;
+  }
+
+  if (h.usuario.tipo_usuario !== "DUENO") {
+    return (
+      <StaffShell usuario={h.usuario} title="Cuentas por cobrar" subtitle="">
+        <p className="text-ink-muted">No tienes permiso para ver esta página.</p>
+      </StaffShell>
+    );
   }
 
   return (
     <StaffShell
       usuario={h.usuario}
       title="Cuentas por cobrar"
-      subtitle="Control de deudas, límites y recordatorios"
+      subtitle="Registra y controla las cuentas por cobrar pendientes"
     >
+      {h.mensaje && <p className="text-success mb-4 font-semibold">{h.mensaje}</p>}
+      {h.error && <p className="text-danger mb-4 font-semibold">{h.error}</p>}
+      {h.alertaBloqueo && (
+        <p
+          className={`text-white px-4 py-[0.6rem] rounded-[14px] mb-4 font-semibold ${
+            h.alertaBloqueo.startsWith("⚠️") ? "bg-danger" : "bg-success"
+          }`}
+        >
+          {h.alertaBloqueo}
+        </p>
+      )}
+
       <TabsCuentas h={h} />
 
-      {h.alertaBloqueo && (
-        <div className="mb-3 px-4 py-2 rounded-[12px] bg-danger/10 border border-danger text-danger text-[0.9rem]">
-          {h.alertaBloqueo}
-        </div>
-      )}
-      {h.error && <div className="mb-3 text-danger text-[0.9rem]">{h.error}</div>}
-      {h.mensaje && <div className="mb-3 text-success text-[0.9rem]">{h.mensaje}</div>}
-
-      {h.tab === "deudas" && (
-        <div>
-          <div className="flex items-center gap-2 mb-3">
-            <button
-              type="button"
-              onClick={() => h.setVista(h.vista === "acumulado" ? "vencimiento" : "acumulado")}
-              className="px-3 py-1 rounded-[10px] border border-line text-[0.85rem]"
-            >
-              {h.vista === "acumulado" ? "Ver por vencimiento" : "Ver acumulado por cliente"}
-            </button>
-          </div>
-          <DeudasTab h={h} />
-        </div>
-      )}
-
-      {h.tab === "limites" && (
-        <div className="text-ink-muted text-[0.9rem]">Sección en proceso de modularización.</div>
-      )}
-      {h.tab === "notificaciones" && (
-        <div className="text-ink-muted text-[0.9rem]">Sección en proceso de modularización.</div>
-      )}
+      {h.tab === "deudas" && <DeudasTab h={h} />}
+      {h.tab === "limites" && <LimitesTab h={h} />}
+      {h.tab === "notificaciones" && <NotificacionesTab h={h} />}
     </StaffShell>
   );
 }

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useStaffSession } from "@/hooks/useStaffSession";
 import { matchesQuery, paginar, type PageSize } from "@/lib/ui-table";
-import type { TipoDocumento } from "@/lib/tipos-documento";
+import { etiquetaTipoDocumento, type TipoDocumento } from "@/lib/tipos-documento";
 import type { FacturaDetalle, Venta } from "@/lib/types/facturacion";
 
 export function useFacturacion() {
@@ -63,7 +63,9 @@ export function useFacturacion() {
     });
     const data = await res.json();
     if (res.ok) {
-      setMensaje(`${tipo_documento === "FACTURA_CAMBIARIA" ? "Factura cambiaria" : "Factura"} ${data.numero_factura} emitida correctamente`);
+      setMensaje(
+        `${etiquetaTipoDocumento(data.tipo_documento ?? tipo_documento)} ${data.numero_factura} emitida correctamente`
+      );
       await cargarVentas();
     } else {
       setMensaje(data.error || "Error al emitir factura");

@@ -1,20 +1,32 @@
 "use client";
 
-import { tabPillClass } from "@/lib/constants/cuentas-por-cobrar";
 import type { CuentasPorCobrarController } from "@/hooks/useCuentasPorCobrar";
+
+const TABS = [
+  { id: "deudas", label: "Cuentas por cobrar" },
+  { id: "limites", label: "Límites de crédito" },
+  { id: "notificaciones", label: "Notificaciones" },
+] as const;
 
 export function TabsCuentas({ h }: { h: CuentasPorCobrarController }) {
   return (
-    <div className="flex flex-wrap gap-2 mb-4">
-      <button type="button" className={tabPillClass(h.tab === "deudas")} onClick={() => h.setTab("deudas")}>
-        Deudas
-      </button>
-      <button type="button" className={tabPillClass(h.tab === "limites")} onClick={() => h.setTab("limites")}>
-        Límites de deuda
-      </button>
-      <button type="button" className={tabPillClass(h.tab === "notificaciones")} onClick={() => h.setTab("notificaciones")}>
-        Notificaciones
-      </button>
+    <div className="flex gap-1 mb-6 border-b border-line">
+      {TABS.map((t) => (
+        <button
+          key={t.id}
+          type="button"
+          onClick={() => {
+            h.setTab(t.id);
+            h.setError("");
+            h.setMensaje("");
+          }}
+          className={`px-[1.1rem] py-[0.6rem] border-none bg-transparent cursor-pointer font-semibold border-b-2 ${
+            h.tab === t.id ? "text-ink border-success" : "text-ink-muted border-transparent"
+          }`}
+        >
+          {t.label}
+        </button>
+      ))}
     </div>
   );
 }

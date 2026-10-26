@@ -4,6 +4,7 @@ import { StaffShell } from "@/components/StaffShell";
 import { useFacturacion } from "@/hooks/useFacturacion";
 import { FacturacionFiltros } from "@/components/facturacion/FacturacionFiltros";
 import { FacturacionTabla } from "@/components/facturacion/FacturacionTabla";
+import { FacturacionDetalle } from "@/components/facturacion/FacturacionDetalle";
 
 export default function FacturacionPage() {
   const f = useFacturacion();
@@ -37,6 +38,12 @@ export default function FacturacionPage() {
           <FacturacionFiltros f={f} />
           <FacturacionTabla f={f} />
         </>
+      )}
+      {f.facturaDetalle && (
+        <FacturacionDetalle
+          factura={f.facturaDetalle}
+          onCerrar={() => f.setFacturaDetalle(null)}
+        />
       )}
     </StaffShell>
   );
