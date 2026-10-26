@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { ETIQUETAS_TIPO_CLIENTE, TIPOS_CLIENTE } from "@/lib/tipos-cliente";
 import { TIPOS_DESCUENTO } from "@/lib/descuentos";
-import { Campo, Mensaje, enviarJson, inputCls, primaryBtnCls, secondaryBtnCls } from "@/components/crear/ui";
+import { Campo, Mensaje, inputCls, primaryBtnCls, secondaryBtnCls } from "@/components/ui/form";
+import { enviarJson } from "@/lib/http";
 
 type TramoForm = { cantidad_desde: string; porcentaje: string };
 

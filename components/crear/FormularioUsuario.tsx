@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { PASSWORD_MIN_LENGTH } from "@/lib/password-policy";
 import { TIPOS_USUARIO, labelRol } from "@/lib/roles";
-import { Campo, Mensaje, enviarJson, inputCls, primaryBtnCls } from "@/components/crear/ui";
+import { Campo, Mensaje, inputCls, primaryBtnCls } from "@/components/ui/form";
+import { enviarJson } from "@/lib/http";
 
 type Bodega = { id_bodega: number; nombre_bodega: string };
 

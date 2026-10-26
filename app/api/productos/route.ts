@@ -25,8 +25,6 @@ export async function GET(req: NextRequest) {
         p.fecha_caducidad,
         p.exento_iva,
         p.id_categoria,
-        p.id_categoria_2,
-        p.id_categoria_3,
         p.id_marca,
         c.nombre_categoria,
         c2.nombre_categoria AS nombre_categoria_2,

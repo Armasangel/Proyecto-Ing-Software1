@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useId, useMemo, useState } from "react";
-import type { CSSProperties, ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { CSSProperties } from "react";
 import { Icon } from "@/components/Icon";
+import { FormularioProducto } from "@/components/productos/FormularioProducto";
 import { matchesQuery, paginar, PaginationBar, type PageSize } from "@/lib/ui-table";
 import { PresentacionesProducto } from "@/components/inventario-catalogo/PresentacionesProducto";
 import { normalizarUnidad, presentacionesIniciales, validarPresentaciones, type Presentacion } from "@/lib/presentaciones";
@@ -43,31 +44,6 @@ interface Marca {
   nombre_marca: string;
   usos?: number;
 }
-interface Proveedor {
-  id_proveedor: number;
-  nombre_proveedor: string;
-  nit_proveedor: string;
-  correo_contacto: string | null;
-  telefono: string | null;
-}
-const PROVEEDOR_VACIO = { nombre_proveedor: "", nit_proveedor: "", correo_contacto: "", telefono: "" };
-
-const EMPTY_FORM = {
-  codigo_producto: "",
-  nombre_producto: "",
-  precio_unitario: "",
-  precio_mayoreo: "",
-  unidad_medida: "",
-  id_categoria: "",
-  id_categoria_2: "",
-  id_categoria_3: "",
-  id_marca: "",
-  caducidad: false,
-  fecha_caducidad: "",
-  exento_iva: false,
-  estado_producto: true,
-};
-
 export type CatalogoTab = "productos" | "precios";
 
 type CreacionRapida = {
@@ -98,62 +74,6 @@ export function CatalogoView({ tab, creacionRapida }: { tab: CatalogoTab; creaci
   // Modal producto
   const [modalOpen, setModalOpen] = useState(!!creacionRapida);
   const [editando, setEditando] = useState<Producto | null>(null);
-  const [form, setForm] = useState({ ...EMPTY_FORM });
-  const [saving, setSaving] = useState(false);
-  const [formError, setFormError] = useState("");
-
-  // Proveedores: buscador + selección múltiple + alta rápida
-  const [proveedores, setProveedores] = useState<Proveedor[]>([]);
-  const [proveedorQuery, setProveedorQuery] = useState("");
-  const [proveedorSugerenciasAbiertas, setProveedorSugerenciasAbiertas] = useState(false);
-  const [proveedoresSeleccionados, setProveedoresSeleccionados] = useState<Proveedor[]>(()=>creacionRapida?.proveedor?[creacionRapida.proveedor]:[]);
-  const [creandoProveedor, setCreandoProveedor] = useState(false);
-  const [formProveedorNuevo, setFormProveedorNuevo] = useState(PROVEEDOR_VACIO);
-  const [guardandoProveedor, setGuardandoProveedor] = useState(false);
-  const [errorProveedor, setErrorProveedor] = useState("");
-
-  // Categoría / marca: alta rápida sin salir del modal
-  const [creandoCategoria, setCreandoCategoria] = useState(false);
-  const [categoriaDestino, setCategoriaDestino] = useState<"id_categoria" | "id_categoria_2" | "id_categoria_3">("id_categoria");
-  const [nuevaCategoriaNombre, setNuevaCategoriaNombre] = useState("");
-  const [guardandoCategoria, setGuardandoCategoria] = useState(false);
-  const [errorCategoria, setErrorCategoria] = useState("");
-  const [creandoMarca, setCreandoMarca] = useState(false);
-  const [nuevaMarcaNombre, setNuevaMarcaNombre] = useState("");
-  const [guardandoMarca, setGuardandoMarca] = useState(false);
-  const [errorMarca, setErrorMarca] = useState("");
-
-  // Presentaciones por mayor (ej. "Caja de 24", "Saco de 50 libras")
-  const [presentacionesForm, setPresentacionesForm] = useState<Presentacion[]>([]);
-  const [presentacionesOriginales, setPresentacionesOriginales] = useState<Presentacion[]>([]);
-  const [presentacionesCargando, setPresentacionesCargando] = useState(false);
-  const [presentacionesError, setPresentacionesError] = useState("");
-  const [reintentoPresentaciones, setReintentoPresentaciones] = useState(0);
-  const unidadBase = normalizarUnidad(form.unidad_medida);
-  const cambiaUnidad = !!editando && unidadBase !== normalizarUnidad(editando.unidad_medida);
-
-  useEffect(() => {
-    if (!modalOpen) return;
-    setPresentacionesForm(editando && unidadBase === normalizarUnidad(editando.unidad_medida)
-      ? presentacionesOriginales
-      : presentacionesIniciales(unidadBase));
-  }, [modalOpen, editando, unidadBase, presentacionesOriginales]);
-
-  useEffect(() => {
-    if (!modalOpen || !editando) return;
-    const controller = new AbortController();
-    setPresentacionesCargando(true);
-    setPresentacionesError("");
-    fetch(`/api/presentaciones?id_producto=${editando.id_producto}`, { signal: controller.signal })
-      .then(async (res) => {
-        if (!res.ok) throw new Error();
-        const data = await res.json();
-        if (!controller.signal.aborted) setPresentacionesOriginales((data.presentaciones || []).map((p: Presentacion) => ({ ...p, factor_conversion: Number(p.factor_conversion) })));
-      })
-      .catch(() => { if (!controller.signal.aborted) setPresentacionesError("No se pudieron cargar las presentaciones del producto."); })
-      .finally(() => { if (!controller.signal.aborted) setPresentacionesCargando(false); });
-    return () => controller.abort();
-  }, [modalOpen, editando, reintentoPresentaciones]);
 
   // Confirm delete
   const [confirmId, setConfirmId] = useState<number | null>(null);
@@ -179,14 +99,15 @@ export function CatalogoView({ tab, creacionRapida }: { tab: CatalogoTab; creaci
     fetch("/api/marcas").then((r) => r.json()).then((d) => setMarcas(d.marcas || []));
   }, []);
 
+  const cargarCatalogos = useCallback(() => {
+    fetch("/api/categorias").then((r) => r.json()).then((d) => setCategorias(d.categorias || []));
+    fetch("/api/marcas").then((r) => r.json()).then((d) => setMarcas(d.marcas || []));
+  }, []);
+
   useEffect(() => {
     cargarProductos();
-    fetch("/api/categorias").then((r) => r.json()).then((d) => setCategorias(d.categorias || []));
-    fetch("/api/proveedores")
-      .then((r) => (r.ok ? r.json() : { proveedores: [] }))
-      .then((d) => setProveedores(d.proveedores || []))
-      .catch(() => setProveedores([]));
-  }, [cargarProductos]);
+    cargarCatalogos();
+  }, [cargarProductos, cargarCatalogos]);
 
   useEffect(() => {
     const actualizar = () => {
@@ -202,193 +123,18 @@ export function CatalogoView({ tab, creacionRapida }: { tab: CatalogoTab; creaci
     setPage(1);
   }, [busqueda, soloActivos, filtroCategoria, filtroMarca, filtroExentoIva, filtroCaducidad, perPage]);
 
-  const proveedoresFiltrados = proveedores.filter(
-    (p) =>
-      !proveedoresSeleccionados.some((s) => s.id_proveedor === p.id_proveedor) &&
-      matchesQuery(proveedorQuery, p.nombre_proveedor, p.nit_proveedor)
-  );
-
   // ── Modal helpers ──────────────────────────────────────────────────────────
-  const resetExtras = () => {
-    setProveedoresSeleccionados([]);
-    setProveedorQuery("");
-    setCreandoProveedor(false);
-    setFormProveedorNuevo(PROVEEDOR_VACIO);
-    setErrorProveedor("");
-    setPresentacionesForm([]);
-    setPresentacionesOriginales([]);
-    setPresentacionesCargando(false);
-    setPresentacionesError("");
-    setCreandoCategoria(false);
-    setNuevaCategoriaNombre("");
-    setErrorCategoria("");
-    setCreandoMarca(false);
-    setNuevaMarcaNombre("");
-    setErrorMarca("");
-  };
-
   const abrirCrear = () => {
     setEditando(null);
-    setForm({ ...EMPTY_FORM });
-    setFormError("");
-    resetExtras();
     setModalOpen(true);
   };
 
   const abrirEditar = (p: Producto) => {
     setEditando(p);
-    setForm({
-      codigo_producto: p.codigo_producto,
-      nombre_producto: p.nombre_producto,
-      precio_unitario: p.precio_unitario ?? "",
-      precio_mayoreo: p.precio_mayoreo ?? "",
-      unidad_medida: p.unidad_medida,
-      id_categoria: String(p.id_categoria),
-      id_categoria_2: p.id_categoria_2 == null ? "" : String(p.id_categoria_2),
-      id_categoria_3: p.id_categoria_3 == null ? "" : String(p.id_categoria_3),
-      id_marca: String(p.id_marca),
-      caducidad: p.caducidad,
-      fecha_caducidad: p.fecha_caducidad?.slice(0, 10) ?? "",
-      exento_iva: p.exento_iva,
-      estado_producto: p.estado_producto,
-    });
-    setFormError("");
-    resetExtras();
     setModalOpen(true);
   };
 
-  const cerrarModal = () => {
-    if (saving || guardandoCategoria || guardandoMarca || guardandoProveedor) return;
-    setModalOpen(false); setEditando(null); resetExtras();
-    creacionRapida?.onCancelar();
-  };
-
-  const agregarProveedor = (p: Proveedor) => {
-    setProveedoresSeleccionados((prev) => [...prev, p]);
-    setProveedorQuery("");
-    setProveedorSugerenciasAbiertas(false);
-  };
-
-  const quitarProveedor = (id: number) => {
-    setProveedoresSeleccionados((prev) => prev.filter((p) => p.id_proveedor !== id));
-  };
-
-  const guardarProveedorNuevo = async () => {
-    setErrorProveedor("");
-    if (!formProveedorNuevo.nombre_proveedor.trim() || !formProveedorNuevo.nit_proveedor.trim()) {
-      setErrorProveedor("Nombre y NIT son obligatorios");
-      return;
-    }
-    setGuardandoProveedor(true);
-    try {
-      const res = await fetch("/api/proveedores", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formProveedorNuevo),
-      });
-      const data = await res.json();
-      if (!res.ok) setErrorProveedor(data.error || "Error al crear el proveedor");
-      else {
-        setProveedores((prev) => [...prev, data.proveedor]);
-        agregarProveedor(data.proveedor);
-        setFormProveedorNuevo(PROVEEDOR_VACIO);
-        setCreandoProveedor(false);
-      }
-    } catch { setErrorProveedor("Error de conexión"); }
-    finally { setGuardandoProveedor(false); }
-  };
-
-  const guardarCategoriaNueva = async () => {
-    setErrorCategoria("");
-    if (!nuevaCategoriaNombre.trim()) { setErrorCategoria("El nombre es obligatorio"); return; }
-    setGuardandoCategoria(true);
-    try {
-      const res = await fetch("/api/categorias", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nombre_categoria: nuevaCategoriaNombre.trim() }),
-      });
-      const data = await res.json();
-      if (!res.ok) setErrorCategoria(data.error || "Error al crear la categoría");
-      else {
-        setCategorias((prev) => [...prev, data.categoria].sort((a, b) => a.nombre_categoria.localeCompare(b.nombre_categoria)));
-        setForm((f) => ({ ...f, [categoriaDestino]: String(data.categoria.id_categoria) }));
-        setNuevaCategoriaNombre("");
-        setCreandoCategoria(false);
-      }
-    } catch { setErrorCategoria("Error de conexión"); }
-    finally { setGuardandoCategoria(false); }
-  };
-
-  const guardarMarcaNueva = async () => {
-    setErrorMarca("");
-    if (!nuevaMarcaNombre.trim()) { setErrorMarca("El nombre es obligatorio"); return; }
-    setGuardandoMarca(true);
-    try {
-      const res = await fetch("/api/marcas", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nombre_marca: nuevaMarcaNombre.trim() }),
-      });
-      const data = await res.json();
-      if (!res.ok) setErrorMarca(data.error || "Error al crear la marca");
-      else {
-        setMarcas((prev) => [...prev, data.marca].sort((a, b) => a.nombre_marca.localeCompare(b.nombre_marca)));
-        setForm((f) => ({ ...f, id_marca: String(data.marca.id_marca) }));
-        setNuevaMarcaNombre("");
-        setCreandoMarca(false);
-      }
-    } catch { setErrorMarca("Error de conexión"); }
-    finally { setGuardandoMarca(false); }
-  };
-
-  const handleGuardar = async () => {
-    if (saving || guardandoCategoria || guardandoMarca || guardandoProveedor) return;
-    if (!form.codigo_producto || !form.nombre_producto || !form.unidad_medida || !form.id_categoria || !form.id_marca) {
-      setFormError("Completa todos los campos obligatorios (*)");
-      return;
-    }
-    if (presentacionesCargando || presentacionesError) return;
-    if (creacionRapida && !form.estado_producto) {
-      setFormError("El producto debe estar activo para seleccionarlo en la compra.");
-      return;
-    }
-    const errorCategorias = validarCategoriasProducto([Number(form.id_categoria), form.id_categoria_2 ? Number(form.id_categoria_2) : null, form.id_categoria_3 ? Number(form.id_categoria_3) : null]);
-    if (errorCategorias) { setFormError(errorCategorias); return; }
-    const errorPresentaciones = validarPresentaciones(presentacionesForm);
-    if (errorPresentaciones) { setFormError(errorPresentaciones); return; }
-    setSaving(true);
-    setFormError("");
-    const url = editando ? `/api/productos/${editando.id_producto}` : "/api/productos";
-    const method = editando ? "PUT" : "POST";
-    const payload: Record<string, unknown> = {
-      ...form,
-      precio_unitario: form.precio_unitario ? Number(form.precio_unitario) : null,
-      precio_mayoreo: form.precio_mayoreo ? Number(form.precio_mayoreo) : null,
-      fecha_caducidad: form.caducidad && form.fecha_caducidad ? form.fecha_caducidad : null,
-      id_categoria: Number(form.id_categoria),
-      id_categoria_2: form.id_categoria_2 ? Number(form.id_categoria_2) : null,
-      id_categoria_3: form.id_categoria_3 ? Number(form.id_categoria_3) : null,
-      id_marca: Number(form.id_marca),
-    };
-    if (!editando) {
-      payload.id_proveedores = proveedoresSeleccionados.map((p) => p.id_proveedor);
-    }
-    payload.presentaciones = presentacionesForm;
-    try {
-      const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-      const data = await res.json();
-      if (!res.ok) { setFormError(data.error || "Error al guardar"); }
-      else if (creacionRapida) {
-        setModalOpen(false);
-        creacionRapida.onCreado(Number(data.id_producto));
-      } else {
-        setModalOpen(false); setEditando(null); resetExtras();
-        cargarProductos(); showToast(editando ? "Producto actualizado ✓" : "Producto creado ✓", "ok");
-      }
-    } catch { setFormError("No se pudo conectar con el servidor"); }
-    finally { setSaving(false); }
-  };
+  const cerrarModal = () => { setModalOpen(false); setEditando(null); };
 
   const handleEliminar = async (id: number) => {
     setDeleting(true);
@@ -725,219 +471,18 @@ export function CatalogoView({ tab, creacionRapida }: { tab: CatalogoTab; creaci
                 ✕
               </button>
             </div>
-            <div style={{ ...s.modalBody, padding: "0 1.5rem 1.5rem", overflowY: "auto" }}>
-              <div style={s.fila}>
-                <Field label="Código *" style={{ flex: "0 0 140px" }}>
-                  <input 
-                    aria-label="Código del producto"
-                    maxLength={50}
-                    style={{ ...s.input, backgroundColor: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)" }} 
-                    value={form.codigo_producto} 
-                    onChange={(e) => setForm(f => ({ ...f, codigo_producto: e.target.value }))} 
-                    placeholder="ARR-001" 
-                    autoFocus 
-                  />
-                </Field>
-                <Field label="Nombre del producto *" style={{ flex: 1 }}>
-                  <input 
-                    aria-label="Nombre del producto"
-                    maxLength={200}
-                    style={{ ...s.input, backgroundColor: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)" }} 
-                    value={form.nombre_producto} 
-                    onChange={(e) => setForm(f => ({ ...f, nombre_producto: e.target.value }))} 
-                    placeholder="Arroz 1 libra" 
-                  />
-                </Field>
-              </div>
-              <div style={s.fila}>
-                {([
-                  { key: "id_categoria", label: "Categoría principal *", numero: 1 },
-                  { key: "id_categoria_2", label: "Categoría 2 (opcional)", numero: 2 },
-                  { key: "id_categoria_3", label: "Categoría 3 (opcional)", numero: 3 },
-                ] as const).map(({ key, label, numero }) => (
-                  <Field key={key} label={label} style={{ flex: "1 1 170px" }}>
-                    <CategoriaAutocompletar
-                      ariaLabel={label} style={s.input} value={form[key]} disabled={saving || guardandoCategoria}
-                      opcional={numero !== 1}
-                      categorias={categorias.filter((c) => !["id_categoria", "id_categoria_2", "id_categoria_3"].some((otra) => otra !== key && form[otra as typeof key] === String(c.id_categoria)))}
-                      onChange={(id) => setForm((f) => ({ ...f, [key]: id }))}
-                    />
-                    <button type="button" style={s.btnSecondary} disabled={saving || guardandoCategoria}
-                      onClick={() => { setCategoriaDestino(key); setCreandoCategoria(true); setNuevaCategoriaNombre(""); setErrorCategoria(""); }}>
-                      + Crear categoría {numero}
-                    </button>
-                  </Field>
-                ))}
-              </div>
-              {creandoCategoria && (
-                <div style={{ padding: "0.75rem", border: "1px solid var(--border)", borderRadius: 8 }}>
-                  <Field label={"Nueva categoría para " + (categoriaDestino === "id_categoria" ? "categoría principal" : categoriaDestino === "id_categoria_2" ? "categoría 2" : "categoría 3")}>
-                    <input aria-label="Nombre de nueva categoría" style={s.input} maxLength={100} value={nuevaCategoriaNombre}
-                      onChange={(e) => setNuevaCategoriaNombre(e.target.value)} disabled={guardandoCategoria}
-                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); if (!guardandoCategoria) guardarCategoriaNueva(); } }} />
-                  </Field>
-                  {errorCategoria && <p role="alert" style={s.formError}>{errorCategoria}</p>}
-                  <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem" }}>
-                    <button type="button" onClick={guardarCategoriaNueva} disabled={guardandoCategoria} style={s.btnSave}>{guardandoCategoria ? "Creando…" : "Crear categoría"}</button>
-                    <button type="button" onClick={() => setCreandoCategoria(false)} disabled={guardandoCategoria} style={s.btnSecondary}>Cancelar categoría</button>
-                  </div>
-                </div>
-              )}
-              <div style={s.fila}>
-                <Field label="Marca *" style={{ flex: 1 }}>
-                  <MarcaAutocompletar marcas={marcas} style={s.input} value={form.id_marca} disabled={saving || guardandoMarca}
-                    onChange={(id) => setForm((f) => ({ ...f, id_marca: id }))} />
-                  <button type="button" onClick={() => { setCreandoMarca(true); setNuevaMarcaNombre(""); setErrorMarca(""); }} disabled={saving || guardandoMarca} style={s.btnSecondary}>+ Crear marca</button>
-                </Field>
-              </div>
-              {creandoMarca && (
-                <div style={{ padding: "0.75rem", border: "1px solid var(--border)", borderRadius: 8 }}>
-                  <Field label="Nueva marca">
-                    <input aria-label="Nombre de nueva marca" style={s.input} maxLength={100} value={nuevaMarcaNombre}
-                      onChange={(e) => setNuevaMarcaNombre(e.target.value)} disabled={guardandoMarca}
-                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); if (!guardandoMarca) guardarMarcaNueva(); } }} />
-                  </Field>
-                  {errorMarca && <p role="alert" style={s.formError}>{errorMarca}</p>}
-                  <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem" }}>
-                    <button type="button" onClick={guardarMarcaNueva} disabled={guardandoMarca} style={s.btnSave}>{guardandoMarca ? "Creando…" : "Crear marca"}</button>
-                    <button type="button" onClick={() => setCreandoMarca(false)} disabled={guardandoMarca} style={s.btnSecondary}>Cancelar marca</button>
-                  </div>
-                </div>
-              )}
-              <div style={s.fila}>
-                <Field label="Precio unitario" style={{ flex: 1 }}>
-                  <input 
-                    aria-label="Precio unitario"
-                    style={{ ...s.input, backgroundColor: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)" }} 
-                    type="number" 
-                    step="0.01" 
-                    min="0" 
-                    value={form.precio_unitario} 
-                    onChange={(e) => setForm(f => ({ ...f, precio_unitario: e.target.value }))} 
-                    placeholder="0.00" 
-                  />
-                </Field>
-                <Field label="Precio mayoreo" style={{ flex: 1 }}>
-                  <input 
-                    aria-label="Precio mayoreo"
-                    style={{ ...s.input, backgroundColor: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)" }} 
-                    type="number" 
-                    step="0.01" 
-                    min="0" 
-                    value={form.precio_mayoreo} 
-                    onChange={(e) => setForm(f => ({ ...f, precio_mayoreo: e.target.value }))} 
-                    placeholder="0.00" 
-                  />
-                </Field>
-                <Field label="Unidad de medida *" style={{ flex: 1 }}>
-                  <input 
-                    aria-label="Unidad de medida"
-                    disabled={saving || presentacionesCargando || !!presentacionesError}
-                    style={{ ...s.input, backgroundColor: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)" }} 
-                    value={form.unidad_medida} 
-                    onChange={(e) => setForm(f => ({ ...f, unidad_medida: e.target.value }))} 
-                    placeholder="libra, botella, unidad…"
-                  />
-                </Field>
-              </div>
-              <p style={{ fontSize: "0.78rem", color: "var(--muted)", margin: 0 }}>
-                Los líquidos se venden por botella. Registra cada tamaño (800 ml, 1 L, etc.) como un producto distinto; las cajas agrupan botellas del mismo producto.
-              </p>
-              {cambiaUnidad && (
-                <p role="status" style={{ fontSize: "0.82rem", color: "var(--muted)", margin: 0 }}>
-                  Al guardar se corregirá la unidad de {editando.unidad_medida} a {form.unidad_medida || "la nueva unidad"}.
-                  Las cantidades y los precios actuales se conservan: por ejemplo, 10 {editando.unidad_medida} pasarán a ser 10 {form.unidad_medida || "unidades"}.
-                  Selecciona las presentaciones de la nueva unidad. Las anteriores quedarán inactivas y conservarán sus referencias históricas.
-                </p>
-              )}
-              <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap", marginTop: "0.25rem", color: "var(--text)" }}>
-                <CheckField label="Producto con fecha de caducidad" checked={form.caducidad} onChange={(v) => setForm(f => ({ ...f, caducidad: v }))} />
-                <CheckField label="Exento de IVA" checked={form.exento_iva} onChange={(v) => setForm(f => ({ ...f, exento_iva: v }))} />
-                <CheckField label="Producto activo" checked={form.estado_producto} onChange={(v) => setForm(f => ({ ...f, estado_producto: v }))} />
-              </div>
-              {form.caducidad && (
-                <Field label="Fecha de caducidad" style={{ maxWidth: 220 }}>
-                  <input aria-label="Fecha de caducidad del producto" style={s.input} type="date" value={form.fecha_caducidad} onChange={(e) => setForm(f => ({ ...f, fecha_caducidad: e.target.value }))} />
-                  <span style={{ fontSize: "0.72rem", color: "var(--muted)" }}>Referencia general del producto (no por lote).</span>
-                </Field>
-              )}
-
-              {!editando && (
-                <>
-                  {/* ── Proveedores ── */}
-                  <div style={{ borderTop: "1px solid var(--border)", paddingTop: "1rem" }}>
-                    <label style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)", letterSpacing: "0.04em", textTransform: "uppercase" }}>Proveedores</label>
-                    <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.4rem" }}>
-                      <div style={{ position: "relative", flex: "1 1 240px" }}>
-                        <input
-                          style={s.input}
-                          placeholder="Buscar proveedor por nombre o NIT…"
-                          value={proveedorQuery}
-                          onChange={(e) => { setProveedorQuery(e.target.value); setProveedorSugerenciasAbiertas(true); }}
-                          onFocus={() => setProveedorSugerenciasAbiertas(true)}
-                          onBlur={() => setTimeout(() => setProveedorSugerenciasAbiertas(false), 150)}
-                        />
-                        {proveedorSugerenciasAbiertas && proveedorQuery.trim() !== "" && (
-                          <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6, marginTop: 2, zIndex: 20, maxHeight: 180, overflowY: "auto", boxShadow: "0 4px 10px rgba(0,0,0,0.12)" }}>
-                            {proveedoresFiltrados.length === 0 ? (
-                              <div style={{ padding: "0.5rem 0.7rem", fontSize: "0.85rem", color: "var(--muted)" }}>Sin resultados — prueba &quot;+ Proveedor nuevo&quot;.</div>
-                            ) : (
-                              proveedoresFiltrados.slice(0, 8).map((p) => (
-                                <div key={p.id_proveedor} onMouseDown={() => agregarProveedor(p)} style={{ padding: "0.45rem 0.7rem", cursor: "pointer", fontSize: "0.85rem", borderBottom: "1px solid var(--border)" }}>
-                                  {p.nombre_proveedor} <span style={{ color: "var(--muted)" }}>({p.nit_proveedor})</span>
-                                </div>
-                              ))
-                            )}
-                          </div>
-                        )}
-                      </div>
-                      <button type="button" onClick={() => setCreandoProveedor(v => !v)} style={s.btnSecondary}>+ Proveedor nuevo</button>
-                    </div>
-                    {proveedoresSeleccionados.length > 0 && (
-                      <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginTop: "0.6rem" }}>
-                        {proveedoresSeleccionados.map((p) => (
-                          <span key={p.id_proveedor} style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 999, padding: "0.25rem 0.6rem", fontSize: "0.8rem" }}>
-                            {p.nombre_proveedor}
-                            <button type="button" onClick={() => quitarProveedor(p.id_proveedor)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}>×</button>
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                    {creandoProveedor && (
-                      <div style={{ marginTop: "0.75rem", padding: "0.85rem", background: "var(--surface2)", borderRadius: 8, display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.6rem" }}>
-                        <Field label="Nombre *"><input style={s.input} value={formProveedorNuevo.nombre_proveedor} onChange={(e) => setFormProveedorNuevo(f => ({ ...f, nombre_proveedor: e.target.value }))} /></Field>
-                        <Field label="NIT *"><input style={s.input} value={formProveedorNuevo.nit_proveedor} onChange={(e) => setFormProveedorNuevo(f => ({ ...f, nit_proveedor: e.target.value }))} /></Field>
-                        <Field label="Correo"><input style={s.input} value={formProveedorNuevo.correo_contacto} onChange={(e) => setFormProveedorNuevo(f => ({ ...f, correo_contacto: e.target.value }))} /></Field>
-                        <Field label="Teléfono"><input style={s.input} value={formProveedorNuevo.telefono} onChange={(e) => setFormProveedorNuevo(f => ({ ...f, telefono: e.target.value }))} /></Field>
-                        {errorProveedor && <div style={{ gridColumn: "1 / -1", color: "var(--red)", fontSize: "0.82rem" }}>{errorProveedor}</div>}
-                        <div style={{ gridColumn: "1 / -1" }}>
-                          <button type="button" onClick={guardarProveedorNuevo} disabled={guardandoProveedor} style={s.btnSave}>{guardandoProveedor ? "Guardando…" : "Guardar proveedor"}</button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                </>
-              )}
-              {presentacionesCargando && <p role="status">Cargando presentaciones…</p>}
-              {presentacionesError && (
-                <div role="alert" style={s.formError}>
-                  {presentacionesError}
-                  <button type="button" onClick={() => setReintentoPresentaciones((v) => v + 1)} style={s.btnSecondary}>Reintentar carga</button>
-                </div>
-              )}
-              <PresentacionesProducto
-                key={editando?.id_producto ?? "nuevo"}
-                unidad={form.unidad_medida}
-                value={presentacionesForm}
-                onChange={setPresentacionesForm}
-                disabled={saving || presentacionesCargando || !!presentacionesError}
+            <div style={{ ...s.modalBody, padding: "1.25rem 1.5rem", overflowY: "auto" }}>
+              <FormularioProducto
+                producto={editando}
+                variant="modal"
+                onCancelar={cerrarModal}
+                onCatalogosCambiados={cargarCatalogos}
+                onGuardado={({ esEdicion }) => {
+                  cerrarModal();
+                  cargarProductos();
+                  showToast(esEdicion ? "Producto actualizado ✓" : "Producto creado ✓", "ok");
+                }}
               />
-              {formError && <p role="alert" style={s.formError}>{formError}</p>}
-            </div>
-            <div style={{ ...s.modalFooter, padding: "1rem 1.5rem", display: "flex", justifyContent: "flex-end", gap: "0.75rem", borderTop: "1px solid var(--border)" }}>
-              <button type="button" onClick={cerrarModal} style={s.btnSecondary} disabled={saving || guardandoCategoria || guardandoMarca || guardandoProveedor}>Cancelar</button>
-              <button type="button" onClick={handleGuardar} style={s.btnSecondary} disabled={saving || guardandoCategoria || guardandoMarca || guardandoProveedor || presentacionesCargando || !!presentacionesError}>{saving ? "Guardando…" : editando ? "Guardar cambios" : "Crear producto"}</button>
             </div>
           </div>
         </div>
@@ -966,24 +511,6 @@ export function CatalogoView({ tab, creacionRapida }: { tab: CatalogoTab; creaci
         </div>
       )}
     </>
-  );
-}
-
-function Field({ label, children, style }: { label: string; children: ReactNode; style?: CSSProperties }) {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", ...style }}>
-      <label style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)", letterSpacing: "0.04em", textTransform: "uppercase" }}>{label}</label>
-      {children}
-    </div>
-  );
-}
-
-function CheckField({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", color: "var(--text)", fontSize: "0.88rem" }}>
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} style={{ accentColor: "var(--accent)", width: 15, height: 15 }} />
-      {label}
-    </label>
   );
 }
 
