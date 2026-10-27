@@ -336,7 +336,7 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
                 <option value="">Todas las bodegas</option>
                 {bodegasSimple.map(b => <option key={b.id_bodega} value={b.id_bodega}>{b.nombre_bodega}</option>)}
               </select>
-              <select value={filtroProducto} onChange={e => setFiltroProducto(e.target.value)} style={{ ...s.selectInline, minWidth: 220 }} aria-label="Filtrar por producto">
+              <select value={filtroProducto} onChange={e => setFiltroProducto(e.target.value)} style={{ ...s.selectInline, minWidth: 160, maxWidth: "none", flex: "1 1 220px" }} aria-label="Filtrar por producto">
                 <option value="">Todos los productos</option>
                 {productos.map(p => <option key={p.id_producto} value={p.id_producto}>[{p.codigo_producto}] {p.nombre_producto}{!p.estado_producto ? " (inactivo)" : ""}</option>)}
               </select>
@@ -617,15 +617,8 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
         <div
           style={{
             ...s.overlay,
-            position: "fixed",
-            top: 0,
-            left: 0,
-            width: "100vw",
-            height: "100vh",
             backgroundColor: "rgba(0, 0, 0, 0.5)", // Oscurece el fondo
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
+            boxSizing: "border-box",
             zIndex: 101,
           }}
           onClick={e => { if (e.target === e.currentTarget) cerrarModalBodega(); }}
@@ -641,7 +634,8 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
               boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.3)",
               display: "flex",
               flexDirection: "column",
-              overflow: "hidden",
+              maxHeight: "90vh",
+              overflowY: "auto",
             }}
           >
             <div style={{ ...s.modalHeader, padding: "1.25rem 1.5rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -749,10 +743,10 @@ const pill: CSSProperties = { display: "inline-block", padding: "0.15rem 0.55rem
 const s: Record<string, CSSProperties> = {
   card: { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "1rem" },
   select: { background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "0.55rem 0.75rem", color: "var(--text)", fontSize: "0.9rem", outline: "none", width: "100%" },
-  selectInline: { background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "0.55rem 0.75rem", color: "var(--text)", fontSize: "0.9rem", outline: "none", minWidth: 180, maxWidth: 280, flex: "0 1 auto" },
+  selectInline: { background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "0.55rem 0.75rem", color: "var(--text)", fontSize: "0.9rem", outline: "none", minWidth: 160, maxWidth: 320, flex: "1 1 180px" },
   filterBlock: { display: "flex", flexDirection: "column", gap: "0.65rem", marginTop: "1rem" },
   toolbar: { display: "flex", flexDirection: "row", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" },
-  checkRow: { display: "flex", flexDirection: "row", alignItems: "center", gap: "1.25rem", flexWrap: "nowrap" },
+  checkRow: { display: "flex", flexDirection: "row", alignItems: "center", gap: "0.75rem 1.25rem", flexWrap: "wrap" },
   searchInput: { flex: "1 1 240px", minWidth: 200, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "0.55rem 0.75rem", color: "var(--text)", fontSize: "0.9rem", outline: "none" },
   check: { display: "flex", alignItems: "center", gap: "0.45rem", color: "var(--muted)", fontSize: "0.85rem", userSelect: "none", cursor: "pointer", whiteSpace: "nowrap" } as CSSProperties,
   btnPrimary: { background: "var(--accent)", color: "var(--info-bg)", border: "none", borderRadius: 10, padding: "0.65rem 0.9rem", fontWeight: 700, cursor: "pointer", fontSize: "0.88rem", whiteSpace: "nowrap" } as CSSProperties,

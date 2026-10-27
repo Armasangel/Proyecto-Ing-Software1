@@ -7,7 +7,7 @@ import type { UsuariosController } from "@/hooks/useUsuarios";
 export function UsuariosTabla({ u }: { u: UsuariosController }) {
   return (
     <div style={s.tableWrapper}>
-      <table style={s.table}>
+      <table style={{ ...s.table, minWidth: 820 }}>
         <thead>
           <tr style={{ background: "var(--surface2)" }}>
             <th style={s.th}>Usuario</th>

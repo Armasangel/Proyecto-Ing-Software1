@@ -138,6 +138,28 @@ describe("StaffShell", () => {
     expect(screen.getByText("Cerrar sesión")).toBeInTheDocument();
   });
 
+  it("abre y cierra el menú móvil", async () => {
+    const user = userEvent.setup();
+    render(
+      <StaffShell usuario={duenoUser} title="Dashboard">
+        <p>Contenido</p>
+      </StaffShell>
+    );
+
+    const abrir = screen.getByRole("button", { name: "Abrir menú" });
+    expect(abrir).toHaveAttribute("aria-expanded", "false");
+
+    await user.click(abrir);
+    const cerrar = screen.getByRole("button", { name: "Cerrar menú" });
+    expect(cerrar).toHaveAttribute("aria-expanded", "true");
+
+    await user.click(screen.getByRole("button", { name: "Cerrar menú lateral" }));
+    expect(screen.getByRole("button", { name: "Abrir menú" })).toHaveAttribute(
+      "aria-expanded",
+      "false"
+    );
+  });
+
   it("calls /api/logout and redirects on logout click", async () => {
     let logoutCalled = false;
     server.use(

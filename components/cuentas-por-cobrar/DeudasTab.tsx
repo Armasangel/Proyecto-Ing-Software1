@@ -66,8 +66,8 @@ export function DeudasTab({ h }: { h: CuentasPorCobrarController }) {
 
           <div className="mb-3">
             <label className="block mb-1 text-[0.85rem]">Cliente *</label>
-            <div className="flex gap-2">
-              <div className="relative flex-1 isolate">
+            <div className="flex flex-wrap gap-2">
+              <div className="relative min-w-0 flex-1 isolate">
                 <ClienteAutocompletar
                   clientes={h.clientes}
                   value={h.form.id_cliente}
@@ -167,7 +167,7 @@ export function DeudasTab({ h }: { h: CuentasPorCobrarController }) {
         </div>
       )}
 
-      <div className="flex gap-1.5 mb-4">
+      <div className="mb-4 flex flex-wrap gap-1.5">
         <button
           type="button"
           className={tabPillClass(h.vista === "acumulado")}
@@ -218,7 +218,7 @@ export function DeudasTab({ h }: { h: CuentasPorCobrarController }) {
 
       {h.vista === "acumulado" && (
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-[0.9rem]">
+          <table className="w-full min-w-[640px] border-collapse text-[0.9rem]">
             <thead>
               <tr className="border-b-2 border-line text-left">
                 <th className={CLS_CPC.td}>Persona</th>
@@ -272,7 +272,7 @@ export function DeudasTab({ h }: { h: CuentasPorCobrarController }) {
                   {h.expandidos.has(g.key) && (
                     <tr key={`${g.key}-detalle`}>
                       <td colSpan={4} className="px-3 pt-0 pb-4">
-                        <table className="w-full border-collapse text-[0.82rem]">
+                        <table className="w-full min-w-[760px] border-collapse text-[0.82rem]">
                           <thead>
                             <tr className="text-ink-muted text-left">
                               <th className={CLS_CPC.tdSm}>Fecha inicio</th>
@@ -408,7 +408,7 @@ export function DeudasTab({ h }: { h: CuentasPorCobrarController }) {
 
       {h.vista === "vencimiento" && (
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-[0.9rem]">
+          <table className="w-full min-w-[720px] border-collapse text-[0.9rem]">
             <thead>
               <tr className="border-b-2 border-line text-left">
                 <th className={CLS_CPC.td}>Persona</th>

@@ -59,8 +59,10 @@ export const s: Record<string, CSSProperties> = {
   },
   header: {
     display: "flex",
+    flexWrap: "wrap",
     justifyContent: "space-between",
     alignItems: "center",
+    gap: "0.75rem",
     padding: "1rem 1.25rem",
     background: "var(--sidebar-bg, #1E293B)",
     color: "#fff",
@@ -74,7 +76,7 @@ export const s: Record<string, CSSProperties> = {
     fontWeight: 700,
   },
   subtitle: { fontSize: "0.8rem", opacity: 0.75, marginTop: "0.15rem" },
-  headerAcciones: { display: "flex", alignItems: "center", gap: "0.5rem" },
+  headerAcciones: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.5rem" },
   logoutBtn: {
     display: "flex",
     alignItems: "center",
@@ -109,7 +111,7 @@ export const s: Record<string, CSSProperties> = {
     flexDirection: "column",
     gap: "0.85rem",
   },
-  row: { display: "flex", gap: "0.75rem" },
+  row: { display: "flex", flexWrap: "wrap", gap: "0.75rem" },
   field: { display: "flex", flexDirection: "column", gap: "0.35rem" },
   label: { fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)" },
   input: {

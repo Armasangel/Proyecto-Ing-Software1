@@ -100,13 +100,13 @@ export function FormularioDescuento() {
       <fieldset className="rounded-control border border-[var(--border)] p-3">
         <legend className="px-1 text-[0.82rem] font-semibold text-ink-muted">Tramos</legend>
         <div className="grid gap-2">
-          <div className="grid grid-cols-[1fr_1fr_auto] gap-2 text-[0.75rem] font-semibold uppercase tracking-wide text-ink-muted">
+          <div className="hidden gap-2 text-[0.75rem] font-semibold uppercase tracking-wide text-ink-muted sm:grid sm:grid-cols-[1fr_1fr_auto]">
             <span>Cantidad desde</span>
             <span>Porcentaje</span>
             <span />
           </div>
           {tramos.map((tramo, indice) => (
-            <div key={indice} className="grid grid-cols-[1fr_1fr_auto] items-center gap-2">
+            <div key={indice} className="grid grid-cols-2 items-center gap-2 sm:grid-cols-[1fr_1fr_auto]">
               <input
                 className={inputCls}
                 type="number"
@@ -130,7 +130,7 @@ export function FormularioDescuento() {
               />
               <button
                 type="button"
-                className={secondaryBtnCls}
+                className={`${secondaryBtnCls} col-span-2 sm:col-span-1`}
                 onClick={() => setTramos((filas) => filas.filter((_, i) => i !== indice))}
                 disabled={tramos.length === 1}
               >

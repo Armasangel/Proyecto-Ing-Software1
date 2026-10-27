@@ -27,7 +27,7 @@ export function BodegaMovimientoForm({ h }: { h: ReturnType<typeof useBodega> })
       </div>
 
       <div style={s.row}>
-        <div style={{ ...s.field, flex: 1 }}>
+        <div style={{ ...s.field, flex: "1 1 140px" }}>
           <label style={s.label}>Cantidad</label>
           <input
             style={s.input}
@@ -40,7 +40,7 @@ export function BodegaMovimientoForm({ h }: { h: ReturnType<typeof useBodega> })
             aria-label="Cantidad"
           />
         </div>
-        <div style={{ ...s.field, flex: 1 }}>
+        <div style={{ ...s.field, flex: "1 1 140px" }}>
           <label style={s.label}>Presentación</label>
           <select
             style={s.input}

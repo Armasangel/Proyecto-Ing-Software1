@@ -9,7 +9,7 @@ export function DescuentosAsignaciones({ h }: { h: ReturnType<typeof useDescuent
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-card shadow-warm border border-[var(--border)] max-w-[460px] w-full p-6">
+      <div className="max-h-[90vh] w-full max-w-[460px] overflow-y-auto rounded-card border border-[var(--border)] bg-white p-6 shadow-warm">
         <h3 className="text-base font-semibold text-ink mb-2">Asignar descuento</h3>
         <p className="text-sm text-ink-muted mb-4">Selecciona un cliente específico o un tipo de cliente.</p>
 
@@ -49,7 +49,7 @@ export function DescuentosAsignaciones({ h }: { h: ReturnType<typeof useDescuent
           </div>
         </div>
 
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
           <button onClick={h.asignar} className={BTN_PRIMARY_DESCUENTO}>
             Guardar asignación
           </button>

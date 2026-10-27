@@ -12,7 +12,7 @@ export function HistorialFiltros({ h }: { h: HistorialVentasController }) {
         onClick={() => h.setPanelFiltros(false)}
         className="fixed top-0 left-0 w-screen h-screen bg-black/50 border-none z-[99] cursor-pointer"
       />
-      <aside className="fixed top-0 right-0 w-[320px] h-screen bg-surface text-ink border-l border-line shadow-[-4px_0_12px_rgba(0,0,0,0.3)] z-[100] overflow-y-auto flex flex-col font-body">
+      <aside className="fixed top-0 right-0 flex h-screen w-[320px] max-w-full flex-col overflow-y-auto border-l border-line bg-surface font-body text-ink shadow-[-4px_0_12px_rgba(0,0,0,0.3)] z-[100]">
         <div className="flex items-center justify-between px-5 py-4 border-b border-line shrink-0">
           <h2 className="m-0 font-head text-[1.05rem] font-bold">Filtros</h2>
           <button type="button" onClick={() => h.setPanelFiltros(false)} className={HISTORIAL_VENTAS_CLS.closeBtn}>

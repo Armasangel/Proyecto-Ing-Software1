@@ -11,7 +11,7 @@ export function ConfirmarVentaModal({ v }: { v: VentasController }) {
       onClick={() => v.setConfirmando(false)}
     >
       <div
-        className="bg-white rounded-card shadow-warm-lg p-6 max-w-[420px] w-full"
+        className="max-h-[90vh] w-full max-w-[420px] overflow-y-auto rounded-card bg-white p-6 shadow-warm-lg"
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="font-head text-lg font-bold text-ink mb-2">¿Confirmar esta venta?</h3>
@@ -27,7 +27,7 @@ export function ConfirmarVentaModal({ v }: { v: VentasController }) {
         ) : (
           <p className="text-ink-muted text-[0.88rem] mb-4">De contado: el cliente paga el total ahora.</p>
         )}
-        <div className="flex gap-2 justify-end">
+        <div className="flex flex-wrap justify-end gap-2">
           <button
             type="button"
             onClick={() => v.setConfirmando(false)}

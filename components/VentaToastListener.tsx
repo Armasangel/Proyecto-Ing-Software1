@@ -72,9 +72,9 @@ export function VentaToastListener() {
   if (toasts.length === 0) return null;
 
   return (
-    <div style={s.container}>
+    <div className="fixed bottom-4 left-4 right-4 z-[400] flex flex-col gap-[0.6rem] sm:bottom-8 sm:left-auto sm:right-8">
       {toasts.map((t) => (
-        <div key={t.toastKey} style={s.toast}>
+        <div key={t.toastKey} style={s.toast} className="w-full sm:w-auto">
           <div style={s.icon}><Icon name="shopping-cart" /></div>
           <div>
             <div style={s.title}>Venta realizada</div>
@@ -90,15 +90,6 @@ export function VentaToastListener() {
 }
 
 const s: Record<string, React.CSSProperties> = {
-  container: {
-    position: "fixed",
-    bottom: "2rem",
-    right: "2rem",
-    display: "flex",
-    flexDirection: "column",
-    gap: "0.6rem",
-    zIndex: 400,
-  },
   toast: {
     display: "flex",
     alignItems: "flex-start",

@@ -553,7 +553,7 @@ export function ProductoRapidoForm({ proveedor, onCreado, onCancelar }: Props) {
           </div>
         )}
         {creandoProveedor && (
-          <div style={{ ...panel, display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.6rem" }}>
+          <div style={{ ...panel, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "0.6rem" }}>
             <Field label="Nombre *">
               <input style={campo} value={formProveedorNuevo.nombre_proveedor} onChange={(e) => setFormProveedorNuevo((f) => ({ ...f, nombre_proveedor: e.target.value }))} />
             </Field>
