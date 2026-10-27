@@ -27,6 +27,7 @@ import {
   prefijoTipoDocumento,
   type TipoDocumento,
 } from "@/lib/tipos-documento";
+import { parsePaginationParams, buildPaginationMeta } from "@/lib/pagination";
 
 const log = getLogger("api/ventas");
 
@@ -61,11 +62,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "No autorizado" }, { status: 403 });
   }
 
-  // FIX #8: paginación real
   const { searchParams } = req.nextUrl;
-  const page  = Math.max(1, Number(searchParams.get("page")  ?? "1"));
-  const limit = Math.min(100, Math.max(1, Number(searchParams.get("limit") ?? "50")));
-  const offset = (page - 1) * limit;
+  const params = parsePaginationParams(searchParams, { maxLimit: 100 });
 
   try {
     // Total para metadata de paginación
@@ -73,6 +71,8 @@ export async function GET(req: NextRequest) {
       `SELECT COUNT(*)::int AS total FROM venta`
     );
     const total: number = countResult.rows[0]?.total ?? 0;
+
+    const meta = buildPaginationMeta(total, params);
 
     const result = await pool.query(`
       SELECT
@@ -128,15 +128,15 @@ export async function GET(req: NextRequest) {
         v.total, v.fecha_limite_pago, v.condicion_pago, o.id_orden, o.estado,
         uc.nombre, uc.correo, uc.codigo_cliente, uc.nit_cliente, ue.nombre
       ORDER BY v.fecha_venta DESC
-    `, [limit, offset]);
+    `, [params.limit, params.offset]);
 
     return NextResponse.json({
       ventas: result.rows,
       pagination: {
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit),
+        total: meta.total,
+        page: meta.page,
+        limit: meta.limit,
+        totalPages: meta.totalPages,
       },
     });
   } catch (error) {
