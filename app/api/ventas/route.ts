@@ -116,13 +116,18 @@ export async function GET(req: NextRequest) {
       LEFT JOIN orden o ON o.id_venta = v.id_venta
       LEFT JOIN detalle_venta dv ON dv.id_venta = v.id_venta
       LEFT JOIN producto p ON p.id_producto = dv.id_producto
+      WHERE v.id_venta IN (
+        SELECT v2.id_venta
+        FROM venta v2
+        ORDER BY v2.fecha_venta DESC
+        LIMIT $1 OFFSET $2
+      )
       GROUP BY
         v.id_venta, v.id_cliente, v.id_empleado, v.fecha_venta,
         v.estado_venta, v.tipo_venta, v.tipo_entrega, v.direccion_entrega,
         v.total, v.fecha_limite_pago, v.condicion_pago, o.id_orden, o.estado,
         uc.nombre, uc.correo, uc.codigo_cliente, uc.nit_cliente, ue.nombre
       ORDER BY v.fecha_venta DESC
-      LIMIT $1 OFFSET $2
     `, [limit, offset]);
 
     return NextResponse.json({

@@ -74,7 +74,13 @@ export async function GET(req: NextRequest) {
       ${baseFrom}
       LEFT JOIN detalle_venta dv ON dv.id_venta = v.id_venta
       LEFT JOIN producto p ON p.id_producto = dv.id_producto
-      WHERE (${whereSql})
+      WHERE v.id_venta IN (
+        SELECT v2.id_venta
+        FROM venta v2
+        WHERE ${whereSql}
+        ORDER BY v2.fecha_venta DESC, v2.id_venta DESC
+        LIMIT $${limIdx} OFFSET $${offIdx}
+      )
       GROUP BY
         v.id_venta,
         v.id_cliente,
@@ -92,7 +98,6 @@ export async function GET(req: NextRequest) {
         uc.codigo_cliente,
         ue.nombre
       ORDER BY v.fecha_venta DESC, v.id_venta DESC
-      LIMIT $${limIdx} OFFSET $${offIdx}
   `;
 
   try {
