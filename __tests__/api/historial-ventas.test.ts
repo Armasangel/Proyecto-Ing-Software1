@@ -47,7 +47,7 @@ describe("GET /api/historial-ventas", () => {
     const data = await res.json();
     expect(res.status).toBe(200);
     expect(data.ventas).toHaveLength(1);
-    expect(data.pagination).toMatchObject({ limit: 50, offset: 0, hasMore: false });
+    expect(data.pagination).toMatchObject({ limit: 50, page: 1, totalPages: 1 });
   });
 
   it("returns validation error for invalid periodo", async () => {
@@ -84,19 +84,21 @@ describe("GET /api/historial-ventas", () => {
     const sql = mockPool.query.mock.calls[0][0] as string;
     expect(sql).toContain("v.fecha_venta >= $1::date");
     expect(sql).toContain("v.fecha_venta < ($2::date + INTERVAL '1 day')");
-    // fechas (parametrizadas) + fetchLimit(51) + offset(0) adjuntos por la ruta
-    expect(mockPool.query.mock.calls[0][1]).toEqual([
+    // fechas (parametrizadas) + limit(50) + offset(0) adjuntos por la ruta  
+    // (llama 1: lista, ya que la llave 0 es el COUNT)
+    expect(mockPool.query.mock.calls[1][1]).toEqual([
       "2026-01-01",
       "2026-01-31",
-      51,
+      50,
       0,
     ]);
   });
 
   it("includes totales when meta_totales is requested", async () => {
     mockPool.query
-      .mockResolvedValueOnce({ rows: [{ min_total: 10, max_total: 500 }] })
-      .mockResolvedValueOnce({ rows: [mockVenta] });
+      .mockResolvedValueOnce({ rows: [{ total: 1 }] })
+      .mockResolvedValueOnce({ rows: [mockVenta] })
+      .mockResolvedValueOnce({ rows: [{ min_total: 10, max_total: 500 }] });
     const req = createMockRequest("/api/historial-ventas?meta_totales=true", { user: testUserDueno });
     const res = await GET(req);
     const data = await res.json();
@@ -110,6 +112,6 @@ describe("GET /api/historial-ventas", () => {
     const req = createMockRequest("/api/historial-ventas?periodo=month", { user: testUserDueno });
     await GET(req);
     const sql = mockPool.query.mock.calls[0][0] as string;
-    expect(sql).toContain("WHERE");
+    expect(sql).toContain("v.fecha_venta >= NOW() - INTERVAL '30 days'");
   });
 });
