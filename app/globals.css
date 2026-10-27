@@ -167,3 +167,11 @@ a:hover {
 :root.dark .text-achiote,
 :root.dark .text-achiote-600 { color: var(--red); }
 :root.dark .text-mango-600 { color: var(--warm); }
+
+/* Cursor de botones (DEV-222): un botón deshabilitado nunca debe mostrar la
+   manito. Va con !important porque varios botones (p. ej. el reporte de
+   ventas) fijan `cursor: pointer` en estilos en línea. */
+button:disabled,
+[aria-disabled="true"] {
+  cursor: not-allowed !important;
+}
