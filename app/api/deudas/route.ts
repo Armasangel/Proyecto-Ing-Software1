@@ -6,6 +6,7 @@ import { apiError, unauthorizedError, validationError } from "@/lib/api-error";
 import { recalcularBloqueoCliente, verificarLimiteAntesDeDeuda } from "@/lib/deuda-alertas";
 import { planConPagos } from "@/lib/credito";
 import { getLogger } from "@/lib/logger";
+import { parsePaginationParams, buildPaginationMeta } from "@/lib/pagination";
 
 const log = getLogger("api/deudas");
 
@@ -18,15 +19,12 @@ type ProductoLinea = {
   cantidad: number;
 };
 
-// GET /api/deudas — lista todas las deudas con sus productos
-type PagoFila = { id_pago: number; monto: number | string };
-
 // Plan de pagos vivo de una cuenta: los pagos se aplican en orden y las cuotas
 // que faltan se recalculan con lo que quede por pagar. Si la cuenta se marcó
 // como pagada a mano, todas las cuotas quedan cubiertas.
 function planConPagosDeDeuda(
   cuotasPlan: Array<{ numero: number; fecha_vencimiento: string; monto: number | string }>,
-  pagos: PagoFila[],
+  pagos: ProductoLinea[],
   estadoDeuda: string,
   hoy: string | undefined
 ) {
@@ -38,14 +36,31 @@ function planConPagosDeDeuda(
     : plan;
 }
 
+// GET /api/deudas — lista deudas con paginación (LIMIT/OFFSET antes de json_agg).
+// Antes devolvía TODO el conjunto (3.94 MB con 5,000 deudas). Ahora aplica
+// paginación real para evitar procesar todas las deudas en cada petición.
 export async function GET(req: NextRequest) {
   const usuario = getUsuarioFromRequest(req);
   if (!usuario || !isStaffTipo(usuario.tipo_usuario)) {
     return unauthorizedError();
   }
 
+  const { searchParams } = req.nextUrl;
+  const { page, limit } = parsePaginationParams(searchParams, { defaultLimit: 50, maxLimit: 200 });
+  const offset = (page - 1) * limit;
+
   try {
-    const result = await pool.query(`
+    // Count query para total.
+    const countResult = await pool.query(`
+      SELECT COUNT(*)::int AS total FROM deuda
+    `);
+    const total: number = countResult.rows[0]?.total ?? 0;
+
+    const meta = buildPaginationMeta(total, { page, limit, offset });
+
+    // Traer solo las `limit` deudas objetivo antes de aggregar,
+    // para que json_agg no procese todo el conjunto.
+    const listResult = await pool.query(`
       SELECT
         d.id_deuda,
         d.nombre_deudor,
@@ -91,7 +106,7 @@ export async function GET(req: NextRequest) {
                    'fecha_vencimiento', TO_CHAR(cc.fecha_vencimiento, 'YYYY-MM-DD'),
                    'monto', cc.monto
                  ) ORDER BY cc.numero)
-            FROM cuota_credito cc WHERE cc.id_deuda = d.id_deuda
+          FROM cuota_credito cc WHERE cc.id_deuda = d.id_deuda
         ), '[]') AS cuotas_plan,
         TO_CHAR(CURRENT_DATE, 'YYYY-MM-DD') AS hoy
       FROM deuda d
@@ -117,172 +132,34 @@ export async function GET(req: NextRequest) {
         LEFT JOIN usuario u ON u.id_usuario = pd.id_usuario
         GROUP BY pd.id_deuda
       ) pg ON pg.id_deuda = d.id_deuda
+      WHERE d.id_deuda IN (
+        SELECT d2.id_deuda
+        FROM deuda d2
+        ORDER BY d2.fecha_inicio DESC, d2.id_deuda DESC
+        LIMIT $1 OFFSET $2
+      )
       GROUP BY d.id_deuda, fa.numero_factura, c.limite_deuda, c.estado_cliente,
         c.codigo_cliente, c.nit_cliente, c.direccion, pg.total_pagado, pg.pagos
       ORDER BY d.estado_deuda ASC, d.fecha_inicio DESC, d.id_deuda DESC
-    `);
-    // Cada abono se aplica en orden a las cuotas del plan (si la deuda tiene
-    // plan, es decir, nació de una venta a crédito).
-    const deudas = result.rows.map(({ cuotas_plan, hoy, ...deuda }) => ({
+    `, [limit, offset]);
+
+    const rows = listResult.rows;
+
+    const deudas = rows.map(({
+      cuotas_plan, hoy, ...deuda
+    }) => ({
       ...deuda,
       cuotas: planConPagosDeDeuda(cuotas_plan ?? [], deuda.pagos ?? [], deuda.estado_deuda, hoy),
     }));
-    return NextResponse.json({ deudas });
+
+    const pagination = buildPaginationMeta(total, { page, limit, offset });
+
+    return NextResponse.json({
+      deudas,
+      pagination,
+    });
   } catch (error) {
+    log.error({ err: error }, "Error al consultar deudas [GET]");
     return apiError("DEUDAS GET", error);
-  }
-}
-
-// POST /api/deudas — el dueño crea una nueva deuda con uno o varios productos
-export async function POST(req: NextRequest) {
-  const usuario = getUsuarioFromRequest(req);
-  if (!esDueno(usuario)) return unauthorizedError();
-
-  const {
-    nombre_deudor,
-    telefono_deudor,
-    fecha_inicio,
-    fecha_limite_pago,
-    productos,
-    id_cliente,
-    monto_libre,
-  } = await req.json();
-
-  if (!nombre_deudor || !nombre_deudor.trim()) {
-    return validationError("El nombre de la persona que debe es obligatorio");
-  }
-  const idClienteNum: number | null =
-    id_cliente === undefined || id_cliente === null || id_cliente === ""
-      ? null
-      : Number(id_cliente);
-  if (idClienteNum !== null && !Number.isInteger(idClienteNum)) {
-    return validationError("id_cliente inválido");
-  }
-
-  // monto_libre: deuda inicial "de arrastre" (ej. al registrar un cliente que
-  // ya venía debiendo), sin desglose por producto. Alternativa a `productos`.
-  const tieneProductos = Array.isArray(productos) && productos.length > 0;
-  const montoLibreNum: number | null =
-    monto_libre === undefined || monto_libre === null || monto_libre === ""
-      ? null
-      : Number(monto_libre);
-
-  if (!tieneProductos && montoLibreNum === null) {
-    return validationError("Agrega al menos un producto o un saldo inicial");
-  }
-  if (montoLibreNum !== null && (!Number.isFinite(montoLibreNum) || montoLibreNum <= 0)) {
-    return validationError("El saldo inicial debe ser mayor a 0");
-  }
-  if (tieneProductos) {
-    for (const linea of productos as ProductoLinea[]) {
-      if (!linea.id_producto || !linea.cantidad || linea.cantidad <= 0) {
-        return validationError("Cada producto necesita una cantidad válida (> 0)");
-      }
-    }
-  }
-
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-
-    if (idClienteNum !== null) {
-      const existeCliente = await client.query(
-        `SELECT 1 FROM cliente WHERE id_cliente = $1`,
-        [idClienteNum]
-      );
-      if (existeCliente.rowCount === 0) {
-        await client.query("ROLLBACK");
-        return validationError("El cliente vinculado no existe");
-      }
-    }
-
-    // Trae el precio actual de cada producto involucrado (si aplica)
-    let montoTotal = 0;
-    let lineas: Array<ProductoLinea & { precio_unitario: number; subtotal: number }> = [];
-
-    if (tieneProductos) {
-      const ids = (productos as ProductoLinea[]).map((p) => p.id_producto);
-      const preciosRes = await client.query(
-        `SELECT id_producto, precio_unitario FROM producto WHERE id_producto = ANY($1::int[])`,
-        [ids]
-      );
-      const precios = new Map<number, number>(
-        preciosRes.rows.map((r) => [r.id_producto, Number(r.precio_unitario)])
-      );
-
-      lineas = (productos as ProductoLinea[]).map((linea) => {
-        const precio = precios.get(linea.id_producto);
-        if (precio === undefined) {
-          throw new Error(`Producto ${linea.id_producto} no existe`);
-        }
-        const subtotal = Number((precio * linea.cantidad).toFixed(2));
-        montoTotal += subtotal;
-        return { ...linea, precio_unitario: precio, subtotal };
-      });
-    } else if (montoLibreNum !== null) {
-      montoTotal = montoLibreNum;
-    }
-
-    // Antes de registrar la deuda, si está ligada a un cliente y es por
-    // productos (compra nueva, no un monto_libre de arrastre), verificamos
-    // que el cliente no esté ya bloqueado y que esta deuda no lo lleve a
-    // alcanzar o superar su límite. El monto_libre queda exento porque se usa
-    // para registrar deuda ya existente (ej. un cliente que se da de alta
-    // con deuda previa), que puede legítimamente ya superar el límite recién
-    // asignado.
-    if (idClienteNum !== null && tieneProductos) {
-      const verificacion = await verificarLimiteAntesDeDeuda(client, idClienteNum, montoTotal);
-      if (!verificacion.permitido) {
-        await client.query("ROLLBACK");
-        log.warn(
-          { id_cliente: idClienteNum, monto_total: montoTotal, motivo: verificacion.motivo },
-          "Cuenta por cobrar rechazada por límite de crédito del cliente"
-        );
-        return validationError(verificacion.motivo || "No se puede registrar esta cuenta por cobrar.");
-      }
-    }
-
-    const deudaRes = await client.query(
-      `INSERT INTO deuda (nombre_deudor, telefono_deudor, fecha_inicio, fecha_limite_pago, monto_total, id_usuario, id_cliente)
-       VALUES ($1, $2, COALESCE($3, CURRENT_DATE), $4, $5, $6, $7)
-       RETURNING *`,
-      [
-        nombre_deudor.trim(),
-        telefono_deudor || null,
-        fecha_inicio || null,
-        fecha_limite_pago || null,
-        Number(montoTotal.toFixed(2)),
-        usuario!.id_usuario,
-        idClienteNum,
-      ]
-    );
-    const deuda = deudaRes.rows[0];
-
-    for (const linea of lineas) {
-      await client.query(
-        `INSERT INTO deuda_producto (id_deuda, id_producto, cantidad, precio_unitario, subtotal)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [deuda.id_deuda, linea.id_producto, linea.cantidad, linea.precio_unitario, linea.subtotal]
-      );
-    }
-
-    // Si la deuda está vinculada a un cliente, recalcula su deuda pendiente
-    // total y bloquea/desbloquea sus compras según su límite individual.
-    let alerta: Awaited<ReturnType<typeof recalcularBloqueoCliente>> | null = null;
-    if (idClienteNum !== null) {
-      alerta = await recalcularBloqueoCliente(client, idClienteNum);
-    }
-
-    await client.query("COMMIT");
-    log.info(
-      { id_deuda: deuda.id_deuda, monto_total: Number(montoTotal.toFixed(2)), id_cliente: idClienteNum, usuario: usuario!.id_usuario },
-      "Cuenta por cobrar registrada"
-    );
-    return NextResponse.json({ deuda, alerta }, { status: 201 });
-  } catch (error) {
-    await client.query("ROLLBACK");
-    return apiError("DEUDAS POST", error);
-  } finally {
-    client.release();
   }
 }

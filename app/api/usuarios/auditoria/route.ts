@@ -3,7 +3,7 @@
 // Lectura de la bitácora de credenciales. Sólo para el dueño.
 //
 // Filtros: `?q=` busca por correo, `?tipo=` por tipo de evento,
-// `?pagina=` y `?por_pagina=` para paginar.
+// `?page=` y `?limit=` para paginar (unificado con el resto de la API).
 //
 // Se pagina en la base (LIMIT/OFFSET) y no en memoria: la tabla crece sin
 // límite y traerla entera sería cada vez más caro.
@@ -16,10 +16,11 @@ import { apiError, unauthorizedError } from "@/lib/api-error";
 import { checkRateLimit, getClientIp } from "@/lib/api-rate-limit";
 import { ETIQUETAS_EVENTO, TIPOS_EVENTO } from "@/lib/audit";
 
-const POR_PAGINA_MAX = 100;
-const POR_PAGINA_DEFECTO = 25;
-
 const TIPOS_VALIDOS = new Set<string>(Object.values(TIPOS_EVENTO));
+import { parsePaginationParams, buildPaginationMeta } from "@/lib/pagination";
+
+const DEFAULT_LIMIT = 25;
+const MAX_LIMIT = 100;
 
 export async function GET(req: NextRequest) {
   try {
@@ -40,12 +41,9 @@ export async function GET(req: NextRequest) {
     const q = (sp.get("q") ?? "").trim();
     const tipo = (sp.get("tipo") ?? "").trim();
 
-    const pagina = Math.max(1, Number(sp.get("pagina") ?? "1") || 1);
-    const porPagina = Math.min(
-      POR_PAGINA_MAX,
-      Math.max(1, Number(sp.get("por_pagina") ?? String(POR_PAGINA_DEFECTO)) || POR_PAGINA_DEFECTO)
-    );
-    const offset = (pagina - 1) * porPagina;
+    // Paginación unificada: ?page y ?limit (antes: ?pagina y ?por_pagina).
+    const { page, limit } = parsePaginationParams(sp, { defaultLimit: DEFAULT_LIMIT, maxLimit: MAX_LIMIT });
+    const offset = (page - 1) * limit;
 
     const filtros: string[] = [];
     const params: unknown[] = [];
@@ -67,13 +65,17 @@ export async function GET(req: NextRequest) {
 
     const where = filtros.length ? `WHERE ${filtros.join(" AND ")}` : "";
 
-    const total = await pool.query<{ total: number }>(
+    // Count query for total (siempre necesario para totalPages).
+    const countResult = await pool.query<{ total: number }>(
       `SELECT COUNT(*)::int AS total FROM auditoria ${where}`,
       params
     );
+    const total: number = countResult.rows[0]?.total ?? 0;
 
-    params.push(porPagina, offset);
-    const registros = await pool.query(
+    const meta = buildPaginationMeta(total, { page, limit, offset });
+
+    // Query de datos con LIMIT/OFFSET parametrizados.
+    const result = await pool.query(
       `SELECT a.id,
               a.id_usuario,
               a.correo,
@@ -83,19 +85,27 @@ export async function GET(req: NextRequest) {
               a.detalle,
               a.creado_en,
               u.nombre AS nombre_usuario
-         FROM auditoria a
-         LEFT JOIN usuario u ON u.id_usuario = a.id_usuario
-         ${where}
-        ORDER BY a.creado_en DESC, a.id DESC
-        LIMIT $${params.length - 1} OFFSET $${params.length}`,
-      params
+       FROM auditoria a
+       LEFT JOIN usuario u ON u.id_usuario = a.id_usuario
+       ${where}
+       ORDER BY a.creado_en DESC, a.id DESC
+       LIMIT $1 OFFSET $2`,
+      [limit, offset]
     );
 
+    const registros = result.rows;
+
+    const pagination = buildPaginationMeta(total, { page, limit, offset });
+
     return NextResponse.json({
-      registros: registros.rows,
-      total: total.rows[0]?.total ?? 0,
-      pagina,
-      por_pagina: porPagina,
+      registros,
+      total,
+      page: meta.page,
+      limit: meta.limit,
+      totalPages: meta.totalPages,
+      hasMore: meta.hasMore,
+      nextPage: meta.nextPage,
+      prevPage: meta.prevPage,
       etiquetas: ETIQUETAS_EVENTO,
     });
   } catch (error) {
