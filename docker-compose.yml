@@ -8,8 +8,8 @@ services:
       - "3001:3000"
     environment:
       - NODE_ENV=development
-      - JWT_SECRET=deposito_san_miguel_dev_secret_cambia_en_produccion
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-dsm_user}:${POSTGRES_PASSWORD:-dsm_password}@db:5432/${POSTGRES_DB:-deposito_san_miguel}
+      - JWT_SECRET=${JWT_SECRET}
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:${DATABASE_PORT}/${POSTGRES_DB}
       - GMAIL_USER=${GMAIL_USER}
       - GMAIL_APP_PASSWORD=${GMAIL_APP_PASSWORD}
       - LOG_LEVEL=${LOG_LEVEL:-debug}
@@ -34,8 +34,8 @@ services:
       target: dev
     environment:
       - NODE_ENV=test
-      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET no está definido — copia .env.example a .env}
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-dsm_user}:${POSTGRES_PASSWORD:-dsm_password}@db:5432/${POSTGRES_DB:-deposito_san_miguel}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET no está definido}
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:${DATABASE_PORT}/${POSTGRES_DB}
     volumes:
       - .:/app
       - /app/node_modules
@@ -48,16 +48,14 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-dsm_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dsm_password}
-      POSTGRES_DB: ${POSTGRES_DB:-deposito_san_miguel}
-    ports:
-      - "5433:5432"
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - ./init:/docker-entrypoint-initdb.d
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dsm_user} -d ${POSTGRES_DB:-deposito_san_miguel}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -69,8 +67,8 @@ services:
     # Así la UI de administración de la base no queda expuesta por defecto
     profiles: ["tools"]
     environment:
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@dsm.com}
-      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:?define PGADMIN_DEFAULT_PASSWORD en tu .env}
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
     ports:
       - "5050:80"
     depends_on:
@@ -89,9 +87,9 @@ services:
         condition: service_healthy
     environment:
       - POSTGRES_HOST=db
-      - POSTGRES_DB=deposito_san_miguel
-      - POSTGRES_USER=dsm_user
-      - POSTGRES_PASSWORD=dsm_password
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_EXTRA_OPTS=-Z6 --schema=public --blobs
       - SCHEDULE=@daily
       - BACKUP_ON_START=TRUE
