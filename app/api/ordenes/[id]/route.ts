@@ -36,7 +36,7 @@ export async function PATCH(
   const { id } = await params;
   const idOrden = Number(id);
   if (!idOrden || idOrden < 1) {
-    return NextResponse.json({ error: "ID de orden invalido" }, { status: 400 });
+    return NextResponse.json({ error: "ID de orden inválido" }, { status: 400 });
   }
 
   try {
@@ -45,7 +45,7 @@ export async function PATCH(
 
     if (estado && !isEstadoValido(estado)) {
       return NextResponse.json(
-        { error: `Estado invalido. Use: ${ESTADOS_ORDEN.join(", ")}` },
+        { error: `Estado inválido. Use: ${ESTADOS_ORDEN.join(", ")}` },
         { status: 400 }
       );
     }
@@ -173,7 +173,7 @@ export async function DELETE(
   const { id } = await params;
   const idOrden = Number(id);
   if (!idOrden || idOrden < 1) {
-    return NextResponse.json({ error: "ID de orden invalido" }, { status: 400 });
+    return NextResponse.json({ error: "ID de orden inválido" }, { status: 400 });
   }
 
   try {

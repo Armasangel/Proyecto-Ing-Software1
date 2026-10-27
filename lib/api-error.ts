@@ -1,4 +1,4 @@
-//manejo de erores consistente para todos los endpoints
+//manejo de errores consistente para todos los endpoints
 //NUNCA exponer stack traces o mensajes internos al cliente.
 
 import { NextResponse } from "next/server";

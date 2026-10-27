@@ -276,7 +276,7 @@ export async function POST(req: NextRequest) {
     const { nombre, correo, contrasena, tipo_usuario, telefono, id_bodega, requiere_2fa } = body;
 
     if (!nombre || !correo || !contrasena) {
-      return validationError("nombre, correo y contrasena son obligatorios");
+      return validationError("nombre, correo y contraseña son obligatorios");
     }
 
     // Validación de formato de correo (debe incluir @ y dominio)
