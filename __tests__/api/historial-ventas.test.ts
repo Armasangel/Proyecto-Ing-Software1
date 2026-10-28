@@ -41,7 +41,9 @@ describe("GET /api/historial-ventas", () => {
   });
 
   it("returns ventas with pagination for dueno", async () => {
-    mockPool.query.mockResolvedValue({ rows: [mockVenta] });
+    mockPool.query
+      .mockResolvedValueOnce({ rows: [{ total: 1 }] })
+      .mockResolvedValueOnce({ rows: [mockVenta] });
     const req = createMockRequest("/api/historial-ventas", { user: testUserDueno });
     const res = await GET(req);
     const data = await res.json();
