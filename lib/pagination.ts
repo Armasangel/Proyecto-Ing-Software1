@@ -69,7 +69,7 @@ export function parsePaginationParams(
   const rawPage = sp.get("page");
   if (rawPage !== null && rawPage !== "") {
     const p = Number(rawPage);
-    if (Number.isFinite(p) && p >= 1) page = p;
+    if (Number.isInteger(p) && p >= 1) page = p;
     // if invalid, stay at 1
   }
 
