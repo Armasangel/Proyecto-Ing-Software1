@@ -61,13 +61,5 @@ export async function checkRateLimit(
   };
 }
 
-export function getClientIp(req: { headers: { get(name: string): string | null } }): string {
-  const forwarded = req.headers.get("x-forwarded-for");
-  if (forwarded) {
-    const first = forwarded.split(",")[0]?.trim();
-    if (first) return first;
-  }
-  const realIp = req.headers.get("x-real-ip")?.trim();
-  if (realIp) return realIp;
-  return "unknown";
-}
+
+export { getClientIp } from "@/lib/client-ip";

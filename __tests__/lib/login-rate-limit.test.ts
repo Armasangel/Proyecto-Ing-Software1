@@ -27,11 +27,11 @@ describe("login-rate-limit", () => {
     jest.clearAllMocks();
   });
 
-  it("reads IP from x-forwarded-for (first hop)", () => {
+  it("toma el último salto de confianza de x-forwarded-for", () => {
     const req = requestWithHeaders({
       "x-forwarded-for": "203.0.113.10, 10.0.0.1",
     });
-    expect(getClientIp(req)).toBe("203.0.113.10");
+    expect(getClientIp(req)).toBe("10.0.0.1");
   });
 
   it("falls back to x-real-ip then unknown", () => {
