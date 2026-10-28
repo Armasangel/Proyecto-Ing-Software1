@@ -89,8 +89,8 @@ export async function GET(req: NextRequest) {
        LEFT JOIN usuario u ON u.id_usuario = a.id_usuario
        ${where}
        ORDER BY a.creado_en DESC, a.id DESC
-       LIMIT $1 OFFSET $2`,
-      [limit, offset]
+       LIMIT $${params.length + 1} OFFSET $${params.length + 2}`, 
+      [...params, limit, offset]
     );
 
     const registros = result.rows;
