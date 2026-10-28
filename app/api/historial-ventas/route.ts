@@ -32,10 +32,17 @@ export async function GET(req: NextRequest) {
 
   try {
     // Total para metadata de paginación (COUNT query).
+    const { whereSql: countWhere, values: countValues } = buildHistorialVentasWhere(
+      sp,
+      { omitAmountRange: true }
+    );
     const countResult = await pool.query(
-      `SELECT COUNT(*)::int AS total FROM venta ${(await buildHistorialVentasWhere(sp, { omitAmountRange: true })).whereSql}`
-      || "TRUE",
-      (await buildHistorialVentasWhere(sp, { omitAmountRange: true })).values
+      `SELECT COUNT(*)::int AS total
+       FROM venta v
+       JOIN cliente uc ON uc.id_cliente = v.id_cliente
+       LEFT JOIN usuario ue ON ue.id_usuario = v.id_empleado
+       WHERE ${countWhere}`,
+      countValues
     );
     const total: number = countResult.rows[0]?.total ?? 0;
 
