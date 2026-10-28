@@ -405,7 +405,6 @@ export function DeudasTab({ h }: { h: CuentasPorCobrarController }) {
             />
           </div>
         )}
-      ))}
 
       {h.vista === "vencimiento" && (
         <div className="overflow-x-auto">
