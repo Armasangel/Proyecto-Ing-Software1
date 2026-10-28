@@ -24,7 +24,7 @@ type ProductoLinea = {
 // como pagada a mano, todas las cuotas quedan cubiertas.
 function planConPagosDeDeuda(
   cuotasPlan: Array<{ numero: number; fecha_vencimiento: string; monto: number | string }>,
-  pagos: ProductoLinea[],
+  pagos: Array<{ id_pago: number; monto: number | string }>,
   estadoDeuda: string,
   hoy: string | undefined
 ) {
