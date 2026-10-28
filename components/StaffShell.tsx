@@ -5,6 +5,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { isDuenoTipo, labelRol, staffVariantFromTipo } from "@/lib/roles";
 import { Icon, type IconName } from "@/components/Icon";
 import { VentaToastListener } from "@/components/VentaToastListener";
@@ -25,13 +26,16 @@ type NavItem = {
 /* Mapa de rutas a iconos */
 const NAV: NavItem[] = [
   { href: "/dashboard",        label: "Dashboard",       icon: "dashboard"     },
+  { href: "/crear",            label: "Crear registros", icon: "increase"      },
   { href: "/inventario",       label: "Inventario",      icon: "inventory"     },
+  { href: "/entrada",          label: "Entrada",         icon: "box"           },
   { href: "/ventas",           label: "Ventas",          icon: "shopping-cart" },
   { href: "/facturacion",      label: "Facturación",     icon: "bill"          },
   { href: "/reportes",         label: "Reportes",        icon: "report"        },
   { href: "/proveedores",      label: "Proveedores",     icon: "hand-truck"    },
   { href: "/historial-ventas", label: "Historial ventas",icon: "distribution"  },
   { href: "/cuentas-por-cobrar",           label: "Cuentas por cobrar",          icon: "debt"     },
+  { href: "/descuentos",       label: "Descuentos",      icon: "setting"       },
   { href: "/usuarios",         label: "Usuarios",        icon: "owner"         },
 ];
 
@@ -84,10 +88,16 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
   const pathname = usePathname();
   const variant = staffVariantFromTipo(usuario.tipo_usuario);
   const t = THEMES[variant];
+  const [menuAbierto, setMenuAbierto] = useState(false);
+
+  useEffect(() => {
+    setMenuAbierto(false);
+  }, [pathname]);
 
   const navVisible = NAV.filter((item) => {
+    if (item.href === "/entrada") return !isDuenoTipo(usuario.tipo_usuario);
     if (
-      ["/inventario", "/historial-ventas", "/proveedores", "/cuentas-por-cobrar", "/usuarios", "/reportes"].includes(
+      ["/crear", "/inventario", "/historial-ventas", "/proveedores", "/cuentas-por-cobrar", "/usuarios", "/reportes", "/descuentos"].includes(
         item.href
       )
     ) {
@@ -102,13 +112,19 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
 
   async function handleLogout() {
     await fetch("/api/logout", { method: "POST" });
+    setMenuAbierto(false);
     router.replace("/login");
   }
 
   return (
     <div className="flex h-screen overflow-hidden font-body bg-cream">
-      <aside className="w-[230px] shrink-0 bg-sidebar flex flex-col justify-between h-screen shadow-warm-lg">
-        <div className="px-4 pt-6 pb-4">
+      <aside
+        id="staff-sidebar"
+        className={`fixed inset-y-0 left-0 z-50 h-screen w-[230px] shrink-0 bg-sidebar flex flex-col justify-between shadow-warm-lg transition-transform duration-200 md:static md:translate-x-0 ${
+          menuAbierto ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 pt-6 pb-4">
           {/* Logo */}
           <Link href="/dashboard" className="no-underline">
             <div className="flex items-center gap-2.5 mb-5 p-2 rounded-control bg-market/10 border border-market/15">
@@ -135,6 +151,7 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
                 <Link
                   key={item.href}
                   href={item.href}
+                  onClick={() => setMenuAbierto(false)}
                   className={`flex items-center gap-2.5 px-3 py-2.5 rounded-control text-[0.85rem] no-underline transition-colors duration-150 ${
                     active
                       ? "bg-sidebar-active text-cream font-semibold"
@@ -151,7 +168,7 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
         </div>
 
         {/* Usuario y logout */}
-        <div className="p-4 border-t border-sidebar-border">
+        <div className="shrink-0 p-4 border-t border-sidebar-border">
           <div className="flex items-center gap-2.5 mb-3 p-2 rounded-control bg-white/[0.04]">
             <div className={`w-[34px] h-[34px] rounded-full flex items-center justify-center font-head text-sm font-bold shrink-0 ${t.avatarClass}`}>
               {usuario.nombre[0].toUpperCase()}
@@ -165,6 +182,7 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
           </div>
           <Link
             href="/mi-cuenta"
+            onClick={() => setMenuAbierto(false)}
             className="w-full flex items-center gap-2 bg-transparent border border-sidebar-border rounded-control text-sidebar-muted px-3 py-2 text-[0.82rem] text-left transition-colors duration-150 hover:bg-white/5 hover:text-cream mb-2"
           >
             <Icon name="lockout" size={14} variant="light" />
@@ -181,14 +199,51 @@ export function StaffShell({ usuario, title, subtitle, children }: Props) {
         </div>
       </aside>
 
-      {/* Contenido principal */}
-      <main className="flex-1 min-h-0 p-8 overflow-y-auto bg-cream">
-        <div className="mb-8">
-          <h1 className={`font-head text-[1.7rem] font-extrabold mb-1 ${t.pageAccentClass}`}>{title}</h1>
-          {subtitle && <p className="text-ink-muted text-[0.88rem]">{subtitle}</p>}
-        </div>
-        {children}
-      </main>
+      {menuAbierto && (
+        <button
+          type="button"
+          aria-label="Cerrar menú lateral"
+          onClick={() => setMenuAbierto(false)}
+          className="fixed inset-0 z-40 bg-ink/40 md:hidden"
+        />
+      )}
+
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        {/* Barra superior móvil: la sidebar pasa a ser un drawer. */}
+        <header className="relative z-30 flex shrink-0 items-center gap-3 border-b border-sidebar-border bg-sidebar px-4 py-3 md:hidden">
+          <button
+            type="button"
+            onClick={() => setMenuAbierto((abierto) => !abierto)}
+            aria-label={menuAbierto ? "Cerrar menú" : "Abrir menú"}
+            aria-expanded={menuAbierto}
+            aria-controls="staff-sidebar"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-control border border-sidebar-border text-cream transition-colors hover:bg-white/10"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+              {menuAbierto ? (
+                <path d="M6 6l12 12M18 6L6 18" />
+              ) : (
+                <path d="M4 7h16M4 12h16M4 17h16" />
+              )}
+            </svg>
+          </button>
+          <div className="min-w-0">
+            <div className="font-head text-base font-extrabold leading-tight text-cream">TSM</div>
+            <div className="text-[0.68rem] font-semibold uppercase tracking-wider text-market-100">
+              Panel
+            </div>
+          </div>
+        </header>
+
+        {/* Contenido principal */}
+        <main className="min-h-0 flex-1 overflow-y-auto bg-cream p-4 sm:p-6 lg:p-8">
+          <div className="mb-5 sm:mb-8">
+            <h1 className={`font-head text-[1.35rem] font-extrabold mb-1 sm:text-[1.7rem] ${t.pageAccentClass}`}>{title}</h1>
+            {subtitle && <p className="text-ink-muted text-[0.88rem]">{subtitle}</p>}
+          </div>
+          {children}
+        </main>
+      </div>
 
       {/* Toast de venta realizada — solo el dueño lo ve, para enterarse en
           tiempo casi-real cuando un empleado registra una venta. */}

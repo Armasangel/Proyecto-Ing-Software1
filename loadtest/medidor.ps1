@@ -6,7 +6,7 @@
 param(
   [int]$N = 5,
   [string]$Base = "http://localhost:3001",
-  [string]$CookieFile = "C:\Users\Angel\AppData\Local\Temp\opencode\vol\cookies.txt"
+  [string]$CookieFile = "$env:TEMP\dsm-vol\cookies.txt"
 )
 
 # Etiqueta legible -> ruta. Las 5 pantallas del Dueño (VOL-03/VOL-04).

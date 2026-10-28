@@ -1,3 +1,4 @@
+import { getClientIp } from "@/lib/client-ip";
 // Limitador de tasa simple en memoria, por clave (ej. "facturacion:<ip>" o "facturacion:<userId>")
 // Sirve para un solo proceso/instancia. Si en algún momento despliegan con varias instancias,
 // esto habría que moverlo a Redis (ej. Upstash) para que el contador sea compartido.
@@ -24,6 +25,6 @@ export function rateLimit(key: string, limit = 10, windowMs = 60_000) {
 
 // Utilidad para obtener un identificador de cliente a partir del Request
 export function getClientKey(req: Request, prefix: string) {
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "anonymous";
+  const ip = getClientIp(req);
   return `${prefix}:${ip}`;
 }

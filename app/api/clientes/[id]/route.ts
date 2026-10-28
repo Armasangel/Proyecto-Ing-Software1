@@ -35,13 +35,20 @@ export async function PATCH(
   try {
     await client.query("BEGIN");
 
-    const existe = await client.query(
-      `SELECT 1 FROM cliente WHERE id_cliente = $1`,
+    const existe = await client.query<{ es_consumidor_final: boolean }>(
+      `SELECT es_consumidor_final FROM cliente WHERE id_cliente = $1`,
       [id_cliente]
     );
     if (existe.rowCount === 0) {
       await client.query("ROLLBACK");
       return validationError("El cliente no existe");
+    }
+
+    // Consumidor Final nunca debe quedar bloqueado por deuda: no se le
+    // asigna (ni se le quita) límite de crédito desde esta ruta.
+    if (existe.rows[0].es_consumidor_final) {
+      await client.query("ROLLBACK");
+      return validationError("El cliente Consumidor Final no puede tener límite de crédito");
     }
 
     await client.query(`UPDATE cliente SET limite_deuda = $1 WHERE id_cliente = $2`, [

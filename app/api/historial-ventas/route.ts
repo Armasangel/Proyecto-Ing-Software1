@@ -8,11 +8,10 @@ import {
   validationError,
 } from "@/lib/api-error";
 import {
-  buildHistorialPaginationMeta,
   buildHistorialVentasWhere,
-  parseHistorialPagination,
   validateHistorialQueryParams,
 } from "@/lib/historial-ventas";
+import { parsePaginationParams, buildPaginationMeta } from "@/lib/pagination";
 
 export async function GET(req: NextRequest) {
   const usuario = getUsuarioFromRequest(req);
@@ -26,18 +25,32 @@ export async function GET(req: NextRequest) {
     return validationError(invalidMsg);
   }
 
-  const { limit, offset, fetchLimit } = parseHistorialPagination(sp);
-  const { whereSql, values: whereValues } = buildHistorialVentasWhere(sp);
-  const limIdx = whereValues.length + 1;
-  const offIdx = whereValues.length + 2;
+  // Unified pagination: page (1-based) + limit (clamped max).
+  // Previously used ?limit&?offset; now uses ?page&?limit.
+  const { page, limit } = parsePaginationParams(sp, { maxLimit: 200 });
+  const offset = (page - 1) * limit;
 
-  const baseFrom = `
-      FROM venta v
-      JOIN cliente uc ON uc.id_cliente = v.id_cliente
-      LEFT JOIN usuario ue ON ue.id_usuario = v.id_empleado
-  `;
+  try {
+    // Total para metadata de paginación (COUNT query).
+    const { whereSql: countWhere, values: countValues } = buildHistorialVentasWhere(
+      sp,
+      { omitAmountRange: true }
+    );
+    const countResult = await pool.query(
+      `SELECT COUNT(*)::int AS total
+       FROM venta v
+       JOIN cliente uc ON uc.id_cliente = v.id_cliente
+       LEFT JOIN usuario ue ON ue.id_usuario = v.id_empleado
+       WHERE ${countWhere}`,
+      countValues
+    );
+    const total: number = countResult.rows[0]?.total ?? 0;
 
-  const listSql = `
+    const meta = buildPaginationMeta(total, { page, limit, offset });
+
+    const { whereSql, values: whereValues } = buildHistorialVentasWhere(sp);
+
+    const listSql = `
       SELECT
         v.id_venta,
         v.id_cliente,
@@ -52,6 +65,7 @@ export async function GET(req: NextRequest) {
         v.fecha_limite_pago,
         uc.nombre AS nombre_cliente,
         uc.correo AS correo_cliente,
+        uc.codigo_cliente,
         ue.nombre AS nombre_colaborador,
         COALESCE(
           json_agg(
@@ -62,6 +76,7 @@ export async function GET(req: NextRequest) {
               'nombre_producto', p.nombre_producto,
               'id_producto', dv.id_producto,
               'cantidad', dv.cantidad,
+              'unidad_medida', dv.unidad_base,
               'precio_unitario_venta', dv.precio_unitario,
               'subtotal', dv.subtotal
             )
@@ -69,10 +84,18 @@ export async function GET(req: NextRequest) {
           ) FILTER (WHERE dv.id_detalle_venta IS NOT NULL),
           '[]'::json
         ) AS productos
-      ${baseFrom}
+      FROM venta v
+      JOIN cliente uc ON uc.id_cliente = v.id_cliente
+      LEFT JOIN usuario ue ON ue.id_usuario = v.id_empleado
       LEFT JOIN detalle_venta dv ON dv.id_venta = v.id_venta
       LEFT JOIN producto p ON p.id_producto = dv.id_producto
-      WHERE (${whereSql})
+      WHERE v.id_venta IN (
+        SELECT v2.id_venta
+        FROM venta v2
+        WHERE ${whereSql}
+        ORDER BY v2.fecha_venta DESC, v2.id_venta DESC
+        LIMIT $${whereValues.length + 1} OFFSET $${whereValues.length + 2}
+      )
       GROUP BY
         v.id_venta,
         v.id_cliente,
@@ -87,56 +110,40 @@ export async function GET(req: NextRequest) {
         v.fecha_limite_pago,
         uc.nombre,
         uc.correo,
+        uc.codigo_cliente,
         ue.nombre
       ORDER BY v.fecha_venta DESC, v.id_venta DESC
-      LIMIT $${limIdx} OFFSET $${offIdx}
-  `;
+    `;
 
-  try {
-    const metaTotales =
-      sp.get("meta_totales") === "1" || sp.get("meta_totales") === "true";
-
-    let totales: { min_total: unknown; max_total: unknown } | undefined;
-    if (metaTotales) {
-      const { whereSql: whereMeta, values: valsMeta } = buildHistorialVentasWhere(
-        sp,
-        { omitAmountRange: true }
-      );
-      const metaSql = `
-        SELECT
-          COALESCE(MIN(v.total), 0)::numeric AS min_total,
-          COALESCE(MAX(v.total), 0)::numeric AS max_total
-        ${baseFrom}
-        WHERE (${whereMeta})
-      `;
-      const metaRes = await pool.query(metaSql, valsMeta);
-      const row = metaRes.rows[0] as
-        | { min_total: unknown; max_total: unknown }
-        | undefined;
-      if (row) {
-        totales = { min_total: row.min_total, max_total: row.max_total };
-      }
-    }
-
-    const result = await pool.query(listSql, [
-      ...whereValues,
-      fetchLimit,
-      offset,
-    ]);
+    const result = await pool.query(listSql, [...whereValues, limit, offset]);
 
     const rows = result.rows as Record<string, unknown>[];
-    const hasMore = rows.length > limit;
-    const ventas = hasMore ? rows.slice(0, limit) : rows;
-    const pagination = buildHistorialPaginationMeta(
-      limit,
-      offset,
-      hasMore,
-      ventas.length
-    );
+    const pageVentas = meta.hasMore ? rows.slice(0, limit) : rows;
 
-    const body: Record<string, unknown> = { ventas, pagination };
-    if (totales !== undefined) {
-      body.totales = totales;
+    const pagination = buildPaginationMeta(total, { page, limit, offset });
+
+    const body: Record<string, unknown> = { ventas: pageVentas, pagination };
+    if (meta.total > 0) {
+      // Emitir min/max total cuando el usuario pide meta_totales.
+      if (sp.get("meta_totales") === "1" || sp.get("meta_totales") === "true") {
+        const { whereSql: whereMeta, values: valsMeta } = buildHistorialVentasWhere(
+          sp,
+          { omitAmountRange: true }
+        );
+        const metaSql = `
+          SELECT
+            COALESCE(MIN(v.total), 0)::numeric AS min_total,
+            COALESCE(MAX(v.total), 0)::numeric AS max_total
+          FROM venta v
+          JOIN cliente uc ON uc.id_cliente = v.id_cliente
+          WHERE (${whereMeta})
+        `;
+        const metaRes = await pool.query(metaSql, valsMeta);
+        const row = metaRes.rows[0];
+        if (row) {
+          body.totales = { min_total: row.min_total, max_total: row.max_total };
+        }
+      }
     }
 
     return NextResponse.json(body);

@@ -29,6 +29,7 @@ export async function GET(req: NextRequest) {
         o.notas,
         o.total,
         c.nombre AS nombre_cliente,
+        c.codigo_cliente AS codigo_cliente,
         COALESCE(
           json_agg(
             json_build_object(
@@ -36,7 +37,9 @@ export async function GET(req: NextRequest) {
               'codigo_producto', p.codigo_producto,
               'nombre_producto', p.nombre_producto,
               'cantidad', d.cantidad,
-              'unidad_medida', p.unidad_medida,
+              'unidad_medida', d.unidad_base,
+              'nombre_presentacion', pp.nombre_presentacion,
+              'cantidad_presentacion', d.cantidad_presentacion,
               'id_bodega', d.id_bodega,
               'es_mi_bodega', d.id_bodega = $1
             )
@@ -48,12 +51,13 @@ export async function GET(req: NextRequest) {
       JOIN cliente c ON c.id_cliente = o.id_cliente
       JOIN detalle_orden d ON d.id_orden = o.id_orden
       LEFT JOIN producto p ON p.id_producto = d.id_producto
+      LEFT JOIN presentacion_producto pp ON pp.id_presentacion = d.id_presentacion
       WHERE o.estado = ANY($2::varchar[])
         AND EXISTS (
           SELECT 1 FROM detalle_orden d2
           WHERE d2.id_orden = o.id_orden AND d2.id_bodega = $1
         )
-      GROUP BY o.id_orden, o.fecha_orden, o.estado, o.notas, o.total, c.nombre
+      GROUP BY o.id_orden, o.fecha_orden, o.estado, o.notas, o.total, c.nombre, c.codigo_cliente
       ORDER BY
         CASE o.estado WHEN 'CONFIRMADO' THEN 0 WHEN 'EN_PREPARACION' THEN 1 ELSE 2 END,
         o.fecha_orden ASC

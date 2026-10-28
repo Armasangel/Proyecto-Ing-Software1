@@ -11,7 +11,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getUsuarioFromRequest } from "@/lib/server-auth";
 import { apiError, unauthorizedError } from "@/lib/api-error";
-import { labelRol } from "@/lib/roles";
+import { labelRol, TIPOS_USUARIO } from "@/lib/roles";
 
 export async function GET(req: NextRequest) {
   try {
@@ -47,7 +47,8 @@ export async function GET(req: NextRequest) {
         correo: cuenta.correo,
         tipo_usuario: cuenta.tipo_usuario,
         rol_label: labelRol(cuenta.tipo_usuario),
-        requiere_2fa: cuenta.requiere_2fa,
+        requiere_2fa:
+          cuenta.tipo_usuario === TIPOS_USUARIO.EMPLEADO && cuenta.requiere_2fa,
         ultimo_login_en: cuenta.ultimo_login_en,
         ultimo_login_ip: cuenta.ultimo_login_ip,
       },

@@ -8,7 +8,8 @@
 #          `docker compose -f docker-compose.yml -f docker-compose.prod.yml up`.
 
 # ── Base común ─────────────────────────────────────────────────────────────
-FROM node:22-alpine AS base
+ARG NODE_VERSION=22
+FROM node:${NODE_VERSION}-alpine AS base
 WORKDIR /app
 
 # ── Desarrollo / pruebas (target por defecto) ───────────────────────────────
@@ -43,6 +44,8 @@ COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/next.config.mjs ./next.config.mjs
+COPY --from=builder /app/middleware.ts ./middleware.ts 2>/dev/null || true
+COPY --from=builder /app/instrumentation.ts ./instrumentation.ts 2>/dev/null || true
 EXPOSE 3000
 # npm start = next start (sirve el bundle ya compilado en .next)
 CMD ["npm", "start"]

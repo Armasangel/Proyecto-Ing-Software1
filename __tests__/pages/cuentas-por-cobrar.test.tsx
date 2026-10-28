@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { rest } from "msw";
 import { setupServer } from "msw/node";
@@ -410,7 +410,7 @@ describe("CuentasPorCobrarPage — saldo anterior", () => {
     expect(screen.queryByText("Productos *")).not.toBeInTheDocument();
     expect(screen.queryByText("+ Agregar producto")).not.toBeInTheDocument();
 
-    await user.type(screen.getByPlaceholderText("Escribe el nombre para buscar…"), "Pedro");
+    await user.type(screen.getByPlaceholderText("Buscar cliente por código, nombre, NIT o teléfono…"), "Pedro");
     await user.click(await screen.findByText("Pedro Díaz"));
     await user.type(screen.getByLabelText("Saldo anterior"), "350.50");
     await user.click(screen.getByRole("button", { name: "Guardar saldo anterior" }));
@@ -426,9 +426,125 @@ describe("CuentasPorCobrarPage — saldo anterior", () => {
     const user = userEvent.setup();
     render(<CuentasPorCobrarPage />);
     await user.click(await screen.findByRole("button", { name: "+ Saldo anterior (sin venta)" }));
-    await user.type(screen.getByPlaceholderText("Escribe el nombre para buscar…"), "Pedro");
+    await user.type(screen.getByPlaceholderText("Buscar cliente por código, nombre, NIT o teléfono…"), "Pedro");
     await user.click(await screen.findByText("Pedro Díaz"));
     await user.click(screen.getByRole("button", { name: "Guardar saldo anterior" }));
     expect(await screen.findByText("El saldo anterior debe ser un monto mayor a 0.")).toBeInTheDocument();
+  });
+});
+
+describe("CuentasPorCobrarPage — listado de clientes (Límites de crédito)", () => {
+  beforeEach(() => {
+    (useRouter as jest.Mock).mockReturnValue({ replace: mockReplace });
+    (usePathname as jest.Mock).mockReturnValue("/cuentas-por-cobrar");
+  });
+
+  const clienteDetalle = {
+    id_cliente: 4,
+    nombre: "Distribuidora X",
+    telefono: "55551234",
+    correo: "ventas@disolx.com",
+    tipo_cliente: "EMPRESA",
+    estado_cliente: true,
+    limite_deuda: null,
+    nit_cliente: "1234567-8",
+    codigo_postal: "01001",
+    direccion: "6a. avenida 12-34, zona 1",
+  };
+
+  it("muestra NIT, dirección y código postal de cada cliente", async () => {
+    setupServerDeudas([]);
+    server.use(
+      rest.get("/api/clientes", (_req, res, ctx) => res(ctx.json({ clientes: [clienteDetalle] })))
+    );
+    const user = userEvent.setup();
+    render(<CuentasPorCobrarPage />);
+
+    await user.click(await screen.findByRole("button", { name: "Límites de crédito" }));
+
+    expect(await screen.findByRole("columnheader", { name: "NIT" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Dirección" })).toBeInTheDocument();
+    expect(screen.getByText("1234567-8")).toBeInTheDocument();
+    expect(screen.getByText("6a. avenida 12-34, zona 1")).toBeInTheDocument();
+    expect(screen.getByText("CP 01001")).toBeInTheDocument();
+    expect(screen.getByText("Empresa")).toBeInTheDocument();
+  });
+
+  it("busca clientes también por NIT y dirección", async () => {
+    setupServerDeudas([]);
+    server.use(
+      rest.get("/api/clientes", (_req, res, ctx) =>
+        res(ctx.json({ clientes: [clienteDetalle, { ...clienteDetalle, id_cliente: 5, nombre: "Otro Cliente", nit_cliente: "9999999-9", codigo_postal: null, direccion: null }] }))
+      )
+    );
+    const user = userEvent.setup();
+    render(<CuentasPorCobrarPage />);
+
+    await user.click(await screen.findByRole("button", { name: "Límites de crédito" }));
+    const buscador = await screen.findByPlaceholderText("Buscar cliente por nombre, código, teléfono, correo o NIT…");
+
+    await user.type(buscador, "1234567");
+    expect(await screen.findByText("Distribuidora X")).toBeInTheDocument();
+    expect(screen.queryByText("Otro Cliente")).not.toBeInTheDocument();
+  });
+});
+
+describe("CuentasPorCobrarPage — alta de cliente", () => {
+  beforeEach(() => {
+    (useRouter as jest.Mock).mockReturnValue({ replace: mockReplace });
+    (usePathname as jest.Mock).mockReturnValue("/cuentas-por-cobrar");
+  });
+
+  it("crea el cliente y registra su saldo anterior desde el formulario de deuda", async () => {
+    let clienteBody: Record<string, unknown> | null = null;
+    let deudaBody: Record<string, unknown> | null = null;
+    setupServerDeudas([]);
+    server.use(
+      rest.post("/api/clientes", async (req, res, ctx) => {
+        clienteBody = (await req.json()) as Record<string, unknown>;
+        return res(
+          ctx.status(201),
+          ctx.json({
+            cliente: {
+              id_cliente: 2,
+              nombre: "Cliente Nuevo",
+              telefono: null,
+              correo: null,
+              tipo_cliente: "MINORISTA",
+              estado_cliente: true,
+              limite_deuda: null,
+            },
+          })
+        );
+      }),
+      rest.post("/api/deudas", async (req, res, ctx) => {
+        deudaBody = (await req.json()) as Record<string, unknown>;
+        return res(ctx.status(201), ctx.json({ deuda: { id_deuda: 10 }, alerta: null }));
+      })
+    );
+    const user = userEvent.setup();
+    render(<CuentasPorCobrarPage />);
+
+    await user.click(await screen.findByRole("button", { name: "+ Saldo anterior (sin venta)" }));
+    await user.click(screen.getByRole("button", { name: "+ Cliente nuevo" }));
+    await user.type(screen.getByPlaceholderText("Nombre del cliente"), "Cliente Nuevo");
+    const formularioCliente = screen
+      .getByPlaceholderText("Nombre del cliente")
+      .closest("form") as HTMLFormElement;
+    await user.type(within(formularioCliente).getByLabelText("Saldo anterior"), "350.50");
+    await user.click(screen.getByRole("button", { name: "Crear cliente" }));
+
+    await waitFor(() => expect(deudaBody).not.toBeNull());
+    expect(clienteBody).toMatchObject({
+      nombre: "Cliente Nuevo",
+      correo: "",
+      tipo_cliente: "MINORISTA",
+    });
+    expect(clienteBody).not.toHaveProperty("deuda_inicial");
+    expect(deudaBody).toMatchObject({
+      id_cliente: 2,
+      nombre_deudor: "Cliente Nuevo",
+      monto_libre: 350.5,
+    });
   });
 });

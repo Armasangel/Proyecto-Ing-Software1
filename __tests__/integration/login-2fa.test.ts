@@ -115,12 +115,12 @@ describeIfDb("Login en 2 pasos — flujo completo (integración)", () => {
     expect(resReuso.status).toBe(400);
   });
 
-  it("el dueño (DUENO) también pasa por 2FA: es el rol con más privilegios", async () => {
+  it("el dueño (DUENO) entra directo, sin 2FA, aunque requiere_2fa esté en TRUE", async () => {
     const correoDueno = `login2fa-dueno-${Date.now()}@test.com`;
     const hash = bcrypt.hashSync(password, 10);
     const resInsert = await pool.query(
-      `INSERT INTO usuario (nombre, correo, contrasena_hash, tipo_usuario, estado_usuario)
-       VALUES ($1, $2, $3, 'DUENO', TRUE) RETURNING id_usuario`,
+      `INSERT INTO usuario (nombre, correo, contrasena_hash, tipo_usuario, estado_usuario, requiere_2fa)
+       VALUES ($1, $2, $3, 'DUENO', TRUE, TRUE) RETURNING id_usuario`,
       ["Dueño 2FA Test", correoDueno, hash]
     );
     const idDueno = resInsert.rows[0].id_usuario;
@@ -130,17 +130,15 @@ describeIfDb("Login en 2 pasos — flujo completo (integración)", () => {
       const data = await res.json();
 
       expect(res.status).toBe(200);
-      expect(data.requiere_verificacion).toBe(true);
-      expect(typeof data.pre_token).toBe("string");
-      // La cookie de sesión no se emite hasta verificar el código.
-      expect(res.headers.get("set-cookie")).toBeNull();
+      expect(data.requiere_verificacion).toBe(false);
+      expect(res.headers.get("set-cookie")).toContain("auth_token=");
 
-      // Sí tiene que haber un código pendiente para el dueño.
+      // No se genera ningún código pendiente para el dueño.
       const filas = await pool.query(
         `SELECT COUNT(*)::int AS n FROM codigo_verificacion WHERE id_usuario = $1`,
         [idDueno]
       );
-      expect(filas.rows[0].n).toBe(1);
+      expect(filas.rows[0].n).toBe(0);
     } finally {
       await pool.query(`DELETE FROM codigo_verificacion WHERE id_usuario = $1`, [idDueno]);
       await pool.query(`DELETE FROM usuario WHERE id_usuario = $1`, [idDueno]);

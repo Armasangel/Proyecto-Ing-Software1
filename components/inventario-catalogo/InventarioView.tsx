@@ -4,6 +4,8 @@ import { Icon } from "@/components/Icon";
 import { CantidadInput } from "@/components/CantidadInput";
 import { matchesQuery, paginar, PaginationBar, PAGE_SIZES_COMPACT, type PageSize } from "@/lib/ui-table";
 import { ProductoAutocompletar } from "@/components/ProductoAutocompletar";
+import { ComprasStock } from "@/components/compras/ComprasStock";
+import { RecepcionEntrada } from "@/components/compras/RecepcionEntrada";
 
 const MIS_ITEMS = [
   {label: "editar", icon: "pencil"},
@@ -63,21 +65,15 @@ type KardexRow = {
   unidad_medida: string;
 };
 
-type StockActualizado = {
-  nombre_producto: string;
-  nombre_bodega: string;
-  cantidad_disponible: number;
-  unidad_medida: string;
-  ultima_actualizacion: string;
-};
-
-export type InventarioTab = "stock" | "operaciones" | "kardex" | "bodegas" | "presentaciones";
+export type InventarioTab = "stock" | "compra" | "entrada" | "operaciones" | "kardex" | "bodegas";
 
 const EMPTY_BODEGA_FORM = { nombre_bodega: "", ubicacion: "" };
 
 // ─── Componente ───────────────────────────────────────────────────────────────
 
 export function InventarioView({ tab }: { tab: InventarioTab }) {
+  const [visitadas,setVisitadas] = useState(()=>new Set<InventarioTab>([tab]));
+  useEffect(()=>{setVisitadas(v=>v.has(tab)?v:new Set([...v,tab]));},[tab]);
   // Maestros
   const [bodegas, setBodegas] = useState<Bodega[]>([]);
   const [bodegasSimple, setBodegasSimple] = useState<{ id_bodega: number; nombre_bodega: string }[]>([]);
@@ -88,16 +84,6 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
   const [filtroProducto, setFiltroProducto] = useState("");
   const [soloBajoMinimo, setSoloBajoMinimo] = useState(false);
   const [incluirInactivos, setIncluirInactivos] = useState(false);
-
-  // Presentaciones (conversión de unidades para bodega)
-  const [presProductoId, setPresProductoId] = useState("");
-  const [presProductoQuery, setPresProductoQuery] = useState("");
-  const [presSugerenciasAbiertas, setPresSugerenciasAbiertas] = useState(false);
-  const [presLista, setPresLista] = useState<{ id_presentacion: number; nombre_presentacion: string; factor_conversion: string }[]>([]);
-  const [presNombre, setPresNombre] = useState("");
-  const [presFactor, setPresFactor] = useState("");
-  const [presError, setPresError] = useState("");
-  const [presGuardando, setPresGuardando] = useState(false);
 
   // Búsqueda (independiente por pestaña)
   const [qStock, setQStock] = useState("");
@@ -115,17 +101,6 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
 
   // Kardex
   const [kardex, setKardex] = useState<KardexRow[]>([]);
-
-  // Operaciones: Entrada
-  const [entradaForm, setEntradaForm] = useState({ id_bodega: "", id_producto: "", id_presentacion: "", cantidad: "", tipo_ingreso: "UNIDADES", descripcion: "" });
-  const [entradaLoading, setEntradaLoading] = useState(false);
-  const [entradaResultado, setEntradaResultado] = useState<StockActualizado | null>(null);
-  const [entradaError, setEntradaError] = useState<string | null>(null);
-  // Presentaciones disponibles para el producto elegido en "Entrada de stock"
-  // (ej. "Caja de 24"). Si el usuario elige una, la cantidad que escribe está
-  // en esa presentación y el backend la convierte a unidad base usando el
-  // factor_conversion real — antes esto no pasaba y "Cajas" solo sumaba 1.
-  const [entradaPresentaciones, setEntradaPresentaciones] = useState<{ id_presentacion: number; nombre_presentacion: string; factor_conversion: string }[]>([]);
 
   // Operaciones: Transferencia
   const [xfer, setXfer] = useState({ id_bodega_origen: "", id_bodega_destino: "", id_producto: "", cantidad: "", descripcion: "" });
@@ -221,29 +196,6 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
     setPage(1);
   }, [tab, qStock, qKardex, qBodegas, filtroBodega, filtroProducto, soloBajoMinimo, incluirInactivos, perPage]);
 
-  // Al cambiar el producto de "Entrada de stock", carga sus presentaciones
-  // reales (con factor_conversion) en vez de asumir que "Caja" = 1 unidad.
-  useEffect(() => {
-    setEntradaForm(f => ({ ...f, id_presentacion: "" }));
-    if (!entradaForm.id_producto) {
-      setEntradaPresentaciones([]);
-      return;
-    }
-    fetch(`/api/presentaciones?id_producto=${entradaForm.id_producto}`)
-      .then(r => r.json())
-      .then(d => setEntradaPresentaciones(d.presentaciones || []))
-      .catch(() => setEntradaPresentaciones([]));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entradaForm.id_producto]);
-
-  // Buscador de producto para la pestaña "Presentaciones" (mismo patrón que
-  // el buscador de clientes en Deudas): filtra por código o nombre en vez de
-  // mostrar un <select> con todos los productos.
-  const presProductosFiltrados = useMemo(
-    () => productos.filter((p) => matchesQuery(presProductoQuery, p.codigo_producto, p.nombre_producto)),
-    [productos, presProductoQuery]
-  );
-
   const stockFiltrado = useMemo(
     () =>
       stock.filter((r) =>
@@ -301,40 +253,6 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
       setMinEdits(m => { const next = { ...m }; delete next[key]; return next; });
       await cargarStock();
     } catch (e) { showToast(String(e), "err"); }
-  };
-
-  const registrarEntrada = async () => {
-    setEntradaLoading(true);
-    setEntradaError(null);
-    setEntradaResultado(null);
-    try {
-      const usaPresentacion = !!entradaForm.id_presentacion;
-      const payload: Record<string, unknown> = {
-        id_bodega: Number(entradaForm.id_bodega),
-        id_producto: Number(entradaForm.id_producto),
-        descripcion: entradaForm.descripcion,
-      };
-      if (usaPresentacion) {
-        payload.id_presentacion = Number(entradaForm.id_presentacion);
-        payload.cantidad_presentacion = Number(entradaForm.cantidad);
-      } else {
-        payload.cantidad = Number(entradaForm.cantidad);
-        payload.tipo_ingreso = entradaForm.tipo_ingreso;
-      }
-      const res = await fetch("/api/inventario/entrada", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      if (!res.ok) { setEntradaError(data.error || "Error desconocido"); }
-      else {
-        setEntradaResultado(data.stock);
-        setEntradaForm(f => ({ ...f, id_producto: "", id_presentacion: "", cantidad: "", tipo_ingreso: "UNIDADES", descripcion: "" }));
-        showToast("Entrada registrada ✓", "ok");
-        await cargarStock();
-      }
-    } catch { setEntradaError("No se pudo conectar con el servidor"); }
-    finally { setEntradaLoading(false); }
   };
 
   const registrarTransferencia = async () => {
@@ -397,58 +315,12 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
     finally { setDeletingBodega(false); setConfirmDeleteBodega(null); }
   };
 
-  // ── Presentaciones CRUD ────────────────────────────────────────────────────
-
-  const cargarPresentaciones = useCallback((idProducto: string) => {
-    if (!idProducto) { setPresLista([]); return; }
-    fetch(`/api/presentaciones?id_producto=${idProducto}`)
-      .then((r) => r.json())
-      .then((d) => setPresLista(d.presentaciones || []))
-      .catch(() => setPresLista([]));
-  }, []);
-
-  useEffect(() => {
-    if (tab === "presentaciones") cargarPresentaciones(presProductoId);
-  }, [tab, presProductoId, cargarPresentaciones]);
-
-  const crearPresentacion = async () => {
-    setPresError("");
-    if (!presProductoId) { setPresError("Selecciona un producto"); return; }
-    if (!presNombre.trim()) { setPresError("El nombre de la presentación es obligatorio"); return; }
-    const factor = Number(presFactor);
-    if (!(factor > 0)) { setPresError("El factor debe ser un número mayor a 0"); return; }
-
-    setPresGuardando(true);
-    try {
-      const r = await fetch("/api/presentaciones", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id_producto: Number(presProductoId), nombre_presentacion: presNombre.trim(), factor_conversion: factor }),
-      });
-      const d = await r.json();
-      if (!r.ok) { setPresError(d.error || "Error al guardar"); }
-      else { setPresNombre(""); setPresFactor(""); cargarPresentaciones(presProductoId); showToast("Presentación creada ✓", "ok"); }
-    } catch { setPresError("Error de conexión"); }
-    finally { setPresGuardando(false); }
-  };
-
-  const eliminarPresentacion = async (id: number) => {
-    try {
-      const r = await fetch(`/api/presentaciones/${id}`, { method: "DELETE" });
-      const d = await r.json();
-      if (!r.ok) showToast(d.error || "Error al eliminar", "err");
-      else { showToast("Presentación eliminada ✓", "ok"); cargarPresentaciones(presProductoId); }
-    } catch { showToast("Error de conexión", "err"); }
-  };
-
   // ── Render ─────────────────────────────────────────────────────────────────
-
-  const productoSeleccionado = productos.find(p => p.id_producto === Number(entradaForm.id_producto));
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
       {/* Búsqueda + filtros en fila (stock y kardex) */}
-      <div style={s.card}>
+      <div style={{...s.card,display:tab==='stock'||tab==='kardex'?undefined:'none'}}>
         {(tab === "stock" || tab === "kardex") && (
           <div style={s.filterBlock}>
             <div style={s.toolbar}>
@@ -464,7 +336,7 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
                 <option value="">Todas las bodegas</option>
                 {bodegasSimple.map(b => <option key={b.id_bodega} value={b.id_bodega}>{b.nombre_bodega}</option>)}
               </select>
-              <select value={filtroProducto} onChange={e => setFiltroProducto(e.target.value)} style={{ ...s.selectInline, minWidth: 220 }} aria-label="Filtrar por producto">
+              <select value={filtroProducto} onChange={e => setFiltroProducto(e.target.value)} style={{ ...s.selectInline, minWidth: 160, maxWidth: "none", flex: "1 1 220px" }} aria-label="Filtrar por producto">
                 <option value="">Todos los productos</option>
                 {productos.map(p => <option key={p.id_producto} value={p.id_producto}>[{p.codigo_producto}] {p.nombre_producto}{!p.estado_producto ? " (inactivo)" : ""}</option>)}
               </select>
@@ -482,6 +354,7 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
       {/* ══════════════════════════════════════════════════════════════════
           TAB: STOCK
       ══════════════════════════════════════════════════════════════════ */}
+      {(tab==='compra'||visitadas.has('compra'))&&<div style={{display:tab==='compra'?undefined:'none'}}><ComprasStock onStockChange={cargarStock} /></div>}
       {tab === "stock" && (
         <div style={{ ...s.card, padding: 0, overflow: "hidden" }}>
           <div style={{ overflow: "auto" }}>
@@ -544,75 +417,9 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
       {/* ══════════════════════════════════════════════════════════════════
           TAB: OPERACIONES
       ══════════════════════════════════════════════════════════════════ */}
+      {(tab==='entrada'||visitadas.has('entrada'))&&<div style={{display:tab==='entrada'?undefined:'none'}}><RecepcionEntrada onRecibido={cargarStock} /></div>}
       {tab === "operaciones" && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "1rem" }}>
-
-          {/* Entrada de stock */}
-          <div style={s.card}>
-            <h3 style={s.h3}><Icon name ="box" variant="dark" size={24}/> Entrada de stock</h3>
-            <p style={s.help}>Registra el ingreso de mercancía. Queda trazado en kardex.</p>
-            <div style={s.field}>
-              <label style={s.label}>Bodega *</label>
-              <select value={entradaForm.id_bodega} onChange={e => { setEntradaForm(f => ({ ...f, id_bodega: e.target.value })); setEntradaError(null); setEntradaResultado(null); }} style={s.select}>
-                <option value="">— Selecciona —</option>
-                {bodegasSimple.map(b => <option key={b.id_bodega} value={b.id_bodega}>{b.nombre_bodega}</option>)}
-              </select>
-            </div>
-            <div style={s.field}>
-              <label style={s.label}>Producto *</label>
-              <ProductoAutocompletar
-                productos={productos}
-                value={entradaForm.id_producto}
-                onChange={id => { setEntradaForm(f => ({ ...f, id_producto: id })); setEntradaError(null); setEntradaResultado(null); }}
-                style={s.select}
-              />
-              {productoSeleccionado && <span style={{ fontSize: "0.78rem", color: "var(--muted)" }}>Unidad: <strong style={{ color: "var(--text)" }}>{productoSeleccionado.unidad_medida}</strong></span>}
-            </div>
-            <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
-              <div style={{ ...s.field, flex: "1 1 160px" }}>
-                <label style={s.label}>Se ingresa en *</label>
-                <select value={entradaForm.id_presentacion} onChange={e => setEntradaForm(f => ({ ...f, id_presentacion: e.target.value }))} style={s.select}>
-                  <option value="">{productoSeleccionado ? `Unidad base (${productoSeleccionado.unidad_medida})` : "Unidad base"}</option>
-                  {entradaPresentaciones.map(p => (
-                    <option key={p.id_presentacion} value={p.id_presentacion}>
-                      {p.nombre_presentacion} (× {Number(p.factor_conversion)} {productoSeleccionado?.unidad_medida || "unidades"})
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div style={{ ...s.field, flex: "1 1 200px" }}>
-                <label style={s.label}>Cantidad *</label>
-                <CantidadInput
-                  ariaLabel="Cantidad de entrada"
-                  style={s.select}
-                  value={entradaForm.cantidad}
-                  onChange={(cantidad) => setEntradaForm(f => ({ ...f, cantidad }))}
-                />
-                {entradaForm.id_presentacion && entradaForm.cantidad && (
-                  <span style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
-                    = {(Number(entradaForm.cantidad) * Number(entradaPresentaciones.find(p => p.id_presentacion === Number(entradaForm.id_presentacion))?.factor_conversion || 1)).toLocaleString("es-GT")} {productoSeleccionado?.unidad_medida || "unidades"} en total
-                  </span>
-                )}
-              </div>
-            </div>
-            <div style={s.field}>
-              <label style={s.label}>Descripción (opcional)</label>
-              <textarea value={entradaForm.descripcion} onChange={e => setEntradaForm(f => ({ ...f, descripcion: e.target.value }))} rows={2} placeholder="Ej: Compra a proveedor XYZ…" style={{ ...s.select, resize: "vertical" }} />
-            </div>
-            <button type="button" onClick={registrarEntrada} disabled={entradaLoading || !entradaForm.id_bodega || !entradaForm.id_producto || !entradaForm.cantidad} style={{ ...s.btnPrimary, opacity: (!entradaForm.id_bodega || !entradaForm.id_producto || !entradaForm.cantidad) ? 0.5 : 1 }}>
-              {entradaLoading ? "Registrando…" : "Registrar entrada"}
-            </button>
-            {entradaError && <div style={s.alertErr}>{entradaError}</div>}
-            {entradaResultado && (
-              <div style={s.alertOk}>
-                <strong style={{ color: "var(--text)" }}>Entrada registrada</strong>
-                <div style={{ fontSize: "0.82rem", marginTop: "0.35rem", color: "var(--muted)" }}>
-                  {entradaResultado.nombre_producto} · {entradaResultado.nombre_bodega}<br />
-                  Stock actual: <strong style={{ color: "var(--text)" }}>{Number(entradaResultado.cantidad_disponible).toFixed(2)} {entradaResultado.unidad_medida}</strong>
-                </div>
-              </div>
-            )}
-          </div>
 
           {/* Transferencia */}
           <div style={s.card}>
@@ -805,134 +612,13 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
         </>
       )}
 
-      {tab === "presentaciones" && (
-        <>
-          <div style={{ ...s.toolbar, marginTop: 0 }}>
-            <div style={{ position: "relative", minWidth: 280 }}>
-              <input
-                style={s.selectInline}
-                placeholder="Buscar producto por código o nombre…"
-                value={presProductoQuery}
-                onChange={(e) => {
-                  setPresProductoQuery(e.target.value);
-                  setPresProductoId("");
-                  setPresSugerenciasAbiertas(true);
-                }}
-                onFocus={() => setPresSugerenciasAbiertas(true)}
-                onBlur={() => setTimeout(() => setPresSugerenciasAbiertas(false), 150)}
-                aria-label="Buscar producto para configurar presentaciones"
-              />
-              {presSugerenciasAbiertas && presProductoQuery.trim() !== "" && !presProductoId && (
-                <div
-                  style={{
-                    position: "absolute",
-                    top: "100%",
-                    left: 0,
-                    right: 0,
-                    background: "var(--surface)",
-                    border: "1px solid var(--border)",
-                    borderRadius: 6,
-                    marginTop: 2,
-                    zIndex: 20,
-                    maxHeight: 220,
-                    overflowY: "auto",
-                    boxShadow: "0 4px 10px rgba(0,0,0,0.12)",
-                  }}
-                >
-                  {presProductosFiltrados.length === 0 ? (
-                    <div style={{ padding: "0.5rem 0.7rem", fontSize: "0.85rem", color: "var(--muted)" }}>
-                      Sin resultados para esa búsqueda.
-                    </div>
-                  ) : (
-                    presProductosFiltrados.slice(0, 8).map((p) => (
-                      <div
-                        key={p.id_producto}
-                        onMouseDown={() => {
-                          setPresProductoId(String(p.id_producto));
-                          setPresProductoQuery(`[${p.codigo_producto}] ${p.nombre_producto}`);
-                          setPresSugerenciasAbiertas(false);
-                        }}
-                        style={{
-                          padding: "0.45rem 0.7rem",
-                          cursor: "pointer",
-                          fontSize: "0.85rem",
-                          borderBottom: "1px solid var(--border)",
-                        }}
-                      >
-                        <code style={s.code}>{p.codigo_producto}</code> {p.nombre_producto}
-                      </div>
-                    ))
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {presProductoId && (
-            <div style={{ ...s.card, display: "flex", flexDirection: "column", gap: "0.85rem" }}>
-              <div style={{ fontSize: "0.85rem", color: "var(--muted)" }}>
-                Presentaciones que el bodeguero puede usar al registrar entradas/salidas de este producto
-                (ej. &quot;Caja de 24&quot; = 24 unidades base).
-              </div>
-
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead>
-                  <tr style={{ background: "var(--surface2)" }}>
-                    <th style={s.th}>Presentación</th>
-                    <th style={{ ...s.th, textAlign: "right" }}>Equivale a (unidad base)</th>
-                    <th style={{ ...s.th, textAlign: "center" }}>Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {presLista.length === 0 ? (
-                    <tr><td colSpan={3} style={{ ...s.td, textAlign: "center", padding: "1.25rem", color: "var(--muted)" }}>Este producto no tiene presentaciones configuradas.</td></tr>
-                  ) : presLista.map((pr) => (
-                    <tr key={pr.id_presentacion}>
-                      <td style={{ ...s.td, fontWeight: 600 }}>{pr.nombre_presentacion}</td>
-                      <td style={{ ...s.td, textAlign: "right" }}>{Number(pr.factor_conversion).toLocaleString("es-GT")}</td>
-                      <td style={{ ...s.td, textAlign: "center" }}>
-                        <button type="button" onClick={() => eliminarPresentacion(pr.id_presentacion)} style={s.btnDel} title="Eliminar">
-                          <Icon name="trash" size={14} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-
-              <div style={{ display: "flex", gap: "0.6rem", alignItems: "flex-end", flexWrap: "wrap" }}>
-                <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem", flex: "1 1 220px", minWidth: 180 }}>
-                  <label style={{ fontSize: "0.75rem", color: "var(--muted)" }}>Nombre (ej. Caja de 24)</label>
-                  <input value={presNombre} onChange={(e) => setPresNombre(e.target.value)} style={{ ...s.searchInput, flex: "0 0 auto", width: "100%" }} />
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem", flex: "0 0 120px" }}>
-                  <label style={{ fontSize: "0.75rem", color: "var(--muted)" }}>Factor (unidades base)</label>
-                  <input type="number" min="0" step="1" value={presFactor} onChange={(e) => setPresFactor(e.target.value)} style={{ ...s.searchInput, flex: "0 0 auto", width: "100%" }} />
-                </div>
-                <button type="button" onClick={crearPresentacion} disabled={presGuardando} style={s.btnPrimary}>
-                  {presGuardando ? "Guardando…" : "+ Agregar presentación"}
-                </button>
-              </div>
-              {presError && <div style={{ color: "var(--red)", fontSize: "0.85rem" }}>{presError}</div>}
-            </div>
-          )}
-        </>
-      )}
-
       {/* ── Modal Bodega ── */}
       {modalBodegaOpen && (
         <div
           style={{
             ...s.overlay,
-            position: "fixed",
-            top: 0,
-            left: 0,
-            width: "100vw",
-            height: "100vh",
             backgroundColor: "rgba(0, 0, 0, 0.5)", // Oscurece el fondo
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
+            boxSizing: "border-box",
             zIndex: 101,
           }}
           onClick={e => { if (e.target === e.currentTarget) cerrarModalBodega(); }}
@@ -948,7 +634,8 @@ export function InventarioView({ tab }: { tab: InventarioTab }) {
               boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.3)",
               display: "flex",
               flexDirection: "column",
-              overflow: "hidden",
+              maxHeight: "90vh",
+              overflowY: "auto",
             }}
           >
             <div style={{ ...s.modalHeader, padding: "1.25rem 1.5rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -1056,10 +743,10 @@ const pill: CSSProperties = { display: "inline-block", padding: "0.15rem 0.55rem
 const s: Record<string, CSSProperties> = {
   card: { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "1rem" },
   select: { background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "0.55rem 0.75rem", color: "var(--text)", fontSize: "0.9rem", outline: "none", width: "100%" },
-  selectInline: { background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "0.55rem 0.75rem", color: "var(--text)", fontSize: "0.9rem", outline: "none", minWidth: 180, maxWidth: 280, flex: "0 1 auto" },
+  selectInline: { background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "0.55rem 0.75rem", color: "var(--text)", fontSize: "0.9rem", outline: "none", minWidth: 160, maxWidth: 320, flex: "1 1 180px" },
   filterBlock: { display: "flex", flexDirection: "column", gap: "0.65rem", marginTop: "1rem" },
   toolbar: { display: "flex", flexDirection: "row", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" },
-  checkRow: { display: "flex", flexDirection: "row", alignItems: "center", gap: "1.25rem", flexWrap: "nowrap" },
+  checkRow: { display: "flex", flexDirection: "row", alignItems: "center", gap: "0.75rem 1.25rem", flexWrap: "wrap" },
   searchInput: { flex: "1 1 240px", minWidth: 200, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "0.55rem 0.75rem", color: "var(--text)", fontSize: "0.9rem", outline: "none" },
   check: { display: "flex", alignItems: "center", gap: "0.45rem", color: "var(--muted)", fontSize: "0.85rem", userSelect: "none", cursor: "pointer", whiteSpace: "nowrap" } as CSSProperties,
   btnPrimary: { background: "var(--accent)", color: "var(--info-bg)", border: "none", borderRadius: 10, padding: "0.65rem 0.9rem", fontWeight: 700, cursor: "pointer", fontSize: "0.88rem", whiteSpace: "nowrap" } as CSSProperties,

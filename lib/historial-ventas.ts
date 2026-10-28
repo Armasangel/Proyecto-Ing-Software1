@@ -275,6 +275,7 @@ export function buildHistorialVentasWhere(
       parts.push(`(
         uc.nombre ILIKE $${p} ESCAPE '\\'
         OR uc.correo ILIKE $${p} ESCAPE '\\'
+        OR (uc.codigo_cliente IS NOT NULL AND uc.codigo_cliente ILIKE $${p} ESCAPE '\\')
         OR (ue.nombre IS NOT NULL AND ue.nombre ILIKE $${p} ESCAPE '\\')
         OR CAST(v.id_venta AS TEXT) ILIKE $${p} ESCAPE '\\'
         OR CAST(v.total AS TEXT) ILIKE $${p} ESCAPE '\\'

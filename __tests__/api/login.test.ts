@@ -329,7 +329,7 @@ describe("POST /api/login", () => {
     expect(data.error).toContain("cambiar tu contraseña");
   });
 
-  it("exige 2FA también al dueño (antes entraba directo)", async () => {
+  it("el dueño entra directo, sin 2FA, aunque requiere_2fa esté en TRUE", async () => {
     mockPool.query.mockResolvedValue({ rows: [mockDbDueno], rowCount: 1 });
     mockBcrypt.compareSync.mockReturnValue(true);
 
@@ -341,9 +341,10 @@ describe("POST /api/login", () => {
     );
     const data = await res.json();
 
-    expect(data.requiere_verificacion).toBe(true);
-    expect(mockMailer.enviarCodigoVerificacion).toHaveBeenCalled();
-    expect(res.headers.get("set-cookie")).toBeNull();
+    expect(data.requiere_verificacion).toBe(false);
+    expect(data.usuario.tipo_usuario).toBe("DUENO");
+    expect(mockMailer.enviarCodigoVerificacion).not.toHaveBeenCalled();
+    expect(res.headers.get("set-cookie")).toContain("auth_token=");
   });
 
   it("el bodeguero sigue entrando sin 2FA", async () => {

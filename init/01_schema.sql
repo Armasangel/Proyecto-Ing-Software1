@@ -95,12 +95,63 @@ CREATE TABLE cliente (
     correo          VARCHAR(200),
     telefono        VARCHAR(20),
     tipo_cliente    VARCHAR(20)     NOT NULL DEFAULT 'MINORISTA'
-                        CHECK (tipo_cliente IN ('MINORISTA', 'MAYORISTA')),
+                        CHECK (tipo_cliente IN ('MINORISTA', 'MAYORISTA', 'EMPRESA', 'GOBIERNO')),
     estado_cliente  BOOLEAN         NOT NULL DEFAULT TRUE,
     nit_cliente     VARCHAR(20)     NOT NULL DEFAULT 'CF',
     limite_deuda    NUMERIC(12,2),
-    CONSTRAINT uq_cliente_correo UNIQUE (correo)
+    es_consumidor_final BOOLEAN      NOT NULL DEFAULT FALSE,
+    direccion       VARCHAR(255),
+    codigo_postal   VARCHAR(10),
+    codigo_cliente  VARCHAR(20),
+    CONSTRAINT uq_cliente_correo UNIQUE (correo),
+    CONSTRAINT uq_cliente_codigo UNIQUE (codigo_cliente)
 );
+
+-- Secuencia para los codigos autogenerados CLI-00001, CLI-00002, ...
+CREATE SEQUENCE cliente_codigo_seq
+    START WITH 1
+    INCREMENT BY 1;
+
+-- DESCUENTO (migración 09): regla configurable por el dueño con uno o más
+-- tramos por cantidad de unidades. El tipo es solo una etiqueta de UI; el
+-- cálculo SIEMPRE usa los tramos (ver lib/descuentos.ts).
+CREATE TABLE descuento (
+    id_descuento        SERIAL          PRIMARY KEY,
+    nombre              VARCHAR(150)    NOT NULL,
+    tipo                VARCHAR(20)     NOT NULL DEFAULT 'PORCENTAJE'
+                            CHECK (tipo IN ('PORCENTAJE', 'CANTIDAD', 'ESCALA')),
+    activo              BOOLEAN         NOT NULL DEFAULT TRUE,
+    creado_en           TIMESTAMP       NOT NULL DEFAULT NOW(),
+    actualizado_en      TIMESTAMP       NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_descuento_nombre UNIQUE (nombre)
+);
+
+-- DESCUENTO_TRAMO: desde `cantidad_desde` unidades (inclusive) aplica
+-- `porcentaje`. Gana el tramo de mayor cantidad_desde que no supere la cantidad.
+CREATE TABLE descuento_tramo (
+    id_tramo            SERIAL          PRIMARY KEY,
+    id_descuento        INT             NOT NULL REFERENCES descuento(id_descuento) ON DELETE CASCADE,
+    cantidad_desde      NUMERIC(12,3)   NOT NULL CHECK (cantidad_desde >= 0),
+    porcentaje          NUMERIC(5,2)    NOT NULL CHECK (porcentaje >= 0 AND porcentaje <= 100),
+    CONSTRAINT uq_descuento_tramo_desde UNIQUE (id_descuento, cantidad_desde)
+);
+
+CREATE INDEX idx_descuento_tramo_regla ON descuento_tramo (id_descuento, cantidad_desde);
+
+-- DESCUENTO_ASIGNACION: un cliente puntual O un tipo de cliente, nunca ambos.
+CREATE TABLE descuento_asignacion (
+    id_asignacion       SERIAL          PRIMARY KEY,
+    id_descuento        INT             NOT NULL REFERENCES descuento(id_descuento) ON DELETE CASCADE,
+    id_cliente          INT             REFERENCES cliente(id_cliente) ON DELETE CASCADE,
+    tipo_cliente        VARCHAR(20)     CHECK (tipo_cliente IN ('MINORISTA', 'MAYORISTA', 'EMPRESA', 'GOBIERNO')),
+    CONSTRAINT chk_asignacion_uno CHECK (
+        (id_cliente IS NOT NULL AND tipo_cliente IS NULL) OR
+        (id_cliente IS NULL AND tipo_cliente IS NOT NULL)
+    )
+);
+
+CREATE INDEX idx_descuento_asignacion_regla   ON descuento_asignacion (id_descuento);
+CREATE INDEX idx_descuento_asignacion_cliente ON descuento_asignacion (id_cliente);
 
 -- USUARIO
 CREATE TABLE usuario (
@@ -342,6 +393,9 @@ CREATE TABLE venta (
     -- factura + cuenta por cobrar (tabla deuda) con plan de cuotas.
     condicion_pago      VARCHAR(10)     NOT NULL DEFAULT 'CONTADO'
                             CHECK (condicion_pago IN ('CONTADO', 'CREDITO')),
+    -- migración 09: total de descuento otorgado (suma de las líneas). `total`
+    -- ya viene NETO (con el descuento restado).
+    descuento_total     NUMERIC(12,2)   NOT NULL DEFAULT 0,
     CONSTRAINT fk_venta_cliente   FOREIGN KEY (id_cliente)  REFERENCES cliente(id_cliente),
     CONSTRAINT fk_venta_empleado  FOREIGN KEY (id_empleado) REFERENCES usuario(id_usuario),
     CONSTRAINT chk_direccion      CHECK (tipo_entrega = 'EN_TIENDA' OR direccion_entrega IS NOT NULL)
@@ -359,9 +413,17 @@ CREATE TABLE detalle_venta (
     cantidad            NUMERIC(12,3)   NOT NULL,
     precio_unitario     NUMERIC(10,2)   NOT NULL,
     subtotal            NUMERIC(12,2)   NOT NULL,
+    -- migración 09: snapshot del descuento aplicado a la línea. subtotal queda
+    -- NETO. id_descuento es solo referencia; el nombre se copia para que editar
+    -- o borrar la regla no altere el historial.
+    descuento_porcentaje NUMERIC(5,2)   NOT NULL DEFAULT 0,
+    descuento_monto      NUMERIC(12,2)  NOT NULL DEFAULT 0,
+    id_descuento         INT,
+    descuento_nombre     VARCHAR(150),
     CONSTRAINT fk_dv_venta    FOREIGN KEY (id_venta)    REFERENCES venta(id_venta) ON DELETE CASCADE,
     CONSTRAINT fk_dv_producto FOREIGN KEY (id_producto) REFERENCES producto(id_producto),
-    CONSTRAINT fk_dv_bodega   FOREIGN KEY (id_bodega)   REFERENCES bodega(id_bodega)
+    CONSTRAINT fk_dv_bodega   FOREIGN KEY (id_bodega)   REFERENCES bodega(id_bodega),
+    CONSTRAINT fk_dv_descuento FOREIGN KEY (id_descuento) REFERENCES descuento(id_descuento) ON DELETE SET NULL
 );
 
 -- PAGO
@@ -386,8 +448,13 @@ CREATE TABLE factura (
     id_factura      SERIAL          PRIMARY KEY,
     id_venta        INT             NOT NULL,
     numero_factura  VARCHAR(50)     NOT NULL,
+    -- migraci�n 13: FACTURA o FACTURA_CAMBIARIA. La cambiaria usa los datos
+    -- ampliados del cliente (NIT y direcci�n).
+    tipo_documento  VARCHAR(20)     NOT NULL DEFAULT 'FACTURA'
+                        CHECK (tipo_documento IN ('FACTURA', 'FACTURA_CAMBIARIA')),
     nombre_cliente  VARCHAR(150),
     nit_cliente     VARCHAR(20)     NOT NULL DEFAULT 'CF',
+    direccion_cliente VARCHAR(255),
     total_factura   NUMERIC(12,2)   NOT NULL,
     CONSTRAINT uq_factura_numero UNIQUE (numero_factura),
     CONSTRAINT uq_factura_venta  UNIQUE (id_venta),
@@ -635,11 +702,11 @@ CREATE INDEX IF NOT EXISTS idx_deuda_fecha_limite ON deuda(fecha_limite_pago);
 INSERT INTO categoria (nombre_categoria) VALUES ('Abarrotes'), ('Lácteos'), ('Bebidas');
 INSERT INTO marca (nombre_marca) VALUES ('Genérico'), ('La Mariposa'), ('Dos Pinos');
 INSERT INTO bodega (nombre_bodega, ubicacion) VALUES ('Bodega Principal', 'Zona 1, Guatemala');
-
+-- Temporalmente quité la necesidad del 2FA para hacer las pruebas. Luego se volverá a agregar. 
 -- Contraseña de prueba (los usuarios): password123
-INSERT INTO usuario (nombre, correo, telefono, contrasena_hash, tipo_usuario) VALUES
-  ('Admin Dueño',    'cumatzemilio6@gmail.com',        '50201234567', '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm', 'DUENO'),
-  ('Carlos Empleado','armasangel193@gmail.com', '50207654321', '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm', 'EMPLEADO');
+INSERT INTO usuario (nombre, correo, telefono, contrasena_hash, tipo_usuario, requiere_2fa ) VALUES
+  ('Admin Dueño',    'cumatzemilio6@gmail.com',        '50201234567', '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm', 'DUENO', FALSE),
+  ('Carlos Empleado','armasangel193@gmail.com', '50207654321', '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm', 'EMPLEADO', FALSE);
 
 INSERT INTO usuario (nombre, correo, telefono, contrasena_hash, tipo_usuario, id_bodega) VALUES
   ('Luis Bodeguero', 'bodega@tienda.com', '50208889999', '$2b$10$fHirMqOPU1ORDgfFCxkfG.PetZXrQ9XEjVwKgAfM4BnmIVDXL7cUm', 'BODEGUERO', 1);
@@ -659,8 +726,8 @@ VALUES (
 INSERT INTO producto (codigo_producto, nombre_producto, precio_unitario, precio_mayoreo, unidad_medida, id_categoria, id_marca)
 VALUES
   ('ARR-001', 'Arroz 1 libra',    4.50,  3.75, 'libra',  1, 1),
-  ('ACE-001', 'Aceite 1 litro',  18.00, 15.00, 'litro',  1, 2),
-  ('LEC-001', 'Leche entera 1L', 12.50, 10.00, 'litro',  2, 3);
+  ('ACE-001', 'Aceite 1 litro',  18.00, 15.00, 'botella',  1, 2),
+  ('LEC-001', 'Leche entera 1L', 12.50, 10.00, 'botella',  2, 3);
 
 INSERT INTO bodega_producto (id_bodega, id_producto, cantidad_disponible, stock_minimo)
 VALUES (1, 1, 150, 20), (1, 2, 80, 10), (1, 3, 45, 15);
@@ -674,9 +741,9 @@ INSERT INTO cliente (nombre, correo, telefono, tipo_cliente) VALUES
 INSERT INTO producto (codigo_producto, nombre_producto, precio_unitario, precio_mayoreo, unidad_medida, id_categoria, id_marca)
 VALUES
   ('FRI-001', 'Frijol 1 libra',        6.00,  5.00, 'libra',   1, 1),
-  ('BEB-001', 'Coca-Cola 1.5L',       12.00, 10.00, 'unidad',  3, 1),
-  ('BEB-002', 'Agua pura 600ml',       4.00,  3.25, 'unidad',  3, 1),
-  ('LEC-002', 'Yogurt Dos Pinos 1L',   8.50,  7.00, 'unidad',  2, 3)
+  ('BEB-001', 'Coca-Cola 1.5L',       12.00, 10.00, 'botella',  3, 1),
+  ('BEB-002', 'Agua pura 600ml',       4.00,  3.25, 'botella',  3, 1),
+  ('LEC-002', 'Yogurt Dos Pinos 1L',   8.50,  7.00, 'botella',  2, 3)
 ON CONFLICT (codigo_producto) DO NOTHING;
 
 INSERT INTO bodega_producto (id_bodega, id_producto, cantidad_disponible, stock_minimo)
@@ -704,6 +771,33 @@ INSERT INTO cliente (nombre, correo, telefono, tipo_cliente) VALUES
   ('Distribuidora Sol','ventas@disol.com',          '50205556666', 'MAYORISTA'),
   ('Ana Morales',      'ana.morales@gmail.com',     '50207778888', 'MINORISTA')
 ON CONFLICT (correo) DO NOTHING;
+
+-- Backfill de codigos para los clientes sembrados (mismo criterio que
+-- migrations/12_cliente_codigo.sql) y ajuste de la secuencia para que los
+-- proximos codigos autogenerados no repitan ninguno.
+UPDATE cliente c
+SET codigo_cliente = 'CLI-' || LPAD(rn::text, 5, '0')
+FROM (
+    SELECT id_cliente, ROW_NUMBER() OVER (ORDER BY id_cliente) AS rn
+    FROM cliente
+) t
+WHERE c.id_cliente = t.id_cliente
+  AND c.codigo_cliente IS NULL;
+
+SELECT setval(
+    'cliente_codigo_seq',
+    GREATEST(
+        COALESCE(
+            (
+                SELECT MAX(substring(codigo_cliente from '[0-9]+$')::bigint)
+                FROM cliente
+                WHERE codigo_cliente ~ '[0-9]+$'
+            ),
+            0
+        ),
+        1
+    )
+);
 
 -- ── Generación de ventas de prueba (últimos 365 días) ───────────────────
 -- Solo corre si todavía no hay ventas, para poder re-ejecutar el archivo

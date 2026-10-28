@@ -163,9 +163,10 @@ export default function MiCuentaPage() {
 
         {cuenta && !cuenta.requiere_2fa && (
           <p className="mt-4 text-[0.85rem] text-ink-muted bg-market/10 border border-market/20 rounded-control px-4 py-3">
-            Tu cuenta no pide un segundo paso al iniciar sesión. Si sos dueño o
-            colaborador, pedile al dueño que lo active: es la protección que
-            evita que una contraseña robada alcance la caja.
+            Tu cuenta no pide un segundo paso al iniciar sesión. Los dueños y
+            bodegueros entran directo; si sos colaborador, pedile al dueño que
+            lo active: es la protección que evita que una contraseña robada
+            alcance la caja.
           </p>
         )}
       </section>

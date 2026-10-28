@@ -61,6 +61,9 @@ export async function GET(req: NextRequest) {
         c.nombre AS nombre_cliente,
         c.correo AS correo_cliente,
         c.tipo_cliente,
+        c.codigo_cliente,
+        c.nit_cliente,
+        c.direccion,
         u.nombre AS nombre_usuario,
         COALESCE(
           json_agg(
@@ -72,6 +75,7 @@ export async function GET(req: NextRequest) {
               'id_bodega', d.id_bodega,
               'nombre_bodega', b.nombre_bodega,
               'cantidad', d.cantidad,
+              'unidad_medida', d.unidad_base,
               'precio_unitario', d.precio_unitario,
               'subtotal', d.subtotal,
               'id_presentacion', d.id_presentacion,
@@ -91,7 +95,8 @@ export async function GET(req: NextRequest) {
       LEFT JOIN presentacion_producto pp ON pp.id_presentacion = d.id_presentacion
       ${whereClause}
       GROUP BY o.id_orden, o.id_cliente, o.id_usuario, o.fecha_orden,
-        o.estado, o.notas, o.total, o.id_venta, c.nombre, c.correo, c.tipo_cliente, u.nombre
+        o.estado, o.notas, o.total, o.id_venta, c.nombre, c.correo, c.tipo_cliente,
+        c.codigo_cliente, c.nit_cliente, c.direccion, u.nombre
       ORDER BY o.fecha_orden DESC
       LIMIT $1 OFFSET $2
       `,

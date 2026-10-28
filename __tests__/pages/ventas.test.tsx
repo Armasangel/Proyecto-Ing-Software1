@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { rest } from "msw";
 import { setupServer } from "msw/node";
@@ -21,8 +21,9 @@ const mockReplace = jest.fn();
 const mockUsuarioEmpleado = { id_usuario: 2, nombre: "María", correo: "maria@tienda.com", tipo_usuario: "EMPLEADO" };
 
 const clientes = [
-  { id_cliente: 1, nombre: "Carlos Ruiz", correo: "carlos@email.com", tipo_cliente: "MINORISTA", total_ventas: 1 },
-  { id_cliente: 2, nombre: "Distribuidora El Sol", correo: "sol@email.com", tipo_cliente: "MAYORISTA", total_ventas: 3 },
+  { id_cliente: 1, nombre: "Carlos Ruiz", correo: "carlos@email.com", tipo_cliente: "MINORISTA", total_ventas: 1, nit_cliente: "1234567-8", direccion: "Zona 1, Guatemala" },
+  { id_cliente: 2, nombre: "Distribuidora El Sol", correo: "sol@email.com", tipo_cliente: "MAYORISTA", total_ventas: 3, nit_cliente: "8765432-1", direccion: "Zona 4, Guatemala" },
+  { id_cliente: 5, nombre: "Consumidor Final", correo: null, tipo_cliente: "MINORISTA", total_ventas: 0, es_consumidor_final: true },
 ];
 
 const productos = [
@@ -52,9 +53,9 @@ async function llenarFormulario(user: ReturnType<typeof userEvent.setup>) {
 
   // El cliente ya no es un <select>: es un buscador con sugerencias. Al
   // enfocarlo (sin escribir nada) debe aparecer como sugerencia frecuente.
-  const buscadorCliente = await screen.findByPlaceholderText("Buscar cliente por nombre o correo…");
+  const buscadorCliente = await screen.findByPlaceholderText("Buscar cliente por código, nombre, NIT o teléfono…");
   await user.click(buscadorCliente);
-  await user.click(await screen.findByText("Carlos Ruiz (carlos@email.com)"));
+  await user.click(await screen.findByText("Carlos Ruiz"));
 
   // El producto tampoco es un <select>: es un buscador que sugiere 5 al azar
   // al enfocarlo (acá solo hay uno en el catálogo).
@@ -146,11 +147,11 @@ describe("VentasPage", () => {
     const user = userEvent.setup();
     render(<VentasPage />);
 
-    const buscadorCliente = await screen.findByPlaceholderText("Buscar cliente por nombre o correo…");
+    const buscadorCliente = await screen.findByPlaceholderText("Buscar cliente por código, nombre, NIT o teléfono…");
     await user.click(buscadorCliente);
 
     // Cliente minorista → se detecta Minorista.
-    await user.click(await screen.findByText("Carlos Ruiz (carlos@email.com)"));
+    await user.click(await screen.findByText("Carlos Ruiz"));
     expect(await screen.findByText("Minorista")).toBeInTheDocument();
 
     // Cambiar a un cliente mayorista (buscándolo) → se re-detecta Mayorista
@@ -158,7 +159,7 @@ describe("VentasPage", () => {
     await user.click(buscadorCliente);
     await user.clear(buscadorCliente);
     await user.type(buscadorCliente, "Sol");
-    await user.click(await screen.findByText("Distribuidora El Sol (sol@email.com)"));
+    await user.click(await screen.findByText("Distribuidora El Sol"));
     expect(await screen.findByText("Mayorista")).toBeInTheDocument();
     expect(screen.getByText("detectado del cliente")).toBeInTheDocument();
 
@@ -173,23 +174,23 @@ describe("VentasPage", () => {
     const user = userEvent.setup();
     render(<VentasPage />);
 
-    const buscadorCliente = await screen.findByPlaceholderText("Buscar cliente por nombre o correo…");
+    const buscadorCliente = await screen.findByPlaceholderText("Buscar cliente por código, nombre, NIT o teléfono…");
     await user.click(buscadorCliente);
 
     // Sin escribir nada, aparecen los clientes frecuentes.
     expect(await screen.findByText("Clientes frecuentes")).toBeInTheDocument();
-    expect(screen.getByText("Carlos Ruiz (carlos@email.com)")).toBeInTheDocument();
-    expect(screen.getByText("Distribuidora El Sol (sol@email.com)")).toBeInTheDocument();
+    expect(screen.getByText("Carlos Ruiz")).toBeInTheDocument();
+    expect(screen.getByText("Distribuidora El Sol")).toBeInTheDocument();
     // El de más ventas (3) aparece marcado.
-    expect(screen.getByText("3 ventas")).toBeInTheDocument();
+    expect(screen.getByText(/3 ventas/)).toBeInTheDocument();
 
     // Al escribir, filtra y deja de mostrar el encabezado de "frecuentes".
     await user.type(buscadorCliente, "sol");
     await waitFor(() => {
       expect(screen.queryByText("Clientes frecuentes")).not.toBeInTheDocument();
     });
-    expect(screen.getByText("Distribuidora El Sol (sol@email.com)")).toBeInTheDocument();
-    expect(screen.queryByText("Carlos Ruiz (carlos@email.com)")).not.toBeInTheDocument();
+    expect(screen.getByText("Distribuidora El Sol")).toBeInTheDocument();
+    expect(screen.queryByText("Carlos Ruiz")).not.toBeInTheDocument();
   });
 
   it("no se cae al buscar cuando hay un cliente sin correo, y no muestra '(null)'", async () => {
@@ -206,13 +207,13 @@ describe("VentasPage", () => {
     const user = userEvent.setup();
     render(<VentasPage />);
 
-    const buscadorCliente = await screen.findByPlaceholderText("Buscar cliente por nombre o correo…");
+    const buscadorCliente = await screen.findByPlaceholderText("Buscar cliente por código, nombre, NIT o teléfono…");
     await user.type(buscadorCliente, "rob");
 
     // Antes del arreglo, escribir aquí tiraba la página completa ("Algo salió mal en esta pantalla").
     expect(await screen.findByText("Roberto Sin Correo")).toBeInTheDocument();
     expect(screen.queryByText(/null/)).not.toBeInTheDocument();
-    expect(screen.getByPlaceholderText("Buscar cliente por nombre o correo…")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Buscar cliente por código, nombre, NIT o teléfono…")).toBeInTheDocument();
   });
 
   it("keeps the submit disabled while the form is incomplete", async () => {
@@ -301,7 +302,7 @@ describe("VentasPage — cliente nuevo", () => {
   });
 
   async function abrirFormulario(user: ReturnType<typeof userEvent.setup>) {
-    await screen.findByPlaceholderText("Buscar cliente por nombre o correo…");
+    await screen.findByPlaceholderText("Buscar cliente por código, nombre, NIT o teléfono…");
     await user.click(screen.getByRole("button", { name: "+ Cliente nuevo" }));
     return {
       nombre: screen.getByPlaceholderText("Nombre del cliente"),
@@ -357,11 +358,60 @@ describe("VentasPage — cliente nuevo", () => {
 
     expect(await screen.findByText(/Cliente "Pedro Nuevo" creado y seleccionado/)).toBeInTheDocument();
     expect(body).toMatchObject({ nombre: "Pedro Nuevo", correo: "pedro@correo.com", tipo_cliente: "MAYORISTA" });
-    expect(screen.getByPlaceholderText("Buscar cliente por nombre o correo…")).toHaveValue("Pedro Nuevo (pedro@correo.com)");
+    expect(screen.getByPlaceholderText("Buscar cliente por código, nombre, NIT o teléfono…")).toHaveValue("Pedro Nuevo");
     expect(await screen.findByText("Mayorista")).toBeInTheDocument();
     // El formulario se cierra tras crear.
     expect(screen.queryByPlaceholderText("Nombre del cliente")).not.toBeInTheDocument();
   });
+
+  it("sends NIT, código postal y dirección (y el tipo elegido) al crear el cliente", async () => {
+    setupServerVentas();
+    let body: Record<string, unknown> | null = null;
+    server.use(
+      rest.post("/api/clientes", async (req, res, ctx) => {
+        body = (await req.json()) as Record<string, unknown>;
+        return res(
+          ctx.status(201),
+          ctx.json({
+            cliente: {
+              id_cliente: 10,
+              nombre: "Distribuidora X",
+              correo: "ventas@disolx.com",
+              tipo_cliente: "EMPRESA",
+              telefono: null,
+              limite_deuda: null,
+              nit_cliente: "1234567-8",
+              codigo_postal: "01001",
+              direccion: "6a. avenida 12-34",
+            },
+          })
+        );
+      })
+    );
+    const user = userEvent.setup();
+    render(<VentasPage />);
+    const { nombre, correo } = await abrirFormulario(user);
+
+    await user.type(nombre, "Distribuidora X");
+    await user.type(correo, "ventas@disolx.com");
+    await user.selectOptions(screen.getByDisplayValue("Minorista"), "EMPRESA");
+    await user.type(screen.getByLabelText("NIT del cliente"), "1234567-8");
+    await user.type(screen.getByLabelText("Código postal del cliente"), "01001");
+    await user.type(screen.getByLabelText("Dirección del cliente"), "6a. avenida 12-34");
+    await user.click(screen.getByRole("button", { name: "Crear cliente" }));
+
+    expect(await screen.findByText(/Cliente "Distribuidora X" creado y seleccionado/)).toBeInTheDocument();
+    expect(body).toMatchObject({
+      nombre: "Distribuidora X",
+      correo: "ventas@disolx.com",
+      tipo_cliente: "EMPRESA",
+      nit_cliente: "1234567-8",
+      codigo_postal: "01001",
+      direccion: "6a. avenida 12-34",
+    });
+    // EMPRESA no es MAYORISTA: la venta sigue detectándose como minorista.
+    expect(screen.getByText("Minorista")).toBeInTheDocument();
+  }, 15000);
 
   it("shows the API error (e.g. duplicated correo) and keeps the form open", async () => {
     setupServerVentas();
@@ -486,6 +536,39 @@ describe("VentasPage — contado o crédito", () => {
     await waitFor(() => expect((body.credito as { fecha_factura: string })?.fecha_factura).toBe(iso));
   });
 
+  it("envía factura cambiaria cuando se elige ese tipo de documento", async () => {
+    let body: Record<string, unknown> = {};
+    servidorConVenta((b) => (body = b), {
+      id_venta: 10,
+      total: 50,
+      condicion_pago: "CREDITO",
+      credito: {
+        numero_factura: "FCAM-000125",
+        tipo_documento: "FACTURA_CAMBIARIA",
+        fecha_limite_pago: "2026-12-31",
+        alerta: { bloqueado: false },
+      },
+    });
+    const user = userEvent.setup();
+    render(<VentasPage />);
+    await llenarFormulario(user);
+
+    await user.click(screen.getByRole("button", { name: "Crédito" }));
+    expect(screen.getByText(/La factura cambiaria usa el NIT y la dirección/)).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("Tipo de documento"), "FACTURA_CAMBIARIA");
+
+    await user.click(screen.getByRole("button", { name: "Registrar venta" }));
+    expect(screen.getByText(/factura cambiaria del/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Sí, registrar venta" }));
+
+    await waitFor(() =>
+      expect((body.credito as { tipo_documento: string }).tipo_documento).toBe(
+        "FACTURA_CAMBIARIA"
+      )
+    );
+    expect(await screen.findByText(/Factura cambiaria FCAM-000125/)).toBeInTheDocument();
+  });
+
   it("blocks registering a credit with more payments than days of plazo", async () => {
     servidorConVenta(() => undefined, {});
     const user = userEvent.setup();
@@ -500,5 +583,71 @@ describe("VentasPage — contado o crédito", () => {
 
     expect(screen.getByText("No puede haber más pagos que días de plazo")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Registrar venta" })).toBeDisabled();
+  });
+});
+
+describe("VentasPage — Consumidor Final", () => {
+  beforeEach(() => {
+    (useRouter as jest.Mock).mockReturnValue({ replace: mockReplace, push: mockReplace });
+    (usePathname as jest.Mock).mockReturnValue("/ventas");
+  });
+
+  function dropdownDeClientes(buscador: HTMLElement): HTMLElement {
+    return buscador.parentElement as HTMLElement;
+  }
+
+  it("fija el Consumidor Final arriba del dropdown y lo quita al buscar otro cliente", async () => {
+    setupServerVentas();
+    const user = userEvent.setup();
+    render(<VentasPage />);
+
+    const buscador = await screen.findByPlaceholderText("Buscar cliente por código, nombre, NIT o teléfono…");
+    await user.click(buscador);
+    const dropdown = dropdownDeClientes(buscador);
+
+    expect(await within(dropdown).findByText("Clientes frecuentes")).toBeInTheDocument();
+    // Nombre + insignia del registro genérico, fijados antes que los frecuentes.
+    const [nombreCF, insigniaCF] = within(dropdown).getAllByText("Consumidor Final");
+    expect(insigniaCF).toHaveStyle({ textTransform: "uppercase" });
+
+    const nombreCarlos = within(dropdown).getByText("Carlos Ruiz");
+    expect(
+      nombreCF.compareDocumentPosition(nombreCarlos) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+
+    // Al buscar un cliente que no es él, deja de estar fijado en el listado.
+    await user.type(buscador, "sol");
+    await waitFor(() => {
+      expect(within(dropdown).queryByText("Consumidor Final")).not.toBeInTheDocument();
+    });
+    expect(
+      within(dropdown).getByText("Distribuidora El Sol")
+    ).toBeInTheDocument();
+  });
+
+  it("al elegirlo fuerza Contado y bloquea el Crédito", async () => {
+    setupServerVentas();
+    const user = userEvent.setup();
+    render(<VentasPage />);
+
+    const buscador = await screen.findByPlaceholderText("Buscar cliente por código, nombre, NIT o teléfono…");
+    await user.click(buscador);
+    const [nombreCF] = within(dropdownDeClientes(buscador)).getAllByText("Consumidor Final");
+    await user.click(nombreCF);
+
+    expect(buscador).toHaveValue("Consumidor Final");
+    expect(screen.getByRole("button", { name: "Contado" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Crédito" })).toBeDisabled();
+    expect(
+      screen.getByText("Consumidor Final solo puede vender a Contado.")
+    ).toBeInTheDocument();
+
+    // Con un cliente registrado, el crédito vuelve a estar disponible.
+    await user.clear(buscador);
+    await user.type(buscador, "Carlos");
+    await user.click(
+      await within(dropdownDeClientes(buscador)).findByText("Carlos Ruiz")
+    );
+    expect(screen.getByRole("button", { name: "Crédito" })).toBeEnabled();
   });
 });

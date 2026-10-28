@@ -13,7 +13,6 @@
 // direcciones podía golpear una misma cuenta indefinidamente. Esto cubre
 // OWASP ASVS V2.5.
 
-import type { NextRequest } from "next/server";
 import { pool } from "@/lib/db";
 import { getLogger } from "@/lib/logger";
 
@@ -41,18 +40,6 @@ export function claveCuenta(correo: string): string {
   return `acct:${correo.trim().toLowerCase()}`;
 }
 
-export function getClientIp(req: NextRequest): string {
-  const forwarded = req.headers.get("x-forwarded-for");
-  if (forwarded) {
-    const first = forwarded.split(",")[0]?.trim();
-    if (first) return first;
-  }
-
-  const realIp = req.headers.get("x-real-ip")?.trim();
-  if (realIp) return realIp;
-
-  return "unknown";
-}
 
 async function estaBloqueada(clave: string): Promise<boolean> {
   const result = await pool.query<{ bloqueado_hasta: Date | null }>(
@@ -136,3 +123,4 @@ export async function clearFailedLogins(clave: string): Promise<void> {
 export async function resetLoginRateLimitStore(): Promise<void> {
   await pool.query(`TRUNCATE TABLE login_intento`);
 }
+export { getClientIp } from "@/lib/client-ip";

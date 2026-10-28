@@ -57,7 +57,9 @@ describe("GET /api/deudas", () => {
   it("computes total_pagado, saldo_pendiente and porcentaje_cubierto in the SQL", async () => {
     const req = createMockRequest("/api/deudas", { user: testUserDueno });
     await GET(req);
-    const sql = mockPool.query.mock.calls[0][0] as string;
+    const sql = (mockPool.query.mock.calls
+      .map((call) => call[0] as string)
+      .find((query) => query.includes("pago_deuda")) ?? "") as string;
     expect(sql).toContain("total_pagado");
     expect(sql).toContain("saldo_pendiente");
     expect(sql).toContain("porcentaje_cubierto");

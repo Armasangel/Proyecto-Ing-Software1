@@ -252,16 +252,194 @@ flujo (que exige confirmar por correo) es lo que levanta la marca.
 
 ### Despliegue: aplicar las migraciones
 
-Sobre una base ya inicializada hay que correr las dos:
+Sobre una base ya inicializada hay que correr (en orden):
 
 ```bash
 psql -U <usuario> -d <basedatos> -f migrations/06_seguridad_credenciales.sql
 psql -U <usuario> -d <basedatos> -f migrations/07_auditoria_credenciales.sql
+psql -U <usuario> -d <basedatos> -f migrations/09_descuentos.sql
+psql -U <usuario> -d <basedatos> -f migrations/11_cliente_datos_extra.sql
+psql -U <usuario> -d <basedatos> -f migrations/12_cliente_codigo.sql
+psql -U <usuario> -d <basedatos> -f migrations/13_factura_cambiaria.sql
 ```
 
-Ambas son idempotentes (se pueden correr más de una vez). Sólo aplican sobre
-bases ya inicializadas: en bases nuevas el esquema de `init/01_schema.sql` ya
-incluye estos cambios.
+Todas son idempotentes (se pueden correr más de una vez). Las 06/07/09 sólo
+aplican sobre bases ya inicializadas: en bases nuevas el esquema de
+`init/01_schema.sql` ya incluye estos cambios. La 11 (dirección, código postal y
+tipos de cliente EMPRESA/GOBIERNO) y la 12 (código de cliente) hay que correrlas
+también en bases nuevas, porque todavía no forman parte del esquema base. La 13
+(factura cambiaria) ya está incluida en `init/01_schema.sql`.
+
+La 13 agrega `factura.tipo_documento` (FACTURA o FACTURA_CAMBIARIA) y
+`factura.direccion_cliente` (snapshot de la dirección del cliente al emitir).
+La factura cambiaria usa el NIT y la dirección ampliados del cliente y lleva
+el prefijo `FCAM-` en su número correlativo.
+
+La 12 agrega `cliente.codigo_cliente` (código corto y único del cliente, ej.
+`CLI-00001`), la secuencia `cliente_codigo_seq` que genera el correlativo
+cuando el cliente se registra sin código, y le asigna un código a los clientes
+que ya existían.
+
+### Marcas y categorías desde el producto
+
+En **Inventario → Productos → Crear/Editar** se pueden crear marcas y
+categorías sin salir del formulario. Al crear una, se agrega al catálogo y se
+selecciona en el campo desde el que se inició la creación.
+
+Cada producto tiene una categoría principal obligatoria y dos adicionales
+opcionales. Las adicionales muestran **Sin categoría** y se guardan como
+`NULL`; no se crea una categoría ficticia. Las tres deben ser distintas.
+La búsqueda y el filtro del catálogo consideran cualquiera de las tres.
+Los tres campos de categoría muestran hasta cinco sugerencias aleatorias al
+abrirse. Al escribir buscan en todo el catálogo, sin distinguir mayúsculas ni
+acentos, y muestran hasta ocho coincidencias. Se excluyen las categorías ya
+seleccionadas en los otros campos; las opcionales permiten elegir «Sin categoría».
+El selector y el filtro de marcas muestran inicialmente las cinco más usadas,
+según la cantidad de productos que tienen asignada cada marca (incluidos los
+inactivos). Los empates se ordenan por nombre. Al escribir se busca en todas
+las marcas, también las recién creadas o sin productos, sin distinguir acentos
+ni mayúsculas. El orden se actualiza al guardar un producto.
+
+En una base existente ejecutar:
+
+```bash
+psql -v ON_ERROR_STOP=1 -U <usuario> -d <basedatos> -f migrations/11_categorias_adicionales_producto.sql
+```
+
+La migración conserva la categoría principal de cada producto y agrega las
+dos columnas opcionales con claves foráneas. Es idempotente y se aplica
+automáticamente desde `init/11_categorias_adicionales_producto.sql` en bases
+nuevas. Las ediciones que omiten estos campos conservan sus valores actuales;
+enviar `null` los limpia explícitamente.
+
+### Presentaciones desde el producto
+
+Las presentaciones se administran en **Inventario → Productos → Editar** y
+al crear un producto. El buscador muestra hasta cinco sugerencias aleatorias;
+al escribir busca entre las equivalencias de la misma unidad base y las
+presentaciones activas configuradas en otros productos compatibles. Se puede
+crear una equivalencia indicando cuántas unidades base representa. Los cambios
+se aplican junto con el producto al guardar; cancelar descarta la selección.
+
+Para completar una base existente, ejecutar:
+
+```bash
+psql -v ON_ERROR_STOP=1 -U <usuario> -d <basedatos> -f migrations/09_presentaciones_por_producto.sql
+psql -v ON_ERROR_STOP=1 -U <usuario> -d <basedatos> -f migrations/10_unidad_base_presentaciones.sql
+```
+
+La migración es idempotente: agrega la unidad base que falte y, para productos
+en libras, arroba (25), saco (50) y quintal (100). Conserva los registros,
+factores, estados e identificadores existentes. Las instalaciones nuevas
+ejecutan el mismo archivo desde `init/09_presentaciones_por_producto.sql`.
+No se asumen tamaños de cajas para completar productos por conteo; esos
+empaques se seleccionan o crean en el formulario.
+
+### Compras y recepción ciega de inventario
+
+Con el esquema actualizado hasta la 13, aplica:
+
+```bash
+psql -v ON_ERROR_STOP=1 -U <usuario> -d <basedatos> -f migrations/14_compras_recepciones.sql
+psql -v ON_ERROR_STOP=1 -U <usuario> -d <basedatos> -f migrations/15_compras_parciales_impuestos.sql
+```
+
+Las instalaciones nuevas ejecutan sus equivalentes en `init/14_compras_recepciones.sql`
+y `init/15_compras_parciales_impuestos.sql`. La 15 conserva los importes históricos y
+las constancias existentes; permite recibir otros productos de esos tickets.
+La migración agrega tablas; no convierte entradas históricas en facturas de compra.
+
+- **Dueño → Inventario → Compra:** registra proveedor (nombre, NIT, teléfono y correo),
+  factura, fecha, contado/crédito, vencimiento, anticipo, forma y referencia de pago,
+  dirección, notas y productos con presentación, cantidad, costo, lote y caducidad.
+  Descuento, impuestos porcentuales y transporte forman el total y se distribuyen
+  proporcionalmente en el costo final por unidad base. Cada impuesto tiene nombre
+  y tasa, se calcula por separado sobre el subtotal menos descuento y se redondea
+  a centavos; no grava el transporte ni los demás impuestos. No dupliques impuestos
+  ya incluidos en el costo. La comparativa muestra costo nuevo por unidad de venta,
+  precio actual y ganancia esperada (monto y margen). Por producto se decide
+  conservar o actualizar los precios. Los precios elegidos se aplican al confirmar
+  la compra; el stock sigue pendiente de recepción.
+- **Tickets y cuentas por pagar:** el número de factura del proveedor queda
+  registrado junto al ticket `REC-…`. Contado se registra pagado; crédito conserva
+  saldo, vencimiento e historial de abonos. Los pagos no modifican el inventario.
+- **Bodeguero → Entrada / Colaborador → Entrada / Dueño → Inventario → Entrada:** captura productos y cantidades
+  recibidas, con presentaciones. El bodeguero utiliza su bodega asignada; el
+  colaborador selecciona la bodega. La vinculación es automática cuando existe una
+  única compra pendiente compatible. Si hay varias, se solicita el código del
+  ticket al dueño. Un ticket admite varias entradas y bodegas: captura solo lo que
+  llegó. Los productos omitidos quedan pendientes. Si un mismo producto llega en
+  varias partes, marca «Entrega parcial» para acumular sus cantidades; al terminar,
+  registra la última parte sin esa marca. Una constancia de un producto no bloquea
+  las entradas de los otros. El saldo se controla bajo bloqueo transaccional para
+  evitar duplicados y sobrantes fuera del límite. No se distribuye automáticamente
+  una entrada entre distintas facturas.
+- **Control de diferencias:** tolerancia por compra de 0 a 100 %, inicialmente 0.
+  El porcentaje se aplica a lo comprado: 100 botellas con 5 % permite finalizar
+  con 95 a 105, incluso después de varias entradas. Se compara cada producto en
+  unidad base, considerando faltantes y excedentes.
+  Dentro del límite se ingresa la cantidad real y se avisa al dueño. Fuera del
+  límite se exige un segundo conteo. Si persiste, la constancia es obligatoria y
+  no se suma stock hasta que el dueño documente su verificación con el proveedor
+  y autorice la cantidad real. Rechazar conserva la constancia y reabre el ticket.
+  Las cantidades del primer y segundo conteo permanecen guardadas.
+- **Privacidad y avisos:** las APIs de compras, costos, pagos y autorización son
+  exclusivas del dueño. Entrada devuelve solo los conteos propios y su estado;
+  nunca transmite factura, proveedor, cantidad esperada, costos ni tolerancia.
+  Los avisos persisten en Compra y se refrescan cada 15 segundos. No se envían correos.
+  El historial de Entrada y los movimientos de bodega muestran los últimos cinco;
+  los recuentos pendientes permanecen accesibles aparte.
+
+El antiguo `POST /api/inventario/entrada` responde 410 para evitar ingresos que
+omitan el control de recepción. Transferencias, salidas y ajustes del dueño siguen
+disponibles. No se permite cambiar la unidad base de un producto con compras pendientes.
+Los ingresos y pagos usan transacciones y claves de operación para evitar duplicados.
+
+Pruebas del flujo con PostgreSQL local y la migración aplicada:
+
+```bash
+docker compose exec app npm test -- --runInBand __tests__/integration/compras-recepciones.test.ts
+```
+
+### Líquidos por botella y unidades históricas
+
+Los líquidos se registran con unidad base **botella**. El tamaño pertenece al
+producto: «Aceite 800 ml» y «Aceite 1 L» son productos diferentes. Las
+presentaciones agrupan botellas del mismo producto (por ejemplo, caja de 12);
+no convierten una botella de 1 L en una presentación de 800 ml.
+
+Después de las migraciones anteriores, aplicar en este orden:
+
+```bash
+psql -v ON_ERROR_STOP=1 -U <usuario> -d <basedatos> -f migrations/12_unidades_historicas.sql
+psql -v ON_ERROR_STOP=1 -U <usuario> -d <basedatos> -f migrations/13_liquidos_por_botella.sql
+```
+
+La 12 guarda `unidad_base` en kardex, detalles de venta, pedidos y deudas.
+Los nuevos registros capturan automáticamente la unidad del momento; después
+no cambia al editar el producto. Historiales, pedidos, facturas y deudas leen
+esa copia. Los registros antiguos se completan con la unidad de su presentación
+cuando se conoce, o con la unidad disponible en el producto. Si la unidad ya
+había cambiado y nunca se guardó, no es posible reconstruirla con certeza.
+
+La 13 corrige las unidades de volumen existentes a botella y los líquidos de
+ejemplo que usaban «unidad». Conserva cantidades, precios y las presentaciones
+históricas desactivadas; copia los empaques por conteo a la nueva unidad. Las
+dos migraciones son idempotentes y tienen su equivalente en `init/`.
+
+Quitar una presentación la desactiva; no se elimina el historial. Si se vuelve
+a seleccionar con el mismo nombre y factor, se reutiliza su identificador.
+Una equivalencia existente no cambia de factor. El dueño puede corregir la
+unidad base desde la edición: el formulario reemplaza la selección por las
+presentaciones de la nueva unidad, que se pueden ajustar antes de guardar.
+La corrección conserva los valores numéricos de cantidades y precios (10 litros
+pasan a ser 10 botellas); no convierte volúmenes ni recalcula existencias.
+Las presentaciones previas quedan inactivas y mantienen sus IDs, factores y
+unidad original. Al volver a una unidad anterior se pueden seleccionar de
+nuevo, incluso con el mismo nombre usado en otra unidad.
+La migración 10 agrega esa unidad original a cada presentación sin alterar
+cantidades ni precios; también se ejecuta desde `init` en instalaciones nuevas.
+Los alias de la misma unidad (`lb` y `libra`) no reemplazan la selección.
 
 **Antes de desplegar**, rotá la contraseña de las cuentas que usaban la clave
 publicada en el repo: después de correr la 06 quedan marcadas para cambiar y no
@@ -477,6 +655,7 @@ una vista propia tras el login (`lib/roles.ts` → `postLoginPath`):
 | Historial de ventas | `/historial-ventas` | ✅ | — | — |
 | Cuentas por cobrar (deudas) | `/cuentas-por-cobrar` | ✅ | — | — |
 | Proveedores | `/proveedores` | ✅ | — | — |
+| Descuentos | `/descuentos` | ✅ | — | — |
 | Usuarios | `/usuarios` | ✅ | — | — |
 | Bitácora de acceso | `/usuarios` (panel) | ✅ | — | — |
 | Pedidos asignados | `/bodega` → Pedidos | — | — | ✅ |
@@ -534,7 +713,22 @@ una vista propia tras el login (`lib/roles.ts` → `postLoginPath`):
 - [x] Registro de ventas con descuento transaccional de stock (concurrencia segura)
 - [x] Facturación con número correlativo atómico (secuencia de Postgres)
 - [x] Historial de ventas con filtros y paginación
-- [x] Gestión de clientes (minorista / mayorista) con límite de deuda y bloqueo automático
+- [x] Gestión de clientes (minorista, mayorista, empresa o gobierno) con NIT,
+      dirección y código postal, código único (CLI-00001), límite de deuda y
+      bloqueo automático
+- [x] Código de cliente visible en órdenes, ventas, historial, facturas y
+      reportes, con autocompletado por código, nombre, NIT, teléfono o correo
+      que rellena nombre, NIT y dirección
+
+### Descuentos
+- [x] Descuentos configurables por el dueño: por porcentaje, por cantidad o por escala de tramos
+- [x] Asignables a un cliente puntual o a un tipo de cliente (MINORISTA / MAYORISTA / EMPRESA / GOBIERNO)
+- [x] Se aplican por línea al registrar la venta (el servidor recalcula; la UI solo previsualiza)
+- [x] Snapshot por línea en el historial (editar o borrar la regla no altera ventas pasadas)
+
+### Alta de registros
+- [x] Sección única (solo dueño) para crear clientes, productos, presentaciones,
+      categorías, marcas, proveedores, bodegas, usuarios y descuentos
 
 ### Cuentas por cobrar y pedidos
 - [x] Cuentas por cobrar por productos o monto libre, con alertas, límites y bloqueo automático
@@ -560,11 +754,13 @@ una vista propia tras el login (`lib/roles.ts` → `postLoginPath`):
 │   │   ├── facturacion/      → Facturas
 │   │   ├── deudas/           → Cuentas por cobrar (la API conserva /api/deudas)
 │   │   ├── ordenes/          → Pedidos de entrega
+│   │   ├── descuentos/       → Reglas de descuento y asignaciones (dueño) + aplicables
 │   │   ├── gestion-inventario/ → Kardex, ajustes, transferencias, stock mínimo
 │   │   ├── estadisticas/     → Reportes analíticos
 │   │   ├── clientes/ bodegas/ categorias/ marcas/ proveedores/ precios/
 │   │   ├── usuarios/ stats/ sesion/ historial-ventas/ health/ logout/
 │   ├── dashboard/            → Panel principal con KPIs
+│   ├── crear/                → Alta centralizada de registros (solo dueño)
 │   ├── inventario/           → Stock, entradas, transferencias, ajustes y bodegas
 │   ├── catalogo/             → Catálogo de productos (solo dueño)
 │   ├── productos/            → Catálogo maestro (precios y estados)
@@ -574,6 +770,7 @@ una vista propia tras el login (`lib/roles.ts` → `postLoginPath`):
 │   ├── cuentas-por-cobrar/   → Cuentas por cobrar y deudores (solo dueño)
 │   ├── ordenes/              → Pedidos de entrega (se crean desde Ventas)
 │   ├── proveedores/          → Gestión de proveedores
+│   ├── descuentos/           → Configuración de descuentos (solo dueño)
 │   ├── reportes/             → Estadísticas y reportes del negocio
 │   ├── usuarios/             → Gestión de usuarios y roles
 │   ├── login/                → Página de inicio de sesión
@@ -609,6 +806,7 @@ una vista propia tras el login (`lib/roles.ts` → `postLoginPath`):
 | http://localhost:3001 | Aplicación principal (redirige a /login) |
 | http://localhost:3001/login | Inicio de sesión |
 | http://localhost:3001/dashboard | Dashboard con KPIs |
+| http://localhost:3001/crear | Alta centralizada de registros (solo dueño) |
 | http://localhost:3001/api/health | Verificar conexión a PostgreSQL |
 | http://localhost:5050 | pgAdmin (sólo con `--profile tools`; credenciales en `.env`) |
 

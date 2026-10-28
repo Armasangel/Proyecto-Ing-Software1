@@ -33,7 +33,7 @@ export function VentasTab({ data }: { data: EstadisticasData }) {
 
       {/* Abajo: gráficas */}
       {/* Fila 2 — Gráfica de barras + Producto #1 */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: "1.25rem" }}>
+      <div className="grid gap-5 xl:grid-cols-[1fr_300px]">
         <Card title={`${tituloIngresos} (Q)`}>
           {puntos.length === 1 ? (
             <EmptyChart label="Solo hay ventas de un día; con más días aparece la gráfica" />

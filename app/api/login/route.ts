@@ -202,15 +202,18 @@ export async function POST(req: NextRequest) {
       sesion_version: row.sesion_version,
     };
 
-    // El 2AF aplica a DUENO y a EMPLEADO: son los roles que manejan dinero,
-    // facturación y datos de clientes. Quedarse fuera el Dueño dejaba al
-    // usuario con más privilegios como el más expuesto. BODEGUERO sigue
-    // exento: no toca facturación ni ve datos de otros usuarios.
+    // El 2FA aplica solo a EMPLEADO: es el rol que maneja dinero, facturación
+    // y datos de clientes. DUENO y BODEGUERO entran directo; para el dueño,
+    // la columna requiere_2fa se ignora aunque haya quedado en TRUE.
     //
     // Dentro de los EMPLEADO, el dueño puede eximir puntualmente a alguno
     // (columna requiere_2fa), p. ej. mientras se resuelve un problema con su
     // correo.
-    if (row.tipo_usuario === TIPOS_USUARIO.BODEGUERO || row.requiere_2fa === false) {
+    if (
+      row.tipo_usuario === TIPOS_USUARIO.DUENO ||
+      row.tipo_usuario === TIPOS_USUARIO.BODEGUERO ||
+      row.requiere_2fa === false
+    ) {
       const token = signAuthToken(usuario);
       // El token viaja SOLO en la cookie httpOnly. Devolverlo también en el
       // cuerpo de la respuesta lo haría legible desde JavaScript y anularía

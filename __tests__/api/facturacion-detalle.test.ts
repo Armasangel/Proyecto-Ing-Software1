@@ -29,8 +29,10 @@ const facturaCompleta = {
   correo: "cliente@test.com",
   id_factura: 7,
   numero_factura: "FACT-000007",
+  tipo_documento: "FACTURA_CAMBIARIA",
   nombre_cliente: "Cliente Prueba",
   nit_cliente: "1234567-8",
+  direccion_cliente: "Zona 1, Guatemala",
   total_factura: 250.5,
   productos: [
     {
@@ -75,6 +77,9 @@ describe("GET /api/facturacion/:id", () => {
 
     expect(res.status).toBe(200);
     expect(data.factura.numero_factura).toBe("FACT-000007");
+    expect(data.factura.tipo_documento).toBe("FACTURA_CAMBIARIA");
+    expect(data.factura.nit_cliente).toBe("1234567-8");
+    expect(data.factura.direccion_cliente).toBe("Zona 1, Guatemala");
     expect(data.factura.productos).toHaveLength(1);
     expect(data.factura.productos[0].nombre_producto).toBe("Arroz 5lb");
   });

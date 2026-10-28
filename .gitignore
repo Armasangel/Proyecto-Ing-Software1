@@ -53,3 +53,4 @@ postgres_data/
 
 # ── Respaldos de la base de datos (automáticos y manuales) ────────────────
 backups/
+app.zip

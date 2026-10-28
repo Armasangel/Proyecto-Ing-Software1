@@ -61,6 +61,7 @@ describe("StaffShell", () => {
     expect(screen.getAllByText("Dashboard").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("Facturación")).toBeInTheDocument();
     expect(screen.getByText("Reportes")).toBeInTheDocument();
+    expect(screen.queryByRole('link',{name:'Entrada'})).not.toBeInTheDocument();
   });
 
   it("shows Ventas (unified with the old Órdenes) for the DUENO too", () => {
@@ -97,6 +98,7 @@ describe("StaffShell", () => {
     // Reportes es exclusivo del dueño: el colaborador lo pisaba y terminaba
     // devuelto a /ventas por useDuenoSession.
     expect(screen.queryByText("Reportes")).not.toBeInTheDocument();
+    expect(screen.queryByText("Crear registros")).not.toBeInTheDocument();
   });
 
   it("shows the role badge for dueno", () => {
@@ -134,6 +136,28 @@ describe("StaffShell", () => {
       </StaffShell>
     );
     expect(screen.getByText("Cerrar sesión")).toBeInTheDocument();
+  });
+
+  it("abre y cierra el menú móvil", async () => {
+    const user = userEvent.setup();
+    render(
+      <StaffShell usuario={duenoUser} title="Dashboard">
+        <p>Contenido</p>
+      </StaffShell>
+    );
+
+    const abrir = screen.getByRole("button", { name: "Abrir menú" });
+    expect(abrir).toHaveAttribute("aria-expanded", "false");
+
+    await user.click(abrir);
+    const cerrar = screen.getByRole("button", { name: "Cerrar menú" });
+    expect(cerrar).toHaveAttribute("aria-expanded", "true");
+
+    await user.click(screen.getByRole("button", { name: "Cerrar menú lateral" }));
+    expect(screen.getByRole("button", { name: "Abrir menú" })).toHaveAttribute(
+      "aria-expanded",
+      "false"
+    );
   });
 
   it("calls /api/logout and redirects on logout click", async () => {

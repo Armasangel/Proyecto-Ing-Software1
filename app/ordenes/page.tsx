@@ -4,10 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { StaffShell } from "@/components/StaffShell";
 import { useStaffSession } from "@/hooks/useStaffSession";
-
-// Pedidos de entrega: cada venta con entrega a domicilio genera un pedido que
-// recorre el flujo de bodega. Los pedidos NO se crean acá (se crean desde
-// Ventas); esta pantalla solo da seguimiento y marca la entrega.
+import { PaginationBar } from "@/components/pagination/PaginationBar";
+import { DataTable } from "@/components/list/DataTable";
+import type { DataTableColumn } from "@/components/list/DataTable";
 
 type DetalleOrdenRow = {
   id_detalle: number;
@@ -36,11 +35,12 @@ type OrdenListada = {
   nombre_cliente: string;
   correo_cliente: string;
   tipo_cliente: string;
+  codigo_cliente?: string | null;
+  nit_cliente?: string | null;
+  direccion?: string | null;
   nombre_usuario: string | null;
   productos: DetalleOrdenRow[];
 };
-
-const ACCENT = "#1D24CA";
 
 const ESTADOS_LABEL: Record<string, string> = {
   PENDIENTE: "Pendiente",
@@ -76,17 +76,26 @@ const ACCIONES_DISPONIBLES: Record<string, { siguiente: string; label: string }[
   ENVIADO: [{ siguiente: "ENTREGADO", label: "Marcar entregado" }],
 };
 
+type Column = {
+  key: string;
+  header: string;
+  thClassName?: string;
+  tdClassName?: string;
+};
+
 export default function PedidosPage() {
   const usuario = useStaffSession();
   const [ordenes, setOrdenes] = useState<OrdenListada[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(50);
 
   const cargarOrdenes = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await fetch("/api/ordenes");
+      const r = await fetch(`/api/ordenes?page=${page}&limit=${perPage}`);
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || "Error al cargar los pedidos");
       setOrdenes(d.ordenes || []);
@@ -95,7 +104,7 @@ export default function PedidosPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page, perPage]);
 
   useEffect(() => {
     if (!usuario) return;
@@ -123,146 +132,162 @@ export default function PedidosPage() {
     }
   }
 
-  if (!usuario) return <p style={{ padding: "2rem", color: "var(--muted)" }}>Cargando...</p>;
+  if (!usuario) return <p className="p-4 text-ink-muted">Cargando...</p>;
 
-  const th = { padding: "0.65rem 0.85rem", textAlign: "left" as const, fontSize: "0.82rem", fontWeight: 600 };
-  const td = { padding: "0.6rem 0.85rem", fontSize: "0.88rem", borderBottom: "1px solid var(--border)" };
+  const columns: DataTableColumn[] = [
+    { key: "id_orden", header: "#", thClassName: "text-center", tdClassName: "text-center" },
+    {
+      key: "id_venta",
+      header: "Venta",
+      render: (row) => (row.id_venta ? `#${row.id_venta}` : "—"),
+    },
+    {
+      key: "fecha_orden",
+      header: "Fecha",
+      render: (row) =>
+        new Date(row.fecha_orden as string).toLocaleString("es-GT", {
+          dateStyle: "short",
+          timeStyle: "short",
+        }),
+    },
+    {
+      key: "nombre_cliente",
+      header: "Cliente",
+      render: (row) => {
+        const o = row as unknown as OrdenListada;
+        return (
+          <div>
+            <div className="font-medium">{o.nombre_cliente}</div>
+            {o.notas && <div className="text-[0.78rem] text-ink-muted">{o.notas}</div>}
+          </div>
+        );
+      },
+    },
+    {
+      key: "estado",
+      header: "Estado",
+      render: (row) => {
+        const estado = row.estado as string;
+        return (
+          <span
+            className="inline-block px-[0.6rem] py-[0.2rem] rounded-md text-[0.78rem] font-semibold text-white"
+            style={{ background: ESTADOS_COLOR[estado] || "#666" }}
+          >
+            {ESTADOS_LABEL[estado] || estado}
+          </span>
+        );
+      },
+    },
+    {
+      key: "total",
+      header: "Total",
+      tdClassName: "text-right",
+      render: (row) => (
+        <span className="font-semibold">Q{Number(row.total).toFixed(2)}</span>
+      ),
+    },
+    {
+      key: "productos",
+      header: "Productos",
+      render: (row) => {
+        const o = row as unknown as OrdenListada;
+        return (o.productos || []).map((pr) => (
+          <div key={pr.id_detalle} className="mb-[0.35rem]">
+            <span>{pr.codigo_producto}</span> × {Number(pr.cantidad).toFixed(3)}
+            {pr.nombre_presentacion && pr.cantidad_presentacion && (
+              <span className="text-ink-muted text-[0.75rem]">
+                {" "}
+                ({Number(pr.cantidad_presentacion).toFixed(0)} × {pr.nombre_presentacion})
+              </span>
+            )}
+            <div className="text-[0.75rem] text-ink-muted mt-[0.1rem]">
+              {pr.nombre_bodega ? (
+                <>
+                  Sacar de: <strong className="text-accent">{pr.nombre_bodega}</strong>
+                </>
+              ) : (
+                <span className="text-danger">Sin bodega con stock registrado</span>
+              )}
+            </div>
+          </div>
+        ));
+      },
+    },
+    {
+      key: "acciones",
+      header: "Acciones",
+      render: (row) => {
+        const o = row as unknown as OrdenListada;
+        return (ACCIONES_DISPONIBLES[o.estado] || [])
+          .filter((acc) => !(acc.siguiente === "CANCELADO" && o.id_venta))
+          .map((acc) => (
+            <button
+              key={acc.siguiente}
+              type="button"
+              onClick={() => cambiarEstado(o.id_orden, acc.siguiente)}
+              className={`inline-block px-[0.6rem] py-[0.3rem] mr-[0.4rem] mb-[0.3rem] rounded-md bg-transparent font-medium text-[0.78rem] cursor-pointer ${
+                acc.siguiente === "CANCELADO"
+                  ? "border border-danger text-danger"
+                  : "border border-accent text-accent"
+              }`}
+            >
+              {acc.label}
+            </button>
+          ));
+      },
+    },
+  ];
 
   return (
     <StaffShell usuario={usuario} title="Pedidos de entrega" subtitle="Seguimiento de las ventas con entrega a domicilio">
-      <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "1rem",
-            flexWrap: "wrap",
-            padding: "0.8rem 1rem",
-            border: "1px solid var(--border)",
-            borderRadius: 12,
-          }}
-        >
-          <span style={{ flex: 1, minWidth: 240, fontSize: "0.88rem", color: "var(--muted)" }}>
-            Los pedidos se generan solos al registrar una venta con entrega <strong>a domicilio</strong> en Ventas.
-            Aquí se les da seguimiento hasta la entrega.
+      <div className="min-h-0 flex flex-col gap-6">
+        <header className="flex flex-col sm:flex-row items-center gap-4">
+          <h1 className="text-2xl font-bold text-ink">Pedidos de entrega</h1>
+          <p className="text-ink-muted text-sm">Seguimiento de las ventas con entrega a domicilio</p>
+        </header>
+
+        <div className="flex flex-wrap items-center gap-4 rounded-xl border border-line px-4 py-[0.8rem]">
+          <span className="flex-1 min-w-[240px] text-[0.88rem] text-ink-muted">
+            Los pedidos se generan solos al registrar una venta con entrega{" "}
+            <strong>a domicilio</strong> en Ventas. Aquí se les da seguimiento hasta la entrega.
           </span>
           <Link
             href="/ventas"
-            style={{
-              padding: "0.5rem 1.2rem",
-              borderRadius: 10,
-              background: ACCENT,
-              color: "#fff",
-              fontWeight: 600,
-              textDecoration: "none",
-            }}
+            className="px-[1.2rem] py-[0.5rem] rounded-[10px] bg-accent text-white font-semibold no-underline"
           >
             Ir a Ventas
           </Link>
         </div>
 
-        {error && <div style={{ color: "var(--red)", fontWeight: 600 }}>{error}</div>}
-        {okMsg && <div style={{ color: "#2d6a4f", fontWeight: 600 }}>{okMsg}</div>}
+        {error && <div className="text-danger font-semibold">{error}</div>}
+        {okMsg && <div className="text-success font-semibold">{okMsg}</div>}
 
-        {loading ? (
-          <p style={{ color: "var(--muted)" }}>Cargando pedidos...</p>
-        ) : (
-          <div style={{ overflowX: "auto", border: "1px solid var(--border)", borderRadius: 12, background: "var(--surface)" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1000 }}>
-              <thead>
-                <tr style={{ background: ACCENT, color: "#fff" }}>
-                  <th style={th}>#</th>
-                  <th style={th}>Venta</th>
-                  <th style={th}>Fecha</th>
-                  <th style={th}>Cliente</th>
-                  <th style={th}>Estado</th>
-                  <th style={{ ...th, textAlign: "right" }}>Total</th>
-                  <th style={th}>Productos</th>
-                  <th style={th}>Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {ordenes.map((o, i) => (
-                  <tr key={o.id_orden} style={{ background: i % 2 === 0 ? "var(--surface2)" : "var(--surface)", verticalAlign: "top" }}>
-                    <td style={td}>{o.id_orden}</td>
-                    <td style={td}>{o.id_venta ? `#${o.id_venta}` : "—"}</td>
-                    <td style={td}>{new Date(o.fecha_orden).toLocaleString("es-GT", { dateStyle: "short", timeStyle: "short" })}</td>
-                    <td style={td}>
-                      <div style={{ fontWeight: 500 }}>{o.nombre_cliente}</div>
-                      {o.notas && <div style={{ fontSize: "0.78rem", color: "var(--muted)" }}>{o.notas}</div>}
-                    </td>
-                    <td style={td}>
-                      <span
-                        style={{
-                          display: "inline-block",
-                          padding: "0.2rem 0.6rem",
-                          borderRadius: 6,
-                          fontSize: "0.78rem",
-                          fontWeight: 600,
-                          color: "#fff",
-                          background: ESTADOS_COLOR[o.estado] || "#666",
-                        }}
-                      >
-                        {ESTADOS_LABEL[o.estado] || o.estado}
-                      </span>
-                    </td>
-                    <td style={{ ...td, textAlign: "right", fontWeight: 600 }}>Q{Number(o.total).toFixed(2)}</td>
-                    <td style={{ ...td, fontSize: "0.82rem", maxWidth: 320 }}>
-                      {(o.productos || []).map((pr) => (
-                        <div key={pr.id_detalle} style={{ marginBottom: "0.35rem" }}>
-                          <span style={{ color: "var(--text)" }}>{pr.codigo_producto}</span> × {Number(pr.cantidad).toFixed(3)}
-                          {pr.nombre_presentacion && pr.cantidad_presentacion && (
-                            <span style={{ color: "var(--muted)", fontSize: "0.75rem" }}>
-                              {" "}({Number(pr.cantidad_presentacion).toFixed(0)} × {pr.nombre_presentacion})
-                            </span>
-                          )}
-                          <div style={{ fontSize: "0.75rem", color: "var(--muted)", marginTop: "0.1rem" }}>
-                            {pr.nombre_bodega ? (
-                              <>Sacar de: <strong style={{ color: ACCENT }}>{pr.nombre_bodega}</strong></>
-                            ) : (
-                              <span style={{ color: "var(--red)" }}>Sin bodega con stock registrado</span>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </td>
-                    <td style={{ ...td, whiteSpace: "nowrap" }}>
-                      {(ACCIONES_DISPONIBLES[o.estado] || [])
-                        // Un pedido que viene de una venta se cancela deshaciendo la venta (en Ventas).
-                        .filter((acc) => !(acc.siguiente === "CANCELADO" && o.id_venta))
-                        .map((acc) => (
-                          <button
-                            key={acc.siguiente}
-                            type="button"
-                            onClick={() => cambiarEstado(o.id_orden, acc.siguiente)}
-                            style={{
-                              display: "inline-block",
-                              padding: "0.3rem 0.6rem",
-                              marginRight: "0.4rem",
-                              marginBottom: "0.3rem",
-                              borderRadius: 6,
-                              border: acc.siguiente === "CANCELADO" ? "1px solid var(--red)" : `1px solid ${ACCENT}`,
-                              background: "transparent",
-                              color: acc.siguiente === "CANCELADO" ? "var(--red)" : ACCENT,
-                              fontWeight: 500,
-                              fontSize: "0.78rem",
-                              cursor: "pointer",
-                            }}
-                          >
-                            {acc.label}
-                          </button>
-                        ))}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {ordenes.length === 0 && (
-              <p style={{ padding: "1.25rem", color: "var(--muted)", margin: 0 }}>Aún no hay pedidos de entrega.</p>
-            )}
-          </div>
-        )}
+        <main className="flex-1">
+          {loading ? (
+            <p className="p-4 text-ink-muted text-[0.9rem]">Cargando…</p>
+          ) : ordenes.length === 0 ? (
+            <p className="p-6 text-center text-ink-muted">
+              Aún no hay pedidos de entrega.
+            </p>
+          ) : (
+            <DataTable
+              rows={ordenes.map((o) => ({ ...o, key: o.id_orden.toString() }))}
+              columns={columns}
+            />
+          )}
+        </main>
       </div>
+
+      <footer className="mt-6">
+        <PaginationBar
+          total={50}
+          page={page}
+          perPage={perPage}
+          onPageChange={(p) => setPage(p)}
+          onPerPageChange={(n) => setPerPage(n)}
+          noun="pedidos"
+        />
+      </footer>
     </StaffShell>
   );
 }

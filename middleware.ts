@@ -17,12 +17,14 @@ import type { NextRequest } from "next/server";
 import { AUTH_COOKIE, verifyAuthToken } from "@/lib/auth";
 import { esSesionValida } from "@/lib/sesion";
 import { getLogger } from "@/lib/logger";
+import { getClientIp } from "@/lib/client-ip";
 
 const log = getLogger("middleware");
 
 const PROTECTED_PREFIXES = [
   "/dashboard",
   "/inventario",
+  "/entrada",
   "/gestion-inventario",
   "/bodegas",
   "/bodega",
@@ -36,17 +38,9 @@ const PROTECTED_PREFIXES = [
   "/facturacion",
   "/catalogo",
   "/proveedores",
+  "/descuentos",
   "/mi-cuenta",
 ];
-
-function getClientIp(req: NextRequest): string {
-  const forwarded = req.headers.get("x-forwarded-for");
-  if (forwarded) {
-    const first = forwarded.split(",")[0]?.trim();
-    if (first) return first;
-  }
-  return req.headers.get("x-real-ip")?.trim() || "unknown";
-}
 
 /**
  * Se usa para las rutas de API: en vez de devolver un 401 propio (lo que
@@ -158,6 +152,7 @@ export const config = {
   matcher: [
     "/dashboard/:path*",
     "/inventario/:path*",
+    "/entrada/:path*",
     "/gestion-inventario/:path*",
     "/bodegas/:path*",
     "/bodega",
@@ -178,6 +173,8 @@ export const config = {
     "/catalogo/:path*",
     "/proveedores",
     "/proveedores/:path*",
+    "/descuentos",
+    "/descuentos/:path*",
     "/mi-cuenta",
     "/mi-cuenta/:path*",
     "/api",

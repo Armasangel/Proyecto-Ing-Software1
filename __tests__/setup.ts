@@ -2,6 +2,13 @@ import "@testing-library/jest-dom";
 import { cleanup } from "@testing-library/react";
 import { afterEach } from "@jest/globals";
 
+if (!globalThis.crypto) {
+  Object.defineProperty(globalThis, "crypto", { value: require("crypto").webcrypto, configurable: true });
+}
+if (!globalThis.crypto.randomUUID) {
+  Object.defineProperty(globalThis.crypto, "randomUUID", { value: require("crypto").randomUUID, configurable: true });
+}
+
 // jsdom doesn't provide fetch; polyfill from Node's built-in undici
 const nodeFetch = require("node-fetch");
 const origFetch = nodeFetch;
