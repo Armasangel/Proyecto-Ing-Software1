@@ -4,7 +4,7 @@
 param(
   [int]$N = 5,
   [string]$Base = "http://localhost:3001",
-  [string]$TokFile = "C:\Users\Angel\AppData\Local\Temp\opencode\vol\prod-token.txt"
+  [string]$TokFile = "$env:TEMP\dsm-vol\prod-token.txt"
 )
 
 $tok = (Get-Content $TokFile -Raw).Trim()
