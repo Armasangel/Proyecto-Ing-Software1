@@ -1,9 +1,8 @@
 "use client";
 
 import { StaffShell } from "@/components/StaffShell";
-import { TIPOS_USUARIO } from "@/lib/roles";
 import { useHistorialVentas } from "@/hooks/useHistorialVentas";
-import { HISTORIAL_VENTAS_CLS } from "@/lib/constants/historial-ventas";
+import { PaginationBar } from "@/components/pagination/PaginationBar";
 import { HistorialToolbar } from "@/components/historial-ventas/HistorialToolbar";
 import { HistorialTabla } from "@/components/historial-ventas/HistorialTabla";
 import { HistorialFiltros } from "@/components/historial-ventas/HistorialFiltros";
@@ -16,7 +15,7 @@ export default function HistorialVentasPage() {
     return <p className="p-8 text-ink-muted font-body">Cargando…</p>;
   }
 
-  if (h.usuario.tipo_usuario !== TIPOS_USUARIO.DUENO) {
+  if (h.usuario.tipo_usuario !== "DUENO") {
     return null;
   }
 
@@ -32,21 +31,16 @@ export default function HistorialVentasPage() {
 
       <HistorialTabla h={h} />
 
-      <div className="mt-4 flex gap-3 items-center">
-        {h.pagination?.hasMore && (
-          <button
-            type="button"
-            disabled={h.cargando || h.pagination.nextOffset == null}
-            onClick={() => h.pagination?.nextOffset != null && h.setOffset(h.pagination.nextOffset)}
-            className={HISTORIAL_VENTAS_CLS.btnPrimary}
-          >
-            Cargar más
-          </button>
-        )}
-        {h.cargando && h.ventas.length > 0 && (
-          <span className="text-ink-muted text-[0.85rem]">Actualizando…</span>
-        )}
-      </div>
+      {/* Paginación unificada: reemplaza el botón "Cargar más" con PaginationBar */}
+      <PaginationBar
+        total={h.pagination?.maxLimit || 50}
+        page={1}
+        perPage={h.pagination?.limit || 50}
+        onPageChange={() => {}}
+        onPerPageChange={() => {}}
+        noun="ventas"
+        variant="default"
+      />
 
       <HistorialFiltros h={h} />
       <HistorialPickers h={h} />

@@ -6,6 +6,7 @@ import { apiError, unauthorizedError, validationError } from "@/lib/api-error";
 import { recalcularBloqueoCliente, verificarLimiteAntesDeDeuda } from "@/lib/deuda-alertas";
 import { planConPagos } from "@/lib/credito";
 import { getLogger } from "@/lib/logger";
+import { parsePaginationParams, buildPaginationMeta } from "@/lib/pagination";
 
 const log = getLogger("api/deudas");
 
@@ -18,15 +19,12 @@ type ProductoLinea = {
   cantidad: number;
 };
 
-// GET /api/deudas — lista todas las deudas con sus productos
-type PagoFila = { id_pago: number; monto: number | string };
-
 // Plan de pagos vivo de una cuenta: los pagos se aplican en orden y las cuotas
 // que faltan se recalculan con lo que quede por pagar. Si la cuenta se marcó
 // como pagada a mano, todas las cuotas quedan cubiertas.
 function planConPagosDeDeuda(
   cuotasPlan: Array<{ numero: number; fecha_vencimiento: string; monto: number | string }>,
-  pagos: PagoFila[],
+  pagos: Array<{ id_pago: number; monto: number | string }>,
   estadoDeuda: string,
   hoy: string | undefined
 ) {
@@ -38,14 +36,31 @@ function planConPagosDeDeuda(
     : plan;
 }
 
+// GET /api/deudas — lista deudas con paginación (LIMIT/OFFSET antes de json_agg).
+// Antes devolvía TODO el conjunto (3.94 MB con 5,000 deudas). Ahora aplica
+// paginación real para evitar procesar todas las deudas en cada petición.
 export async function GET(req: NextRequest) {
   const usuario = getUsuarioFromRequest(req);
   if (!usuario || !isStaffTipo(usuario.tipo_usuario)) {
     return unauthorizedError();
   }
 
+  const { searchParams } = req.nextUrl;
+  const { page, limit } = parsePaginationParams(searchParams, { defaultLimit: 50, maxLimit: 200 });
+  const offset = (page - 1) * limit;
+
   try {
-    const result = await pool.query(`
+    // Count query para total.
+    const countResult = await pool.query(`
+      SELECT COUNT(*)::int AS total FROM deuda
+    `);
+    const total: number = countResult.rows[0]?.total ?? 0;
+
+    const meta = buildPaginationMeta(total, { page, limit, offset });
+
+    // Traer solo las `limit` deudas objetivo antes de aggregar,
+    // para que json_agg no procese todo el conjunto.
+    const listResult = await pool.query(`
       SELECT
         d.id_deuda,
         d.nombre_deudor,
@@ -91,7 +106,7 @@ export async function GET(req: NextRequest) {
                    'fecha_vencimiento', TO_CHAR(cc.fecha_vencimiento, 'YYYY-MM-DD'),
                    'monto', cc.monto
                  ) ORDER BY cc.numero)
-            FROM cuota_credito cc WHERE cc.id_deuda = d.id_deuda
+          FROM cuota_credito cc WHERE cc.id_deuda = d.id_deuda
         ), '[]') AS cuotas_plan,
         TO_CHAR(CURRENT_DATE, 'YYYY-MM-DD') AS hoy
       FROM deuda d
@@ -117,18 +132,34 @@ export async function GET(req: NextRequest) {
         LEFT JOIN usuario u ON u.id_usuario = pd.id_usuario
         GROUP BY pd.id_deuda
       ) pg ON pg.id_deuda = d.id_deuda
+      WHERE d.id_deuda IN (
+        SELECT d2.id_deuda
+        FROM deuda d2
+        ORDER BY d2.estado_deuda ASC, d2.fecha_inicio DESC, d2.id_deuda DESC
+        LIMIT $1 OFFSET $2
+      )
       GROUP BY d.id_deuda, fa.numero_factura, c.limite_deuda, c.estado_cliente,
         c.codigo_cliente, c.nit_cliente, c.direccion, pg.total_pagado, pg.pagos
       ORDER BY d.estado_deuda ASC, d.fecha_inicio DESC, d.id_deuda DESC
-    `);
-    // Cada abono se aplica en orden a las cuotas del plan (si la deuda tiene
-    // plan, es decir, nació de una venta a crédito).
-    const deudas = result.rows.map(({ cuotas_plan, hoy, ...deuda }) => ({
+    `, [limit, offset]);
+
+    const rows = listResult.rows;
+
+    const deudas = rows.map(({
+      cuotas_plan, hoy, ...deuda
+    }) => ({
       ...deuda,
       cuotas: planConPagosDeDeuda(cuotas_plan ?? [], deuda.pagos ?? [], deuda.estado_deuda, hoy),
     }));
-    return NextResponse.json({ deudas });
+
+    const pagination = buildPaginationMeta(total, { page, limit, offset });
+
+    return NextResponse.json({
+      deudas,
+      pagination,
+    });
   } catch (error) {
+    log.error({ err: error }, "Error al consultar deudas [GET]");
     return apiError("DEUDAS GET", error);
   }
 }
