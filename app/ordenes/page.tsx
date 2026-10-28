@@ -157,7 +157,7 @@ export default function PedidosPage() {
             </p>
           ) : (
             <DataTable
-              rows={ordenes.map((o) => ({ key: o.id_orden.toString() } as { key: string }))}
+              rows={ordenes.map((o) => ({ ...o, key: o.id_orden.toString() }))}
               columns={columns}
             />
           )}
