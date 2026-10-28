@@ -17,6 +17,7 @@ services:
       - NODE_ENV=production
       - JWT_SECRET=${JWT_SECRET:?JWT_SECRET no está definido — copia .env.example a .env}
       - DATABASE_URL=postgresql://${POSTGRES_USER:?define POSTGRES_USER}:${POSTGRES_PASSWORD:?define POSTGRES_PASSWORD}@db:${DATABASE_PORT}/${POSTGRES_DB:?define POSTGRES_DB}
+      - TRUSTED_PROXY_COUNT=${TRUSTED_PROXY_COUNT:-1}
       - GMAIL_USER=${GMAIL_USER}
       - GMAIL_APP_PASSWORD=${GMAIL_APP_PASSWORD}
       - LOG_LEVEL=${LOG_LEVEL:-info}

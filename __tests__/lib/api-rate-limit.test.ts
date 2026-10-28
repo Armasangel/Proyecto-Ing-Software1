@@ -11,10 +11,10 @@ describe("getClientIp", () => {
     return { headers: { get: (name: string) => headers[name] ?? null } };
   }
 
-  it("takes the first IP of x-forwarded-for", () => {
+  it("toma el último salto de confianza de x-forwarded-for", () => {
     expect(
       getClientIp(fakeReq({ "x-forwarded-for": "203.0.113.5, 10.0.0.1" }))
-    ).toBe("203.0.113.5");
+    ).toBe("10.0.0.1");
   });
 
   it("trims spaces from x-forwarded-for", () => {

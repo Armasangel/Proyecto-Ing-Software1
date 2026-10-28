@@ -17,6 +17,7 @@ import type { NextRequest } from "next/server";
 import { AUTH_COOKIE, verifyAuthToken } from "@/lib/auth";
 import { esSesionValida } from "@/lib/sesion";
 import { getLogger } from "@/lib/logger";
+import { getClientIp } from "@/lib/client-ip";
 
 const log = getLogger("middleware");
 
@@ -40,15 +41,6 @@ const PROTECTED_PREFIXES = [
   "/descuentos",
   "/mi-cuenta",
 ];
-
-function getClientIp(req: NextRequest): string {
-  const forwarded = req.headers.get("x-forwarded-for");
-  if (forwarded) {
-    const first = forwarded.split(",")[0]?.trim();
-    if (first) return first;
-  }
-  return req.headers.get("x-real-ip")?.trim() || "unknown";
-}
 
 /**
  * Se usa para las rutas de API: en vez de devolver un 401 propio (lo que

@@ -14,6 +14,7 @@ import { apiError, unauthorizedError } from "@/lib/api-error";
 import { registrarAuditoria, TIPOS_EVENTO } from "@/lib/audit";
 import { revocarSesiones } from "@/lib/sesion";
 import { getLogger } from "@/lib/logger";
+import { getClientIp } from "@/lib/client-ip";
 
 const log = getLogger("api/usuarios/mi-sesiones/cerrar");
 
@@ -30,7 +31,7 @@ export async function POST(req: NextRequest) {
       id_usuario: usuario.id_usuario,
       correo: usuario.correo,
       tipo_evento: TIPOS_EVENTO.SESIONES_REVOCADAS,
-      ip: req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+      ip: getClientIp(req),
       user_agent: req.headers.get("user-agent"),
       detalle: { alcance: "propias_sesiones", propio_usuario: true },
     });
