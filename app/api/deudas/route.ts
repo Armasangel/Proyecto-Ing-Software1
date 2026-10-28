@@ -135,7 +135,7 @@ export async function GET(req: NextRequest) {
       WHERE d.id_deuda IN (
         SELECT d2.id_deuda
         FROM deuda d2
-        ORDER BY d2.fecha_inicio DESC, d2.id_deuda DESC
+        ORDER BY d2.estado_deuda ASC, d2.fecha_inicio DESC, d2.id_deuda DESC
         LIMIT $1 OFFSET $2
       )
       GROUP BY d.id_deuda, fa.numero_factura, c.limite_deuda, c.estado_cliente,
