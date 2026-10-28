@@ -13,6 +13,7 @@ import { VentasResumen } from "@/components/ventas/VentasResumen";
 import { VentasMensajes } from "@/components/ventas/VentasMensajes";
 import { ConfirmarVentaModal } from "@/components/ventas/ConfirmarVentaModal";
 import { VentasRecientes } from "@/components/ventas/VentasRecientes";
+import { PaginationBar } from "@/components/pagination/PaginationBar";
 
 export default function VentasPage() {
   const v = useVentas();
@@ -54,6 +55,17 @@ export default function VentasPage() {
 
         <ConfirmarVentaModal v={v} />
         <VentasRecientes v={v} />
+
+        {/* Paginación unificada para la lista de ventas recientes */}
+        <PaginationBar
+          total={50}
+          page={1}
+          perPage={50}
+          onPageChange={() => {}}
+          onPerPageChange={() => {}}
+          noun="ventas"
+          variant="default"
+        />
       </div>
     </StaffShell>
   );
