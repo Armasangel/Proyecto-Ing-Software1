@@ -19,4 +19,4 @@ medidor (PowerShell):
 seed de 20k ventas:
 
     docker cp loadtest/seed_20k_ventas.sql <container_db>:/tmp/seed.sql
-    docker exec -i <container_db> psql -U dsm_user -d deposito_san_miguel -f /tmp/seed.sql
+    docker exec -i <container_db> psql -v ON_ERROR_STOP=1 -U dsm_user -d deposito_san_miguel -f /tmp/seed.sql
