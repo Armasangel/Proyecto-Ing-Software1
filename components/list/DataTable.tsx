@@ -12,6 +12,8 @@ export type DataTableColumn = {
   thClassName?: string;
   /** Clases Tailwind opcionales para las celdas (td) */
   tdClassName?: string;
+  /** Render personalizado del valor de la celda. Si se omite, se muestra el valor crudo. */
+  render?: (row: Record<string, unknown>) => ReactNode;
 };
 
 /** Props del componente DataTable */
@@ -90,7 +92,7 @@ export const DataTable: FC<DataTableProps> = ({
           className={`bg-surface ${i % 2 === 0 ? "border-b" : "border-b border-line"} hover:bg-cream/50 transition-colors`}
         >
           {columns.map((col) => {
-            const value = (row as any)[col.key];
+            const value = (row as Record<string, unknown>)[col.key];
             return (
               <td
                 key={`${col.key}-${i}`}
@@ -99,8 +101,10 @@ export const DataTable: FC<DataTableProps> = ({
                   border-b border-line ${col.tdClassName || ""}
                 `}
               >
-                {value !== null && value !== undefined ? (
-                  <span>{value}</span>
+                {col.render ? (
+                  col.render(row as Record<string, unknown>)
+                ) : value !== null && value !== undefined ? (
+                  <span>{String(value)}</span>
                 ) : (
                   <span className="text-ink-muted opacity-60">—</span>
                 )}
