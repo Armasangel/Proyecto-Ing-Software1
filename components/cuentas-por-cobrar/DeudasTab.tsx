@@ -3,7 +3,7 @@
 import { Fragment } from "react";
 import { ClienteAutocompletar } from "@/components/ClienteAutocompletar";
 import { FormularioCliente } from "@/components/clientes/FormularioCliente";
-import { PaginationBar } from "@/lib/ui-table";
+import { PaginationBar } from "@/components/pagination/PaginationBar";
 import { CLS_CPC, tabPillClass } from "@/lib/constants/cuentas-por-cobrar";
 import { diasRestantes } from "@/lib/cuentas-por-cobrar-utils";
 import type { CuentasPorCobrarController } from "@/hooks/useCuentasPorCobrar";
@@ -395,16 +395,17 @@ export function DeudasTab({ h }: { h: CuentasPorCobrarController }) {
               )}
             </tbody>
           </table>
-          <PaginationBar
-            total={h.gruposPage.total}
-            page={h.gruposPage.paginaSegura}
-            perPage={h.perPage}
-            onPage={h.setPage}
-            onPerPage={h.setPerPage}
-            noun="clientes"
-          />
-        </div>
-      )}
+<PaginationBar
+              total={h.gruposPage.total}
+              page={h.gruposPage.paginaSegura}
+              perPage={h.perPage}
+              onPageChange={() => {}}
+              onPerPageChange={() => {}}
+              noun="clientes"
+            />
+          </div>
+        )}
+      ))}
 
       {h.vista === "vencimiento" && (
         <div className="overflow-x-auto">
@@ -497,14 +498,14 @@ export function DeudasTab({ h }: { h: CuentasPorCobrarController }) {
               )}
             </tbody>
           </table>
-          <PaginationBar
-            total={h.vencimientoPage.total}
-            page={h.vencimientoPage.paginaSegura}
-            perPage={h.perPage}
-            onPage={h.setPage}
-            onPerPage={h.setPerPage}
-            noun="cuentas por cobrar"
-          />
+<PaginationBar
+              total={h.vencimientoPage.total}
+              page={h.vencimientoPage.paginaSegura}
+              perPage={h.perPage}
+              onPageChange={() => {}}
+              onPerPageChange={() => {}}
+              noun="cuentas por cobrar"
+            />
         </div>
       )}
     </>
