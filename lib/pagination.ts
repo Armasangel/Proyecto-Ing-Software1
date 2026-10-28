@@ -2,7 +2,7 @@
   *
   * Method: page (1-based) + limit (clamped max).
   * Every response includes: total, page, limit, totalPages.
-  * hasMore is derived: page >= totalPages.
+ * hasMore is derived: page < totalPages.
   *
   * Params accepted from ?page and ?limit query strings.
   * `offset` is NOT supported — use page navigation only.
