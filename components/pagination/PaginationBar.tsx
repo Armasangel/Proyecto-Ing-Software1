@@ -42,7 +42,7 @@ export const PaginationBar: FC<PaginationBarProps> = ({
   const from = total === 0 ? 0 : (page - 1) * perPage + 1;
   const to = Math.min(page * perPage, total);
   const hasPrev = page > 1;
-  const hasNext = page < totalPages || total > 0;
+  const hasNext = page < totalPages;
 
   // Clases base consistentes con el diseño del proyecto:
   // bg-cream / text-ink / border-[var(--border)] / rounded-control / shadow-warm
