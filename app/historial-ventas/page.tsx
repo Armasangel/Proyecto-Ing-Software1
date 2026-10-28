@@ -3,7 +3,6 @@
 import { StaffShell } from "@/components/StaffShell";
 import { useHistorialVentas } from "@/hooks/useHistorialVentas";
 import { PaginationBar } from "@/components/pagination/PaginationBar";
-import { DataTable } from "@/components/list/DataTable";
 import { HistorialToolbar } from "@/components/historial-ventas/HistorialToolbar";
 import { HistorialTabla } from "@/components/historial-ventas/HistorialTabla";
 import { HistorialFiltros } from "@/components/historial-ventas/HistorialFiltros";
