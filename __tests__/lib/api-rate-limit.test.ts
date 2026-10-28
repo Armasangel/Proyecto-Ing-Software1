@@ -18,7 +18,7 @@ describe("getClientIp", () => {
   });
 
   it("trims spaces from x-forwarded-for", () => {
-    expect(getClientIp(fakeReq({ "x-forwarded-for": "  203.0.113.5  " }))).toBe("10.0.0.1");
+    expect(getClientIp(fakeReq({ "x-forwarded-for": "  203.0.113.5  " }))).toBe("203.0.113.5");
   });
 
   it("falls back to x-real-ip when there is no x-forwarded-for", () => {
