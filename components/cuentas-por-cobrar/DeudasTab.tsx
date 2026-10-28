@@ -399,8 +399,8 @@ export function DeudasTab({ h }: { h: CuentasPorCobrarController }) {
               total={h.gruposPage.total}
               page={h.gruposPage.paginaSegura}
               perPage={h.perPage}
-              onPageChange={() => {}}
-              onPerPageChange={() => {}}
+              onPageChange={h.setPage}
+              onPerPageChange={h.setPerPage}
               noun="clientes"
             />
           </div>
