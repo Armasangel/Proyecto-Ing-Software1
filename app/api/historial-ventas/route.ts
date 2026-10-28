@@ -94,7 +94,7 @@ export async function GET(req: NextRequest) {
         FROM venta v2
         WHERE ${whereSql}
         ORDER BY v2.fecha_venta DESC, v2.id_venta DESC
-        LIMIT $1 OFFSET $2
+        LIMIT $${whereValues.length + 1} OFFSET $${whereValues.length + 2}
       )
       GROUP BY
         v.id_venta,
